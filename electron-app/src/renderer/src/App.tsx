@@ -31,6 +31,10 @@ import TableManager from './pages/settings/TableManager'
 import OrderList from './pages/orders/OrderList'
 import OrderDetail from './pages/orders/OrderDetail'
 import HoldOrders from './pages/orders/HoldOrders'
+import ItemList from './pages/inventory/ItemList'
+import ItemDetail from './pages/inventory/ItemDetail'
+import ModifierGroupManager from './pages/inventory/ModifierGroupManager'
+import ComboManager from './pages/inventory/ComboManager'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -74,6 +78,12 @@ function AppRoutes() {
       <Route path="/pos/orders"         element={<RequireAuth><OrderList /></RequireAuth>} />
       <Route path="/pos/orders/:id"    element={<RequireAuth><OrderDetail /></RequireAuth>} />
       <Route path="/pos/hold"          element={<RequireAuth><HoldOrders /></RequireAuth>} />
+
+      <Route path="/inventory/items"         element={<RequireAuth><ItemList /></RequireAuth>} />
+      <Route path="/inventory/items/new"     element={<RequireAuth><ItemDetail /></RequireAuth>} />
+      <Route path="/inventory/items/:id"     element={<RequireAuth><ItemDetail /></RequireAuth>} />
+      <Route path="/inventory/modifiers"     element={<RequireAuth><ModifierGroupManager /></RequireAuth>} />
+      <Route path="/inventory/combos"        element={<RequireAuth><ComboManager /></RequireAuth>} />
 
       <Route path="/settings/device"   element={<RequireAuth><DeviceInfo /></RequireAuth>} />
       <Route path="/settings/printer"  element={<RequireAuth><PrinterSettings /></RequireAuth>} />

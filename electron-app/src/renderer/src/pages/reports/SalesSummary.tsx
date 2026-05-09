@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, TrendingUp, ShoppingBag, Receipt } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { reportsApi } from '../../api/reports'
+import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 
@@ -28,6 +29,8 @@ const PRESETS = [
 
 export default function SalesSummary() {
   const navigate = useNavigate()
+  const { theme } = useThemeStore()
+  const isDark = theme === 'dark'
   const today = todayLocalDate()
   const [dateFrom, setDateFrom] = useState(today)
   const [dateTo, setDateTo] = useState(today)
@@ -57,7 +60,7 @@ export default function SalesSummary() {
   })
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white">
@@ -69,13 +72,13 @@ export default function SalesSummary() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Date filter */}
-        <div className="bg-white rounded-xl p-4 space-y-3">
+        <div className={cn('rounded-xl p-4 space-y-3', isDark ? 'bg-gray-900' : 'bg-white')}>
           <div className="flex gap-2 flex-wrap">
             {PRESETS.map((p) => (
               <button
                 key={p.label}
                 onClick={() => applyPreset(p.days)}
-                className="px-3 py-1.5 text-xs rounded-lg border border-gray-200 hover:border-orange-400 hover:text-orange-600 font-medium transition-colors"
+                className={cn('px-3 py-1.5 text-xs rounded-lg border font-medium transition-colors', isDark ? 'border-gray-700 text-gray-300 hover:border-orange-400 hover:text-orange-400' : 'border-gray-200 text-gray-600 hover:border-orange-400 hover:text-orange-600')}
               >
                 {p.label}
               </button>
@@ -86,14 +89,14 @@ export default function SalesSummary() {
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-orange-400"
+              className={cn('border rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white')}
             />
-            <span className="text-gray-400 text-sm">to</span>
+            <span className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-400')}>to</span>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-orange-400"
+              className={cn('border rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white')}
             />
             <button
               onClick={() => setApplied({ from: dateFrom, to: dateTo })}
@@ -105,7 +108,7 @@ export default function SalesSummary() {
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 text-sm">Loading…</div>
+          <div className={cn('flex items-center justify-center h-40 text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>Loading…</div>
         ) : !data ? null : (
           <>
             {/* KPI cards */}
@@ -118,17 +121,17 @@ export default function SalesSummary() {
 
             {/* By order type */}
             {data.by_order_type?.length > 0 && (
-              <div className="bg-white rounded-xl p-4">
-                <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Order Type</h3>
+              <div className={cn('rounded-xl p-4', isDark ? 'bg-gray-900' : 'bg-white')}>
+                <h3 className={cn('font-semibold mb-3 text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>By Order Type</h3>
                 <div className="space-y-2">
                   {data.by_order_type.map((row) => (
                     <div key={row.order_type} className="flex items-center justify-between text-sm">
-                      <span className="capitalize text-gray-600">
+                      <span className={cn('capitalize', isDark ? 'text-gray-400' : 'text-gray-600')}>
                         {row.order_type.replace('_', ' ')}
                       </span>
                       <div className="text-right">
-                        <span className="font-semibold text-gray-800">{formatCurrency(row.revenue)}</span>
-                        <span className="text-gray-400 text-xs ml-2">({row.count})</span>
+                        <span className={cn('font-semibold', isDark ? 'text-gray-200' : 'text-gray-800')}>{formatCurrency(row.revenue)}</span>
+                        <span className={cn('text-xs ml-2', isDark ? 'text-gray-500' : 'text-gray-400')}>({row.count})</span>
                       </div>
                     </div>
                   ))}
@@ -138,15 +141,15 @@ export default function SalesSummary() {
 
             {/* By payment mode */}
             {data.by_payment_mode?.length > 0 && (
-              <div className="bg-white rounded-xl p-4">
-                <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Payment Mode</h3>
+              <div className={cn('rounded-xl p-4', isDark ? 'bg-gray-900' : 'bg-white')}>
+                <h3 className={cn('font-semibold mb-3 text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>By Payment Mode</h3>
                 <div className="space-y-2">
                   {data.by_payment_mode.map((row) => (
                     <div key={row.payment_mode} className="flex items-center justify-between text-sm">
-                      <span className="capitalize text-gray-600">{row.payment_mode}</span>
+                      <span className={cn('capitalize', isDark ? 'text-gray-400' : 'text-gray-600')}>{row.payment_mode}</span>
                       <div className="text-right">
-                        <span className="font-semibold text-gray-800">{formatCurrency(row.amount)}</span>
-                        <span className="text-gray-400 text-xs ml-2">({row.count})</span>
+                        <span className={cn('font-semibold', isDark ? 'text-gray-200' : 'text-gray-800')}>{formatCurrency(row.amount)}</span>
+                        <span className={cn('text-xs ml-2', isDark ? 'text-gray-500' : 'text-gray-400')}>({row.count})</span>
                       </div>
                     </div>
                   ))}
@@ -156,15 +159,15 @@ export default function SalesSummary() {
 
             {/* Daily breakdown */}
             {data.daily?.length > 1 && (
-              <div className="bg-white rounded-xl p-4">
-                <h3 className="font-semibold text-gray-800 mb-3 text-sm">Daily Breakdown</h3>
+              <div className={cn('rounded-xl p-4', isDark ? 'bg-gray-900' : 'bg-white')}>
+                <h3 className={cn('font-semibold mb-3 text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>Daily Breakdown</h3>
                 <div className="space-y-1">
                   {data.daily.map((row) => (
-                    <div key={row.date} className="flex items-center justify-between text-sm py-1 border-b border-gray-50 last:border-0">
-                      <span className="text-gray-500">{row.date}</span>
+                    <div key={row.date} className={cn('flex items-center justify-between text-sm py-1 border-b last:border-0', isDark ? 'border-gray-800 text-gray-200' : 'border-gray-50 text-gray-500')}>
+                      <span className={isDark ? 'text-gray-400' : 'text-gray-500'}>{row.date}</span>
                       <div className="text-right">
-                        <span className="font-medium text-gray-800">{formatCurrency(row.revenue)}</span>
-                        <span className="text-gray-400 text-xs ml-2">{row.count} orders</span>
+                        <span className={cn('font-medium', isDark ? 'text-gray-200' : 'text-gray-800')}>{formatCurrency(row.revenue)}</span>
+                        <span className={cn('text-xs ml-2', isDark ? 'text-gray-500' : 'text-gray-400')}>{row.count} orders</span>
                       </div>
                     </div>
                   ))}
@@ -183,19 +186,32 @@ function StatCard({
 }: {
   icon: React.ElementType; label: string; value: string; color: string
 }) {
-  const colors: Record<string, string> = {
+  const { theme } = useThemeStore()
+  const isDark = theme === 'dark'
+
+  const lightColors: Record<string, string> = {
     blue:   'bg-blue-50 text-blue-600',
     green:  'bg-green-50 text-green-600',
     orange: 'bg-orange-50 text-orange-600',
     purple: 'bg-purple-50 text-purple-600',
   }
+
+  const darkColors: Record<string, string> = {
+    blue:   'bg-blue-900 text-blue-400',
+    green:  'bg-green-900 text-green-400',
+    orange: 'bg-orange-900 text-orange-400',
+    purple: 'bg-purple-900 text-purple-400',
+  }
+
+  const colors = isDark ? darkColors : lightColors
+
   return (
-    <div className="bg-white rounded-xl p-4">
+    <div className={cn('rounded-xl p-4', isDark ? 'bg-gray-900' : 'bg-white')}>
       <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center mb-2', colors[color])}>
         <Icon className="w-4 h-4" />
       </div>
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="font-bold text-gray-800 text-base mt-0.5">{value}</p>
+      <p className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>{label}</p>
+      <p className={cn('font-bold text-base mt-0.5', isDark ? 'text-gray-200' : 'text-gray-800')}>{value}</p>
     </div>
   )
 }

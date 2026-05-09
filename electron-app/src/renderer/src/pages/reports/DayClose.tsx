@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Printer } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { reportsApi } from '../../api/reports'
+import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 
 interface DayCloseData {
   date: string
@@ -22,6 +24,8 @@ interface DayCloseData {
 
 export default function DayClose() {
   const navigate = useNavigate()
+  const { theme } = useThemeStore()
+  const isDark = theme === 'dark'
   const [date, setDate] = useState(todayLocalDate())
   const [applied, setApplied] = useState(todayLocalDate())
 
@@ -34,7 +38,7 @@ export default function DayClose() {
   })
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white">
@@ -53,12 +57,12 @@ export default function DayClose() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Date picker */}
-        <div className="bg-white rounded-xl p-4 flex items-center gap-3">
+        <div className={cn('rounded-xl p-4 flex items-center gap-3', isDark ? 'bg-gray-900' : 'bg-white')}>
           <input
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-orange-400"
+            className={cn('border rounded-lg px-3 py-2 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white')}
           />
           <button
             onClick={() => setApplied(date)}
@@ -69,7 +73,7 @@ export default function DayClose() {
         </div>
 
         {isLoading ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 text-sm">Loading…</div>
+          <div className={cn('flex items-center justify-center h-40 text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>Loading…</div>
         ) : !data ? null : (
           <>
             {/* Date heading */}
@@ -81,8 +85,8 @@ export default function DayClose() {
             </div>
 
             {/* Payment breakdown */}
-            <div className="bg-white rounded-xl p-4">
-              <h3 className="font-semibold text-gray-800 mb-3 text-sm">Payment Collection</h3>
+            <div className={cn('rounded-xl p-4', isDark ? 'bg-gray-900' : 'bg-white')}>
+              <h3 className={cn('font-semibold mb-3 text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>Payment Collection</h3>
               <div className="space-y-2">
                 <Row label="Cash" value={data.total_cash} highlight />
                 <Row label="UPI" value={data.total_upi} />
@@ -95,8 +99,8 @@ export default function DayClose() {
             </div>
 
             {/* Summary */}
-            <div className="bg-white rounded-xl p-4">
-              <h3 className="font-semibold text-gray-800 mb-3 text-sm">Summary</h3>
+            <div className={cn('rounded-xl p-4', isDark ? 'bg-gray-900' : 'bg-white')}>
+              <h3 className={cn('font-semibold mb-3 text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>Summary</h3>
               <div className="space-y-2">
                 <Row label="Total Tax (CGST+SGST)" value={data.total_tax} />
                 <Row label="Total Discount" value={data.total_discount} />
@@ -106,19 +110,19 @@ export default function DayClose() {
 
             {/* Top items */}
             {data.top_items?.length > 0 && (
-              <div className="bg-white rounded-xl p-4">
-                <h3 className="font-semibold text-gray-800 mb-3 text-sm">Top Items</h3>
+              <div className={cn('rounded-xl p-4', isDark ? 'bg-gray-900' : 'bg-white')}>
+                <h3 className={cn('font-semibold mb-3 text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>Top Items</h3>
                 <div className="space-y-2">
                   {data.top_items.slice(0, 10).map((item, i) => (
                     <div key={item.name} className="flex items-center justify-between text-sm">
                       <div className="flex items-center gap-2">
-                        <span className="w-5 h-5 bg-gray-100 rounded-full text-xs flex items-center justify-center text-gray-500 font-medium">
+                        <span className={cn('w-5 h-5 rounded-full text-xs flex items-center justify-center font-medium', isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-500')}>
                           {i + 1}
                         </span>
-                        <span className="text-gray-700">{item.name}</span>
-                        <span className="text-gray-400 text-xs">×{item.quantity}</span>
+                        <span className={isDark ? 'text-gray-200' : 'text-gray-700'}>{item.name}</span>
+                        <span className={cn('text-xs', isDark ? 'text-gray-500' : 'text-gray-400')}>×{item.quantity}</span>
                       </div>
-                      <span className="font-medium text-gray-800">{formatCurrency(item.revenue)}</span>
+                      <span className={cn('font-medium', isDark ? 'text-gray-200' : 'text-gray-800')}>{formatCurrency(item.revenue)}</span>
                     </div>
                   ))}
                 </div>
@@ -136,10 +140,13 @@ function Row({
 }: {
   label: string; value: number; isCurrency?: boolean; highlight?: boolean; bold?: boolean
 }) {
+  const { theme } = useThemeStore()
+  const isDark = theme === 'dark'
+
   return (
-    <div className={`flex items-center justify-between text-sm ${bold ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
+    <div className={cn('flex items-center justify-between text-sm', bold ? (isDark ? 'font-bold text-gray-100' : 'font-bold text-gray-900') : (isDark ? 'text-gray-400' : 'text-gray-600'))}>
       <span>{label}</span>
-      <span className={highlight ? 'text-green-700 font-semibold' : ''}>
+      <span className={highlight ? (isDark ? 'text-green-400 font-semibold' : 'text-green-700 font-semibold') : ''}>
         {isCurrency ? formatCurrency(value) : value}
       </span>
     </div>

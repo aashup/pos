@@ -90,9 +90,9 @@ export default function TableSelection() {
   const statusStyle = STATUS_STYLE(isDark)
 
   return (
-    <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-950">
+    <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-100')}>
       {/* Header */}
-      <header className="h-12 bg-gray-900 dark:bg-gray-950 text-white flex items-center justify-between px-4 shrink-0">
+      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/pos/billing')} className="text-gray-400 hover:text-white">
             <ArrowLeft className="w-4 h-4" />
@@ -120,7 +120,7 @@ export default function TableSelection() {
 
       {/* Floor plan tabs */}
       {floors.length > 1 && (
-        <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex gap-1 px-4 py-2 overflow-x-auto shrink-0">
+        <div className={cn('border-b flex gap-1 px-4 py-2 overflow-x-auto shrink-0', isDark ? 'bg-gray-900 border-gray-700' : 'bg-white border-gray-200')}>
           {floors.map((f) => (
             <button
               key={f.id}
@@ -129,7 +129,7 @@ export default function TableSelection() {
                 'px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
                 (activeFloor ?? floors[0]?.id) === f.id
                   ? 'bg-orange-500 text-white'
-                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800',
+                  : isDark ? 'text-gray-400 hover:bg-gray-800' : 'text-gray-600 hover:bg-gray-100',
               )}
             >
               {f.name}
@@ -139,22 +139,22 @@ export default function TableSelection() {
       )}
 
       {/* Legend */}
-      <div className="px-4 py-1.5 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 shrink-0">
+      <div className={cn('px-4 py-1.5 flex items-center gap-4 text-xs border-b shrink-0', isDark ? 'text-gray-400 bg-gray-900 border-gray-800' : 'text-gray-500 bg-white border-gray-100')}>
         {Object.entries(statusStyle).map(([status, cfg]) => (
           <span key={status} className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: cfg.dot }} />
             {cfg.label}
           </span>
         ))}
-        <span className="ml-auto text-gray-400 dark:text-gray-500">{visibleTables.length} tables</span>
+        <span className={cn('ml-auto', isDark ? 'text-gray-500' : 'text-gray-400')}>{visibleTables.length} tables</span>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900">
+      <div className={cn('flex-1 overflow-auto', isDark ? 'bg-gray-900' : 'bg-gray-50')}>
         {loading ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
+          <div className={cn('flex items-center justify-center h-40 text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>Loading…</div>
         ) : visibleTables.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
+          <div className={cn('flex items-center justify-center h-40 text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>
             No tables found. Run a sync to load tables.
           </div>
         ) : viewMode === 'map' ? (
@@ -215,7 +215,7 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect, isDark, st
   return (
     <div className="flex items-start justify-center p-4 min-h-full">
       <div
-        className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
+        className={cn('relative rounded-2xl shadow-sm border overflow-hidden', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}
         style={{ width: CANVAS_W, height: CANVAS_H, minWidth: CANVAS_W }}
       >
         {/* Grid lines */}
@@ -286,17 +286,17 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect, isDark, st
                   {/* Pax selector for vacant tables — shown as overlay on hover */}
                   {table.status === 'vacant' && (
                     <div
-                      className="absolute -bottom-7 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full px-1 py-0.5 shadow-sm z-10"
+                      className={cn('absolute -bottom-7 left-1/2 -translate-x-1/2 flex items-center gap-0.5 border rounded-full px-1 py-0.5 shadow-sm z-10', isDark ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-200')}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <button
-                        className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-500 text-gray-600 dark:text-gray-300 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600"
+                        className={cn('w-4 h-4 rounded-full border flex items-center justify-center', isDark ? 'border-gray-500 text-gray-300 hover:bg-gray-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}
                         style={{ fontSize: 10 }}
                         onClick={() => onPaxChange(table.id, Math.max(1, pax - 1))}
                       >–</button>
-                      <span className="text-gray-700 dark:text-gray-200 font-medium" style={{ fontSize: 10, minWidth: 14, textAlign: 'center' }}>{pax}</span>
+                      <span className={cn('font-medium', isDark ? 'text-gray-200' : 'text-gray-700')} style={{ fontSize: 10, minWidth: 14, textAlign: 'center' }}>{pax}</span>
                       <button
-                        className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-500 text-gray-600 dark:text-gray-300 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600"
+                        className={cn('w-4 h-4 rounded-full border flex items-center justify-center', isDark ? 'border-gray-500 text-gray-300 hover:bg-gray-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50')}
                         style={{ fontSize: 10 }}
                         onClick={() => onPaxChange(table.id, Math.min(table.capacity, pax + 1))}
                       >+</button>
@@ -352,13 +352,13 @@ function TableCard({ table, pax, onPaxChange, onSelect, loading, isDark, statusS
         <div className="mt-3 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
           <span className={cn('text-xs mr-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Guests:</span>
           <button onClick={() => onPaxChange(Math.max(1, pax - 1))} className={cn('w-5 h-5 rounded border text-xs flex items-center justify-center', isDark ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')}>–</button>
-          <span className={cn('text-xs font-semibold w-4 text-center', isDark ? 'text-gray-300' : 'text-gray-700')}>{pax}</span>
+          <span className={cn('text-xs font-semibold w-4 text-center', isDark ? 'text-gray-200' : 'text-gray-700')}>{pax}</span>
           <button onClick={() => onPaxChange(Math.min(table.capacity, pax + 1))} className={cn('w-5 h-5 rounded border text-xs flex items-center justify-center', isDark ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')}>+</button>
         </div>
       )}
 
       {loading && (
-        <div className={cn('absolute inset-0 rounded-2xl flex items-center justify-center', isDark ? 'bg-gray-700/60 text-gray-400' : 'bg-white/60 text-gray-500')}>
+        <div className={cn('absolute inset-0 rounded-2xl flex items-center justify-center', isDark ? 'bg-gray-800/60 text-gray-400' : 'bg-white/60 text-gray-500')}>
           <RefreshCw className="w-4 h-4 animate-spin" />
         </div>
       )}

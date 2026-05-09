@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Plus, Pencil, Trash2, ChevronRight, LayoutGrid, X, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tablesApi } from '../../api/tables'
+import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import type { FloorPlan, DiningTable } from '../../types'
 
@@ -18,6 +19,8 @@ const SHAPE_LABELS: Record<Shape, string> = {
 export default function TableManager() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { theme } = useThemeStore()
+  const isDark = theme === 'dark'
   const [activeFloorId, setActiveFloorId] = useState<string | null>(null)
   const [floorModal, setFloorModal] = useState<{ open: boolean; floor?: FloorPlan }>({ open: false })
   const [tableModal, setTableModal] = useState<{ open: boolean; table?: DiningTable }>({ open: false })
@@ -55,8 +58,7 @@ export default function TableManager() {
   })
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
+    <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/pos/billing')} className="text-gray-400 hover:text-white">
@@ -67,10 +69,9 @@ export default function TableManager() {
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar — floor plans */}
-        <div className="w-56 shrink-0 bg-white border-r border-gray-200 flex flex-col">
-          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Floor Plans</span>
+        <div className={cn('w-56 shrink-0 border-r flex flex-col', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200')}>
+          <div className={cn('px-4 py-3 border-b flex items-center justify-between', isDark ? 'border-gray-800' : 'border-gray-100')}>
+            <span className={cn('text-xs font-semibold uppercase tracking-wide', isDark ? 'text-gray-400' : 'text-gray-500')}>Floor Plans</span>
             <button
               onClick={() => setFloorModal({ open: true })}
               className="w-6 h-6 rounded bg-orange-500 hover:bg-orange-600 text-white flex items-center justify-center"
@@ -80,7 +81,7 @@ export default function TableManager() {
           </div>
           <div className="flex-1 overflow-y-auto py-1">
             {floors.length === 0 ? (
-              <p className="text-xs text-gray-400 px-4 py-3">No floor plans yet.</p>
+              <p className={cn('text-xs px-4 py-3', isDark ? 'text-gray-500' : 'text-gray-400')}>No floor plans yet.</p>
             ) : (
               floors.map((floor) => (
                 <div
@@ -88,12 +89,18 @@ export default function TableManager() {
                   onClick={() => setActiveFloorId(floor.id)}
                   className={cn(
                     'flex items-center justify-between px-4 py-2.5 cursor-pointer group',
-                    (selectedFloor?.id === floor.id) ? 'bg-orange-50 border-r-2 border-orange-500' : 'hover:bg-gray-50',
+                    (selectedFloor?.id === floor.id)
+                      ? isDark
+                        ? 'bg-orange-900 border-r-2 border-orange-500'
+                        : 'bg-orange-50 border-r-2 border-orange-500'
+                      : isDark
+                        ? 'hover:bg-gray-800'
+                        : 'hover:bg-gray-50',
                   )}
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <LayoutGrid className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span className="text-sm text-gray-700 truncate">{floor.name}</span>
+                    <LayoutGrid className={cn('w-3.5 h-3.5 shrink-0', isDark ? 'text-gray-500' : 'text-gray-400')} />
+                    <span className={cn('text-sm truncate', isDark ? 'text-gray-200' : 'text-gray-700')}>{floor.name}</span>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 shrink-0">
                     <button
@@ -118,21 +125,20 @@ export default function TableManager() {
           </div>
         </div>
 
-        {/* Main — tables list */}
         <div className="flex-1 overflow-hidden flex flex-col">
           {!selectedFloor ? (
-            <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">
+            <div className={cn('flex-1 flex items-center justify-center text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>
               <div className="text-center">
-                <LayoutGrid className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <LayoutGrid className={cn('w-10 h-10 mx-auto mb-2 opacity-30', isDark ? 'text-gray-600' : 'text-gray-400')} />
                 <p>Select or create a floor plan</p>
               </div>
             </div>
           ) : (
             <>
-              <div className="px-6 py-3 border-b border-gray-200 bg-white flex items-center justify-between shrink-0">
+              <div className={cn('px-6 py-3 border-b flex items-center justify-between shrink-0', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200')}>
                 <div>
-                  <h2 className="font-semibold text-gray-800">{selectedFloor.name}</h2>
-                  <p className="text-xs text-gray-400">{floorTables.length} table{floorTables.length !== 1 ? 's' : ''}</p>
+                  <h2 className={cn('font-semibold', isDark ? 'text-gray-200' : 'text-gray-800')}>{selectedFloor.name}</h2>
+                  <p className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-400')}>{floorTables.length} table{floorTables.length !== 1 ? 's' : ''}</p>
                 </div>
                 <button
                   onClick={() => setTableModal({ open: true })}
@@ -143,9 +149,9 @@ export default function TableManager() {
                 </button>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6">
+              <div className={cn('flex-1 overflow-y-auto p-6', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
                 {floorTables.length === 0 ? (
-                  <div className="text-center py-16 text-gray-400">
+                  <div className={cn('text-center py-16', isDark ? 'text-gray-500' : 'text-gray-400')}>
                     <p className="text-sm">No tables on this floor.</p>
                     <p className="text-xs mt-1">Click "Add Table" to create one.</p>
                   </div>
@@ -155,6 +161,7 @@ export default function TableManager() {
                       <TableRow
                         key={table.id}
                         table={table}
+                        isDark={isDark}
                         onEdit={() => setTableModal({ open: true, table })}
                         onDelete={() => {
                           if (confirm(`Delete table "${table.name}"?`)) deleteTable.mutate(table.id)
@@ -169,9 +176,9 @@ export default function TableManager() {
         </div>
       </div>
 
-      {/* Floor plan modal */}
       {floorModal.open && (
         <FloorPlanModal
+          isDark={isDark}
           floor={floorModal.floor}
           onClose={() => setFloorModal({ open: false })}
           onSaved={(floor) => {
@@ -182,9 +189,9 @@ export default function TableManager() {
         />
       )}
 
-      {/* Table modal */}
       {tableModal.open && selectedFloor && (
         <TableModal
+          isDark={isDark}
           table={tableModal.table}
           floorPlanId={selectedFloor.id}
           onClose={() => setTableModal({ open: false })}
@@ -198,28 +205,26 @@ export default function TableManager() {
   )
 }
 
-// ─── Table card ───────────────────────────────────────────────────────────────
-
-function TableRow({ table, onEdit, onDelete }: { table: DiningTable; onEdit: () => void; onDelete: () => void }) {
+function TableRow({ table, isDark, onEdit, onDelete }: { table: DiningTable; isDark: boolean; onEdit: () => void; onDelete: () => void }) {
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-start justify-between group">
+    <div className={cn('border rounded-xl p-4 flex items-start justify-between group', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200')}>
       <div>
-        <p className="font-semibold text-gray-800">{table.name}</p>
-        <p className="text-xs text-gray-400 mt-0.5 capitalize">
+        <p className={cn('font-semibold', isDark ? 'text-gray-200' : 'text-gray-800')}>{table.name}</p>
+        <p className={cn('text-xs mt-0.5 capitalize', isDark ? 'text-gray-400' : 'text-gray-400')}>
           {table.shape} · {table.capacity} seats
         </p>
-        <p className="text-xs text-gray-400">
+        <p className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-400')}>
           Position: ({table.pos_x}, {table.pos_y})
         </p>
         {!table.is_active && (
-          <span className="mt-1 inline-block text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Inactive</span>
+          <span className={cn('mt-1 inline-block text-xs px-1.5 py-0.5 rounded', isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-100 text-gray-500')}>Inactive</span>
         )}
       </div>
       <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-        <button onClick={onEdit} className="p-1.5 text-gray-400 hover:text-blue-600 rounded hover:bg-blue-50">
+        <button onClick={onEdit} className={cn('p-1.5 rounded transition-colors', isDark ? 'text-gray-500 hover:text-blue-400 hover:bg-blue-900' : 'text-gray-400 hover:text-blue-600 hover:bg-blue-50')}>
           <Pencil className="w-3.5 h-3.5" />
         </button>
-        <button onClick={onDelete} className="p-1.5 text-gray-400 hover:text-red-600 rounded hover:bg-red-50">
+        <button onClick={onDelete} className={cn('p-1.5 rounded transition-colors', isDark ? 'text-gray-500 hover:text-red-400 hover:bg-red-900' : 'text-gray-400 hover:text-red-600 hover:bg-red-50')}>
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -227,13 +232,13 @@ function TableRow({ table, onEdit, onDelete }: { table: DiningTable; onEdit: () 
   )
 }
 
-// ─── Floor plan modal ─────────────────────────────────────────────────────────
-
 function FloorPlanModal({
+  isDark,
   floor,
   onClose,
   onSaved,
 }: {
+  isDark: boolean
   floor?: FloorPlan
   onClose: () => void
   onSaved: (f: FloorPlan) => void
@@ -258,21 +263,21 @@ function FloorPlanModal({
   }
 
   return (
-    <Modal title={floor ? 'Edit Floor Plan' : 'New Floor Plan'} onClose={onClose}>
+    <Modal isDark={isDark} title={floor ? 'Edit Floor Plan' : 'New Floor Plan'} onClose={onClose}>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+          <label className={cn('block text-sm font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>Name</label>
           <input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+            className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-300 bg-white')}
             placeholder="e.g. Ground Floor"
           />
         </div>
         <div className="flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+          <button onClick={onClose} className={cn('px-4 py-2 text-sm', isDark ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800')}>Cancel</button>
           <button
             onClick={handleSave}
             disabled={saving || !name.trim()}
@@ -286,14 +291,14 @@ function FloorPlanModal({
   )
 }
 
-// ─── Table modal ──────────────────────────────────────────────────────────────
-
 function TableModal({
+  isDark,
   table,
   floorPlanId,
   onClose,
   onSaved,
 }: {
+  isDark: boolean
   table?: DiningTable
   floorPlanId: string
   onClose: () => void
@@ -327,34 +332,34 @@ function TableModal({
   }
 
   return (
-    <Modal title={table ? `Edit Table — ${table.name}` : 'Add Table'} onClose={onClose}>
+    <Modal isDark={isDark} title={table ? `Edit Table — ${table.name}` : 'Add Table'} onClose={onClose}>
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Table Name *</label>
+            <label className={cn('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-600')}>Table Name *</label>
             <input
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-300 bg-white')}
               placeholder="e.g. T1, Table 1"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Capacity (seats)</label>
+            <label className={cn('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-600')}>Capacity (seats)</label>
             <input
               type="number"
               min={1}
               max={20}
               value={capacity}
               onChange={(e) => setCapacity(Number(e.target.value))}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-300 bg-white')}
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">Shape</label>
+          <label className={cn('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-600')}>Shape</label>
           <div className="flex gap-2">
             {(['square', 'round', 'rectangle'] as Shape[]).map((s) => (
               <button
@@ -362,7 +367,7 @@ function TableModal({
                 onClick={() => setShape(s)}
                 className={cn(
                   'flex-1 py-2 text-xs font-medium rounded-lg border transition-colors',
-                  shape === s ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-gray-600 border-gray-300 hover:border-orange-300',
+                  shape === s ? 'bg-orange-500 text-white border-orange-500' : isDark ? 'bg-gray-800 text-gray-300 border-gray-700 hover:border-orange-400' : 'bg-white text-gray-600 border-gray-300 hover:border-orange-300',
                 )}
               >
                 {SHAPE_LABELS[s]}
@@ -372,36 +377,35 @@ function TableModal({
         </div>
 
         <div>
-          <label className="block text-xs font-medium text-gray-600 mb-1">
+          <label className={cn('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-600')}>
             Position on map
-            <span className="text-gray-400 font-normal ml-1">(0–100 coordinate space)</span>
+            <span className={cn('font-normal ml-1', isDark ? 'text-gray-500' : 'text-gray-400')}>(0–100 coordinate space)</span>
           </label>
           <div className="flex gap-3">
             <div className="flex-1">
-              <label className="block text-xs text-gray-400 mb-0.5">X (left → right)</label>
+              <label className={cn('block text-xs mb-0.5', isDark ? 'text-gray-500' : 'text-gray-400')}>X (left → right)</label>
               <input
                 type="number"
                 min={0}
                 max={100}
                 value={posX}
                 onChange={(e) => setPosX(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-300 bg-white')}
               />
             </div>
             <div className="flex-1">
-              <label className="block text-xs text-gray-400 mb-0.5">Y (top → bottom)</label>
+              <label className={cn('block text-xs mb-0.5', isDark ? 'text-gray-500' : 'text-gray-400')}>Y (top → bottom)</label>
               <input
                 type="number"
                 min={0}
                 max={100}
                 value={posY}
                 onChange={(e) => setPosY(Number(e.target.value))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-300 bg-white')}
               />
             </div>
           </div>
-          {/* Mini preview */}
-          <MiniMapPreview posX={posX} posY={posY} shape={shape} name={name || '?'} />
+          <MiniMapPreview isDark={isDark} posX={posX} posY={posY} shape={shape} name={name || '?'} />
         </div>
 
         {table && (
@@ -415,12 +419,12 @@ function TableModal({
             >
               <span className={cn('absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform', isActive ? 'translate-x-4' : 'translate-x-0.5')} />
             </button>
-            <span className="text-sm text-gray-600">{isActive ? 'Active' : 'Inactive'}</span>
+            <span className={cn('text-sm', isDark ? 'text-gray-400' : 'text-gray-600')}>{isActive ? 'Active' : 'Inactive'}</span>
           </div>
         )}
 
         <div className="flex justify-end gap-2 pt-1">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancel</button>
+          <button onClick={onClose} className={cn('px-4 py-2 text-sm', isDark ? 'text-gray-400 hover:text-gray-300' : 'text-gray-600 hover:text-gray-800')}>Cancel</button>
           <button
             onClick={handleSave}
             disabled={saving || !name.trim()}
@@ -434,20 +438,16 @@ function TableModal({
   )
 }
 
-// ─── Mini map preview ─────────────────────────────────────────────────────────
-
-function MiniMapPreview({ posX, posY, shape, name }: { posX: number; posY: number; shape: Shape; name: string }) {
+function MiniMapPreview({ isDark, posX, posY, shape, name }: { isDark: boolean; posX: number; posY: number; shape: Shape; name: string }) {
   const W = 280, H = 100
   const cx = 8 + (posX / 100) * (W - 16)
   const cy = 8 + (posY / 100) * (H - 16)
 
   return (
-    <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 overflow-hidden" style={{ height: H }}>
+    <div className={cn('mt-2 rounded-lg border overflow-hidden', isDark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200')} style={{ height: H }}>
       <svg width={W} height={H}>
-        {/* grid */}
-        {[1,2,3,4].map(i => <line key={`v${i}`} x1={W/5*i} y1={0} x2={W/5*i} y2={H} stroke="#e5e7eb" strokeWidth={1} />)}
-        {[1,2].map(i => <line key={`h${i}`} x1={0} y1={H/3*i} x2={W} y2={H/3*i} stroke="#e5e7eb" strokeWidth={1} />)}
-        {/* table marker */}
+        {[1,2,3,4].map(i => <line key={`v${i}`} x1={W/5*i} y1={0} x2={W/5*i} y2={H} stroke={isDark ? '#374151' : '#e5e7eb'} strokeWidth={1} />)}
+        {[1,2].map(i => <line key={`h${i}`} x1={0} y1={H/3*i} x2={W} y2={H/3*i} stroke={isDark ? '#374151' : '#e5e7eb'} strokeWidth={1} />)}
         {shape === 'round' ? (
           <circle cx={cx} cy={cy} r={12} fill="#fed7aa" stroke="#f97316" strokeWidth={2} />
         ) : (
@@ -465,15 +465,13 @@ function MiniMapPreview({ posX, posY, shape, name }: { posX: number; posY: numbe
   )
 }
 
-// ─── Modal shell ──────────────────────────────────────────────────────────────
-
-function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
+function Modal({ isDark, title, children, onClose }: { isDark: boolean; title: string; children: React.ReactNode; onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h3 className="font-semibold text-gray-800">{title}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+      <div className={cn('rounded-2xl shadow-xl w-full max-w-md', isDark ? 'bg-gray-900' : 'bg-white')}>
+        <div className={cn('flex items-center justify-between px-5 py-4 border-b', isDark ? 'border-gray-800' : 'border-gray-100')}>
+          <h3 className={cn('font-semibold', isDark ? 'text-gray-200' : 'text-gray-800')}>{title}</h3>
+          <button onClick={onClose} className={cn('transition-colors', isDark ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-600')}>
             <X className="w-4 h-4" />
           </button>
         </div>

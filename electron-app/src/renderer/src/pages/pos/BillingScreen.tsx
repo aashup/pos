@@ -13,7 +13,7 @@ import { useSyncStore } from '../../store/syncStore'
 import { useThemeStore } from '../../store/themeStore'
 import { ordersApi } from '../../api/orders'
 import { ipc } from '../../bridge/ipc'
-import { formatCurrency } from '../../lib/utils'
+import { formatCurrency, cn } from '../../lib/utils'
 import ItemGrid from '../../components/pos/ItemGrid'
 import Cart from '../../components/pos/Cart'
 import PaymentModal from '../../components/pos/PaymentModal'
@@ -24,6 +24,7 @@ export default function BillingScreen() {
   const { orderId, orderType, tableId, totals, lines, setOrder, clearOrder } = useCartStore()
   const { status: syncStatus } = useSyncStore()
   const { theme, toggleTheme } = useThemeStore()
+  const isDark = theme === 'dark'
   const [sendingKot, setSendingKot] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -149,7 +150,7 @@ export default function BillingScreen() {
   }, [navigate, handleSendKot, lines.length, orderType])
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
+    <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       {/* Top bar */}
       <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
@@ -204,7 +205,7 @@ export default function BillingScreen() {
 
       {/* Main 2-column layout */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-950">
+        <div className={cn('flex-1 overflow-hidden', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
           <ItemGrid />
         </div>
         <div className="w-80 xl:w-96 shrink-0">
@@ -235,13 +236,13 @@ export default function BillingScreen() {
       )}
 
       {/* Keyboard shortcut hint bar */}
-      <div className="h-7 bg-gray-900 flex items-center px-4 gap-6 shrink-0">
-        <ShortcutHint keys="F1" label="Tables" />
-        <ShortcutHint keys="F2" label="Search" />
-        {orderType === 'dine_in' && <ShortcutHint keys="F3" label="Send KOT" />}
-        <ShortcutHint keys="F4" label="Charge" />
-        <ShortcutHint keys="F5" label="Sync" />
-        <ShortcutHint keys="Esc" label="Close" />
+      <div className={cn('h-7 flex items-center px-4 gap-6 shrink-0', isDark ? 'bg-gray-900' : 'bg-gray-100')}>
+        <ShortcutHint keys="F1" label="Tables" isDark={isDark} />
+        <ShortcutHint keys="F2" label="Search" isDark={isDark} />
+        {orderType === 'dine_in' && <ShortcutHint keys="F3" label="Send KOT" isDark={isDark} />}
+        <ShortcutHint keys="F4" label="Charge" isDark={isDark} />
+        <ShortcutHint keys="F5" label="Sync" isDark={isDark} />
+        <ShortcutHint keys="Esc" label="Close" isDark={isDark} />
       </div>
 
       {/* Side drawer */}
@@ -251,32 +252,32 @@ export default function BillingScreen() {
             className="fixed inset-0 bg-black/50 z-40"
             onClick={() => setDrawerOpen(false)}
           />
-          <div className="fixed left-0 top-0 h-full w-64 bg-gray-900 text-white z-50 flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between p-4 border-b border-gray-700">
+          <div className={cn('fixed left-0 top-0 h-full w-64 z-50 flex flex-col shadow-2xl', isDark ? 'bg-gray-900 text-white border-r border-gray-800' : 'bg-white text-gray-900 border-r border-gray-200')}>
+            <div className={cn('flex items-center justify-between p-4 border-b', isDark ? 'border-gray-800' : 'border-gray-200')}>
               <span className="font-bold text-orange-400">Navigation</span>
-              <button onClick={() => setDrawerOpen(false)} className="text-gray-400 hover:text-white">
+              <button onClick={() => setDrawerOpen(false)} className={cn('', isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900')}>
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <nav className="flex-1 p-3 space-y-1">
-              <DrawerLink icon={TableIcon}    label="Table Map"      onClick={() => { setDrawerOpen(false); navigate('/pos/tables') }} />
-              <DrawerLink icon={ChefHat}     label="Kitchen Window" onClick={() => { setDrawerOpen(false); ipc.window.openKitchen() }} />
-              <DrawerLink icon={ClipboardList} label="Order History" onClick={() => { setDrawerOpen(false); navigate('/pos/orders') }} />
-              <DrawerLink icon={PauseCircle} label="Held Orders"    onClick={() => { setDrawerOpen(false); navigate('/pos/hold') }} />
-              <div className="border-t border-gray-700 my-2" />
-              <DrawerLink icon={Package}   label="Items"          onClick={() => { setDrawerOpen(false); navigate('/inventory/items') }} />
-              <div className="border-t border-gray-700 my-2" />
-              <DrawerLink icon={BarChart2} label="Sales Summary"  onClick={() => { setDrawerOpen(false); navigate('/reports/sales') }} />
-              <DrawerLink icon={FileText} label="Item-Wise Sales" onClick={() => { setDrawerOpen(false); navigate('/reports/items') }} />
-              <DrawerLink icon={BarChart2} label="Day Close"      onClick={() => { setDrawerOpen(false); navigate('/reports/day-close') }} />
-              <DrawerLink icon={FileText} label="GST Summary"     onClick={() => { setDrawerOpen(false); navigate('/reports/gst') }} />
-              <div className="border-t border-gray-700 my-2" />
-              <DrawerLink icon={Settings} label="Table Manager"    onClick={() => { setDrawerOpen(false); navigate('/settings/tables') }} />
-              <DrawerLink icon={Printer} label="Printer Settings" onClick={() => { setDrawerOpen(false); navigate('/settings/printer') }} />
-              <DrawerLink icon={Info}    label="Device Info"      onClick={() => { setDrawerOpen(false); navigate('/settings/device') }} />
+            <nav className={cn('flex-1 p-3 space-y-1', isDark ? 'bg-gray-900' : 'bg-white')}>
+              <DrawerLink icon={TableIcon}    label="Table Map"      onClick={() => { setDrawerOpen(false); navigate('/pos/tables') }} isDark={isDark} />
+              <DrawerLink icon={ChefHat}     label="Kitchen Window" onClick={() => { setDrawerOpen(false); ipc.window.openKitchen() }} isDark={isDark} />
+              <DrawerLink icon={ClipboardList} label="Order History" onClick={() => { setDrawerOpen(false); navigate('/pos/orders') }} isDark={isDark} />
+              <DrawerLink icon={PauseCircle} label="Held Orders"    onClick={() => { setDrawerOpen(false); navigate('/pos/hold') }} isDark={isDark} />
+              <div className={cn('my-2 border-t', isDark ? 'border-gray-800' : 'border-gray-200')} />
+              <DrawerLink icon={Package}   label="Items"          onClick={() => { setDrawerOpen(false); navigate('/inventory/items') }} isDark={isDark} />
+              <div className={cn('my-2 border-t', isDark ? 'border-gray-800' : 'border-gray-200')} />
+              <DrawerLink icon={BarChart2} label="Sales Summary"  onClick={() => { setDrawerOpen(false); navigate('/reports/sales') }} isDark={isDark} />
+              <DrawerLink icon={FileText} label="Item-Wise Sales" onClick={() => { setDrawerOpen(false); navigate('/reports/items') }} isDark={isDark} />
+              <DrawerLink icon={BarChart2} label="Day Close"      onClick={() => { setDrawerOpen(false); navigate('/reports/day-close') }} isDark={isDark} />
+              <DrawerLink icon={FileText} label="GST Summary"     onClick={() => { setDrawerOpen(false); navigate('/reports/gst') }} isDark={isDark} />
+              <div className={cn('my-2 border-t', isDark ? 'border-gray-800' : 'border-gray-200')} />
+              <DrawerLink icon={Settings} label="Table Manager"    onClick={() => { setDrawerOpen(false); navigate('/settings/tables') }} isDark={isDark} />
+              <DrawerLink icon={Printer} label="Printer Settings" onClick={() => { setDrawerOpen(false); navigate('/settings/printer') }} isDark={isDark} />
+              <DrawerLink icon={Info}    label="Device Info"      onClick={() => { setDrawerOpen(false); navigate('/settings/device') }} isDark={isDark} />
             </nav>
-            <div className="p-4 border-t border-gray-700">
-              <p className="text-xs text-gray-500 text-center">Zazzy POS v1.0.0</p>
+            <div className={cn('p-4 border-t', isDark ? 'border-gray-800' : 'border-gray-200')}>
+              <p className={cn('text-xs text-center', isDark ? 'text-gray-500' : 'text-gray-400')}>Zazzy POS v1.0.0</p>
             </div>
           </div>
         </>
@@ -301,20 +302,20 @@ export default function BillingScreen() {
   )
 }
 
-function ShortcutHint({ keys, label }: { keys: string; label: string }) {
+function ShortcutHint({ keys, label, isDark }: { keys: string; label: string; isDark: boolean }) {
   return (
-    <span className="flex items-center gap-1 text-gray-500 text-xs">
-      <kbd className="bg-gray-700 text-gray-300 px-1 py-0.5 rounded text-xs font-mono">{keys}</kbd>
+    <span className={cn('flex items-center gap-1 text-xs', isDark ? 'text-gray-500' : 'text-gray-600')}>
+      <kbd className={cn('px-1 py-0.5 rounded text-xs font-mono', isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700')}>{keys}</kbd>
       {label}
     </span>
   )
 }
 
-function DrawerLink({ icon: Icon, label, onClick }: { icon: React.ElementType; label: string; onClick: () => void }) {
+function DrawerLink({ icon: Icon, label, onClick, isDark }: { icon: React.ElementType; label: string; onClick: () => void; isDark: boolean }) {
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-300 hover:bg-gray-800 hover:text-white text-sm font-medium transition-colors text-left"
+      className={cn('w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left', isDark ? 'text-gray-300 hover:bg-gray-800 hover:text-white' : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900')}
     >
       <Icon className="w-4 h-4 shrink-0" />
       {label}

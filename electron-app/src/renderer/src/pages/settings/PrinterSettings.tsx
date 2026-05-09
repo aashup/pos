@@ -3,9 +3,13 @@ import { ArrowLeft, Printer, RefreshCw, CheckCircle } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { ipc } from '../../bridge/ipc'
+import { useThemeStore } from '../../store/themeStore'
+import { cn } from '../../lib/utils'
 
 export default function PrinterSettings() {
   const navigate = useNavigate()
+  const { theme } = useThemeStore()
+  const isDark = theme === 'dark'
   const [printers, setPrinters]         = useState<string[]>([])
   const [loadingPrinters, setLoading]   = useState(false)
   const [printerName, setPrinterName]   = useState('')
@@ -70,7 +74,7 @@ export default function PrinterSettings() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       <header className="h-12 bg-gray-900 text-white flex items-center gap-3 px-4 shrink-0">
         <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white">
           <ArrowLeft className="w-4 h-4" />
@@ -80,31 +84,31 @@ export default function PrinterSettings() {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Load printers */}
-        <div className="bg-white rounded-xl p-4">
+        <div className={cn('rounded-xl p-4', isDark ? 'bg-gray-900' : 'bg-white')}>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-semibold text-gray-800 text-sm">Available Printers</h3>
+            <h3 className={cn('font-semibold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}> Available Printers</h3>
             <button
               onClick={loadPrinters}
               disabled={loadingPrinters}
-              className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium"
+              className={cn('flex items-center gap-1.5 text-xs font-medium', isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700')}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loadingPrinters ? 'animate-spin' : ''}`} />
               Detect Printers
             </button>
           </div>
           {printers.length === 0 ? (
-            <p className="text-xs text-gray-400">Click "Detect Printers" to load installed printers.</p>
+            <p className={cn('text-xs', isDark ? 'text-gray-500' : 'text-gray-400')}>Click "Detect Printers" to load installed printers.</p>
           ) : (
             <div className="space-y-1">
               {printers.map((p) => (
                 <button
                   key={p}
                   onClick={() => { setPrinterName(p); if (!kotPrinter) setKotPrinter(p) }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm transition-colors ${
+                  className={cn('w-full flex items-center justify-between px-3 py-2 rounded-lg border text-sm transition-colors',
                     printerName === p
-                      ? 'border-orange-500 bg-orange-50 text-orange-700'
-                      : 'border-gray-200 text-gray-700 hover:border-gray-300'
-                  }`}
+                      ? isDark ? 'border-orange-500 bg-orange-900 text-orange-200' : 'border-orange-500 bg-orange-50 text-orange-700'
+                      : isDark ? 'border-gray-700 text-gray-300 hover:border-gray-600' : 'border-gray-200 text-gray-700 hover:border-gray-300'
+                  )}
                 >
                   <div className="flex items-center gap-2">
                     <Printer className="w-3.5 h-3.5" />
@@ -118,30 +122,30 @@ export default function PrinterSettings() {
         </div>
 
         {/* Receipt printer */}
-        <div className="bg-white rounded-xl p-4 space-y-3">
-          <h3 className="font-semibold text-gray-800 text-sm">Receipt Printer</h3>
+        <div className={cn('rounded-xl p-4 space-y-3', isDark ? 'bg-gray-900' : 'bg-white')}>
+          <h3 className={cn('font-semibold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>Receipt Printer</h3>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Printer Name</label>
+            <label className={cn('text-xs block mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Printer Name</label>
             <input
               type="text"
               value={printerName}
               onChange={(e) => setPrinterName(e.target.value)}
               placeholder="e.g. EPSON TM-T82"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white')}
             />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Paper Width</label>
+            <label className={cn('text-xs block mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Paper Width</label>
             <div className="flex gap-2">
               {['58', '80'].map((w) => (
                 <button
                   key={w}
                   onClick={() => setPaperWidth(w)}
-                  className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  className={cn('flex-1 py-2 rounded-lg border text-sm font-medium transition-colors',
                     paperWidth === w
-                      ? 'border-orange-500 bg-orange-50 text-orange-700'
-                      : 'border-gray-200 text-gray-600 hover:border-gray-300'
-                  }`}
+                      ? isDark ? 'border-orange-500 bg-orange-900 text-orange-200' : 'border-orange-500 bg-orange-50 text-orange-700'
+                      : isDark ? 'border-gray-700 text-gray-300 hover:border-gray-600' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  )}
                 >
                   {w}mm
                 </button>
@@ -151,17 +155,17 @@ export default function PrinterSettings() {
         </div>
 
         {/* KOT printer */}
-        <div className="bg-white rounded-xl p-4 space-y-3">
-          <h3 className="font-semibold text-gray-800 text-sm">KOT Printer</h3>
-          <p className="text-xs text-gray-400">Separate printer for kitchen tickets. Leave blank to use the receipt printer.</p>
+        <div className={cn('rounded-xl p-4 space-y-3', isDark ? 'bg-gray-900' : 'bg-white')}>
+          <h3 className={cn('font-semibold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>KOT Printer</h3>
+          <p className={cn('text-xs', isDark ? 'text-gray-500' : 'text-gray-400')}>Separate printer for kitchen tickets. Leave blank to use the receipt printer.</p>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">KOT Printer Name</label>
+            <label className={cn('text-xs block mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>KOT Printer Name</label>
             <input
               type="text"
               value={kotPrinter}
               onChange={(e) => setKotPrinter(e.target.value)}
               placeholder="Same as receipt printer"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+              className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white')}
             />
           </div>
         </div>
@@ -170,7 +174,7 @@ export default function PrinterSettings() {
         <div className="flex gap-3">
           <button
             onClick={testPrint}
-            className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:border-gray-300 flex items-center justify-center gap-2"
+            className={cn('flex-1 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 border', isDark ? 'border-gray-700 text-gray-200 hover:bg-gray-800' : 'border-gray-200 text-gray-700 hover:border-gray-300')}
           >
             <Printer className="w-4 h-4" />
             Test Print
