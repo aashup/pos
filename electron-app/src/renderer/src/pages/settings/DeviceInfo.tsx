@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Copy, Check } from 'lucide-react'
+import { Copy, Check } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { ipc } from '../../bridge/ipc'
 import { useAuthStore } from '../../store/authStore'
 import { useSyncStore } from '../../store/syncStore'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
+import Header from '../../components/layout/Header'
 
 export default function DeviceInfo() {
   const navigate = useNavigate()
@@ -28,12 +29,7 @@ export default function DeviceInfo() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center gap-3 px-4 shrink-0">
-        <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <span className="font-bold text-orange-400 text-sm">Device Info</span>
-      </header>
+      <Header title="Device Info" />
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         <InfoCard label="Server URL" value={serverUrl ?? '—'} isDark={isDark} onCopy={serverUrl ? () => copy(serverUrl) : undefined} copied={copied} />

@@ -41,20 +41,20 @@ export default function ItemList() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
+      <header className={cn('h-12 flex items-center justify-between px-4 shrink-0', isDark ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 border-b border-gray-200')}>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/pos/billing')} className="text-gray-400 hover:text-white">
+          <button onClick={() => navigate('/pos/billing')} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}>
             <ArrowLeft className="w-4 h-4" />
           </button>
           <span className="font-bold text-orange-400 text-sm">Item Management</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => refetch()} className="text-gray-400 hover:text-white">
+          <button onClick={() => refetch()} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}>
             <RefreshCw className="w-4 h-4" />
           </button>
           <button
             onClick={() => navigate('/inventory/modifiers')}
-            className="flex items-center gap-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg"
+            className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'}`}
             title="Manage modifier groups"
           >
             <Settings className="w-3.5 h-3.5" />
@@ -62,7 +62,7 @@ export default function ItemList() {
           </button>
           <button
             onClick={() => navigate('/inventory/combos')}
-            className="flex items-center gap-1.5 text-xs bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg"
+            className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg ${isDark ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-900'}`}
             title="Manage combos"
           >
             <Plus className="w-3.5 h-3.5" />

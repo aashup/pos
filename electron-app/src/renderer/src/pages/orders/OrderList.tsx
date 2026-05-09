@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Search, RefreshCw } from 'lucide-react'
+import { Search, RefreshCw } from 'lucide-react'
 import { ordersApi } from '../../api/orders'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+import Header from '../../components/layout/Header'
 import type { SalesInvoice } from '../../types'
 
 const getStatusColors = (isDark: boolean): Record<string, string> => ({
@@ -49,17 +50,11 @@ export default function OrderList() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/pos/billing')} className="text-gray-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <span className="font-bold text-orange-400 text-sm">Orders</span>
-        </div>
-        <button onClick={() => refetch()} className="text-gray-400 hover:text-white">
-          <RefreshCw className="w-4 h-4" />
-        </button>
-      </header>
+      <Header
+        title="Orders"
+        onBack={() => navigate('/pos/billing')}
+        actions={[{ icon: RefreshCw, label: '', onClick: () => refetch() }]}
+      />
 
       {/* Tabs */}
       <div className={cn('flex px-4 gap-1 shrink-0 border-b', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100')}>

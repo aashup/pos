@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Users, RefreshCw, LayoutGrid, Map } from 'lucide-react'
+import { Users, RefreshCw, LayoutGrid, Map } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tablesApi } from '../../api/tables'
 import { ordersApi } from '../../api/orders'
 import { useCartStore } from '../../store/cartStore'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
+import Header from '../../components/layout/Header'
 import type { FloorPlan, DiningTable, TableStatus } from '../../types'
 
 // Canvas dimensions — tables use a 0–100 coordinate space
@@ -91,32 +92,14 @@ export default function TableSelection() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-100')}>
-      {/* Header */}
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/pos/billing')} className="text-gray-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <span className="font-bold text-orange-400 text-sm">Table Map</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setViewMode(viewMode === 'map' ? 'grid' : 'map')}
-            className="text-gray-400 hover:text-white flex items-center gap-1 text-xs"
-            title={viewMode === 'map' ? 'Switch to grid' : 'Switch to map'}
-          >
-            {viewMode === 'map' ? <LayoutGrid className="w-3.5 h-3.5" /> : <Map className="w-3.5 h-3.5" />}
-            {viewMode === 'map' ? 'Grid' : 'Map'}
-          </button>
-          <button
-            onClick={() => refetch()}
-            className="text-gray-400 hover:text-white flex items-center gap-1 text-xs"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Refresh
-          </button>
-        </div>
-      </header>
+      <Header
+        title="Table Map"
+        onBack={() => navigate('/pos/billing')}
+        actions={[
+          { icon: viewMode === 'map' ? LayoutGrid : Map, label: viewMode === 'map' ? 'Grid' : 'Map', onClick: () => setViewMode(viewMode === 'map' ? 'grid' : 'map'), className: 'text-xs' },
+          { icon: RefreshCw, label: 'Refresh', onClick: () => refetch(), className: 'text-xs' },
+        ]}
+      />
 
       {/* Floor plan tabs */}
       {floors.length > 1 && (

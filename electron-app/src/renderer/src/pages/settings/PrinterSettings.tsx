@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Printer, RefreshCw, CheckCircle } from 'lucide-react'
+import { Printer, RefreshCw } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
+import Header from '../../components/layout/Header'
 
 export default function PrinterSettings() {
   const navigate = useNavigate()
@@ -75,12 +76,7 @@ export default function PrinterSettings() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center gap-3 px-4 shrink-0">
-        <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <span className="font-bold text-orange-400 text-sm">Printer Settings</span>
-      </header>
+      <Header title="Printer Settings" />
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Load printers */}

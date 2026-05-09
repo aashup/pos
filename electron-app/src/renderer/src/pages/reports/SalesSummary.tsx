@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, TrendingUp, ShoppingBag, Receipt } from 'lucide-react'
+import { TrendingUp, ShoppingBag, Receipt } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { reportsApi } from '../../api/reports'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+import Header from '../../components/layout/Header'
 
 interface SalesSummaryData {
   date_from: string
@@ -61,14 +62,7 @@ export default function SalesSummary() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <span className="font-bold text-orange-400 text-sm">Sales Summary</span>
-        </div>
-      </header>
+      <Header title="Sales Summary" />
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Date filter */}

@@ -197,18 +197,18 @@ export default function ComboManager() {
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       {/* Header */}
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
+      <header className={cn('h-12 flex items-center justify-between px-4 shrink-0', isDark ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 border-b border-gray-200')}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/inventory/items')}
-            className="text-gray-400 hover:text-white"
+            className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
           <span className="font-bold text-orange-400 text-sm">Combo Management</span>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => refetch()} className="text-gray-400 hover:text-white">
+          <button onClick={() => refetch()} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}>
             <RefreshCw className="w-4 h-4" />
           </button>
           <button

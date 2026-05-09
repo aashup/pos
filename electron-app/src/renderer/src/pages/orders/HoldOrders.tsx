@@ -1,11 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Play, Loader2 } from 'lucide-react'
+import { Play, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ordersApi } from '../../api/orders'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import { useCartStore } from '../../store/cartStore'
+import Header from '../../components/layout/Header'
 import type { SalesInvoice } from '../../types'
 
 export default function HoldOrders() {
@@ -40,13 +41,7 @@ export default function HoldOrders() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center gap-3 px-4 shrink-0">
-        <button onClick={() => navigate('/pos/billing')} className="text-gray-400 hover:text-white">
-          <ArrowLeft className="w-4 h-4" />
-        </button>
-        <span className="font-bold text-orange-400 text-sm">Held Orders</span>
-        <span className="text-gray-500 text-xs ml-auto">{orders.length} held</span>
-      </header>
+      <Header title={`Held Orders (${orders.length})`} onBack={() => navigate('/pos/billing')} />
 
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (

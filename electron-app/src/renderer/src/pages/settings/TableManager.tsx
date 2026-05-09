@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Pencil, Trash2, ChevronRight, LayoutGrid, X, Check } from 'lucide-react'
+import { Plus, Pencil, Trash2, ChevronRight, LayoutGrid, X, Check } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tablesApi } from '../../api/tables'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
+import Header from '../../components/layout/Header'
 import type { FloorPlan, DiningTable } from '../../types'
 
 type Shape = 'square' | 'round' | 'rectangle'
@@ -59,14 +60,7 @@ export default function TableManager() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/pos/billing')} className="text-gray-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <span className="font-bold text-orange-400 text-sm">Table Manager</span>
-        </div>
-      </header>
+      <Header title="Table Manager" onBack={() => navigate('/pos/billing')} />
 
       <div className="flex-1 flex overflow-hidden">
         <div className={cn('w-56 shrink-0 border-r flex flex-col', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200')}>

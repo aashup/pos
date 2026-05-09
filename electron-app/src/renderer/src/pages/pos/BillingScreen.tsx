@@ -152,11 +152,11 @@ export default function BillingScreen() {
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       {/* Top bar */}
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
+      <header className={cn('h-12 flex items-center justify-between px-4 shrink-0', isDark ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 border-b border-gray-200')}>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setDrawerOpen(true)}
-            className="text-gray-400 hover:text-white"
+            className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}
             title="Menu"
           >
             <Menu className="w-4 h-4" />
@@ -170,7 +170,7 @@ export default function BillingScreen() {
                 className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
                   orderType === t
                     ? 'bg-orange-500 text-white'
-                    : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    : isDark ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
                 }`}
               >
                 {t === 'dine_in' ? 'Dine In' : t === 'takeaway' ? 'Takeaway' : 'Delivery'}
@@ -182,7 +182,7 @@ export default function BillingScreen() {
         <div className="flex items-center gap-3">
           <button
             onClick={toggleTheme}
-            className="text-gray-400 hover:text-white"
+            className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
@@ -190,14 +190,14 @@ export default function BillingScreen() {
           <button
             onClick={handleSyncNow}
             disabled={syncing}
-            className="flex items-center gap-1 text-gray-400 hover:text-white text-xs"
+            className={`flex items-center gap-1 text-xs ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}`}
             title="F5"
           >
             <RotateCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
             {syncStatus === 'syncing' ? 'Syncing…' : 'Sync'}
           </button>
-          <span className="text-gray-400 text-xs">{user?.name}</span>
-          <button onClick={logout} className="text-gray-400 hover:text-white" title="Logout">
+          <span className={isDark ? 'text-gray-400 text-xs' : 'text-gray-600 text-xs'}>{user?.name}</span>
+          <button onClick={logout} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'} title="Logout">
             <LogOut className="w-4 h-4" />
           </button>
         </div>

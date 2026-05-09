@@ -1,12 +1,13 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Printer, RotateCcw, Loader2, XCircle } from 'lucide-react'
+import { Printer, RotateCcw, Loader2, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ordersApi } from '../../api/orders'
 import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import { useCartStore } from '../../store/cartStore'
+import Header from '../../components/layout/Header'
 import type { SalesInvoice } from '../../types'
 
 export default function OrderDetail() {
@@ -81,29 +82,15 @@ export default function OrderDetail() {
 
   const lines = order.lines ?? []
 
+  const actions = order.status === 'confirmed' ? [{ icon: Printer, label: 'Reprint', onClick: handleReprint }] : []
+
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/pos/orders')} className="text-gray-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <span className="font-bold text-orange-400 text-sm">
-            {order.invoice_number ?? `Draft #${order.id.slice(-6)}`}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {order.status === 'confirmed' && (
-            <button
-              onClick={handleReprint}
-              className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white"
-            >
-              <Printer className="w-3.5 h-3.5" />
-              Reprint
-            </button>
-          )}
-        </div>
-      </header>
+      <Header
+        title={order.invoice_number ?? `Draft #${order.id.slice(-6)}`}
+        onBack={() => navigate('/pos/orders')}
+        actions={actions}
+      />
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Order info */}

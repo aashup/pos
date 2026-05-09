@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Printer } from 'lucide-react'
+import { Printer } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { reportsApi } from '../../api/reports'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+import Header from '../../components/layout/Header'
 
 interface DayCloseData {
   date: string
@@ -39,21 +40,10 @@ export default function DayClose() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white">
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <span className="font-bold text-orange-400 text-sm">Day Close Report</span>
-        </div>
-        <button
-          onClick={() => window.print()}
-          className="text-gray-400 hover:text-white flex items-center gap-1 text-xs"
-        >
-          <Printer className="w-3.5 h-3.5" />
-          Print
-        </button>
-      </header>
+      <Header
+        title="Day Close Report"
+        actions={[{ icon: Printer, label: 'Print', onClick: () => window.print() }]}
+      />
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Date picker */}
