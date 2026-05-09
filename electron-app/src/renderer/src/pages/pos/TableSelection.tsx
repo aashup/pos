@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { tablesApi } from '../../api/tables'
 import { ordersApi } from '../../api/orders'
 import { useCartStore } from '../../store/cartStore'
+import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import type { FloorPlan, DiningTable, TableStatus } from '../../types'
 
@@ -19,16 +20,18 @@ const TABLE_SIZE: Record<DiningTable['shape'], { w: number; h: number }> = {
   rectangle: { w: 100, h: 60 },
 }
 
-const STATUS_STYLE: Record<TableStatus, { bg: string; border: string; dot: string; label: string }> = {
-  vacant:   { bg: '#f0fdf4', border: '#86efac', dot: '#4ade80', label: 'Vacant' },
-  occupied: { bg: '#fef2f2', border: '#fca5a5', dot: '#f87171', label: 'Occupied' },
-  reserved: { bg: '#fefce8', border: '#fde047', dot: '#facc15', label: 'Reserved' },
-  cleaning: { bg: '#eff6ff', border: '#93c5fd', dot: '#60a5fa', label: 'Cleaning' },
-}
+const STATUS_STYLE = (isDark: boolean): Record<TableStatus, { bg: string; border: string; dot: string; label: string }> => ({
+  vacant:   { bg: isDark ? '#064e3b' : '#f0fdf4', border: isDark ? '#10b981' : '#86efac', dot: '#4ade80', label: 'Vacant' },
+  occupied: { bg: isDark ? '#4c0519' : '#fef2f2', border: isDark ? '#f87171' : '#fca5a5', dot: '#f87171', label: 'Occupied' },
+  reserved: { bg: isDark ? '#422006' : '#fefce8', border: isDark ? '#facc15' : '#fde047', dot: '#facc15', label: 'Reserved' },
+  cleaning: { bg: isDark ? '#0c2340' : '#eff6ff', border: isDark ? '#60a5fa' : '#93c5fd', dot: '#60a5fa', label: 'Cleaning' },
+})
 
 export default function TableSelection() {
   const navigate = useNavigate()
   const { setOrder } = useCartStore()
+  const { theme } = useThemeStore()
+  const isDark = theme === 'dark'
   const [activeFloor, setActiveFloor] = useState<string | null>(null)
   const [selecting, setSelecting] = useState<string | null>(null)
   const [paxMap, setPaxMap] = useState<Record<string, number>>({})
@@ -84,10 +87,12 @@ export default function TableSelection() {
 
   const loading = isLoading || tablesLoading
 
+  const statusStyle = STATUS_STYLE(isDark)
+
   return (
-    <div className="h-screen flex flex-col bg-gray-100">
+    <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-950">
       {/* Header */}
-      <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
+      <header className="h-12 bg-gray-900 dark:bg-gray-950 text-white flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/pos/billing')} className="text-gray-400 hover:text-white">
             <ArrowLeft className="w-4 h-4" />
@@ -115,7 +120,7 @@ export default function TableSelection() {
 
       {/* Floor plan tabs */}
       {floors.length > 1 && (
-        <div className="bg-white border-b border-gray-200 flex gap-1 px-4 py-2 overflow-x-auto shrink-0">
+        <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex gap-1 px-4 py-2 overflow-x-auto shrink-0">
           {floors.map((f) => (
             <button
               key={f.id}
@@ -124,7 +129,7 @@ export default function TableSelection() {
                 'px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors',
                 (activeFloor ?? floors[0]?.id) === f.id
                   ? 'bg-orange-500 text-white'
-                  : 'text-gray-600 hover:bg-gray-100',
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800',
               )}
             >
               {f.name}
@@ -134,22 +139,22 @@ export default function TableSelection() {
       )}
 
       {/* Legend */}
-      <div className="px-4 py-1.5 flex items-center gap-4 text-xs text-gray-500 bg-white border-b border-gray-100 shrink-0">
-        {Object.entries(STATUS_STYLE).map(([status, cfg]) => (
+      <div className="px-4 py-1.5 flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-900 border-b border-gray-100 dark:border-gray-800 shrink-0">
+        {Object.entries(statusStyle).map(([status, cfg]) => (
           <span key={status} className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full" style={{ background: cfg.dot }} />
             {cfg.label}
           </span>
         ))}
-        <span className="ml-auto text-gray-400">{visibleTables.length} tables</span>
+        <span className="ml-auto text-gray-400 dark:text-gray-500">{visibleTables.length} tables</span>
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto bg-gray-50 dark:bg-gray-900">
         {loading ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 text-sm">Loading…</div>
+          <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">Loading…</div>
         ) : visibleTables.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-gray-400 text-sm">
+          <div className="flex items-center justify-center h-40 text-gray-400 dark:text-gray-500 text-sm">
             No tables found. Run a sync to load tables.
           </div>
         ) : viewMode === 'map' ? (
@@ -159,6 +164,8 @@ export default function TableSelection() {
             paxMap={paxMap}
             onPaxChange={(id, v) => setPaxMap((p) => ({ ...p, [id]: v }))}
             onSelect={handleSelectTable}
+            isDark={isDark}
+            statusStyle={statusStyle}
           />
         ) : (
           <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -170,6 +177,8 @@ export default function TableSelection() {
                 onPaxChange={(v) => setPaxMap((p) => ({ ...p, [table.id]: v }))}
                 onSelect={() => handleSelectTable(table)}
                 loading={selecting === table.id}
+                isDark={isDark}
+                statusStyle={statusStyle}
               />
             ))}
           </div>
@@ -187,9 +196,11 @@ interface TableMapProps {
   paxMap: Record<string, number>
   onPaxChange: (id: string, v: number) => void
   onSelect: (t: DiningTable) => void
+  isDark: boolean
+  statusStyle: Record<TableStatus, { bg: string; border: string; dot: string; label: string }>
 }
 
-function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect }: TableMapProps) {
+function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect, isDark, statusStyle }: TableMapProps) {
   // Find the actual coordinate range so we can scale properly
   const xs = tables.map((t) => t.pos_x)
   const ys = tables.map((t) => t.pos_y)
@@ -204,7 +215,7 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect }: TableMap
   return (
     <div className="flex items-start justify-center p-4 min-h-full">
       <div
-        className="relative bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden"
+        className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden"
         style={{ width: CANVAS_W, height: CANVAS_H, minWidth: CANVAS_W }}
       >
         {/* Grid lines */}
@@ -214,7 +225,7 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect }: TableMap
               key={`v${i}`}
               x1={(CANVAS_W / 10) * i} y1={0}
               x2={(CANVAS_W / 10) * i} y2={CANVAS_H}
-              stroke="#d1d5db" strokeWidth={1}
+              stroke={isDark ? '#4b5563' : '#d1d5db'} strokeWidth={1}
             />
           ))}
           {Array.from({ length: 7 }, (_, i) => (
@@ -222,7 +233,7 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect }: TableMap
               key={`h${i}`}
               x1={0} y1={(CANVAS_H / 7) * i}
               x2={CANVAS_W} y2={(CANVAS_H / 7) * i}
-              stroke="#d1d5db" strokeWidth={1}
+              stroke={isDark ? '#4b5563' : '#d1d5db'} strokeWidth={1}
             />
           ))}
         </svg>
@@ -234,7 +245,7 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect }: TableMap
           const cy = scaleY(table.pos_y)
           const isClickable = table.status === 'vacant' || table.status === 'occupied'
           const isLoading = selecting === table.id
-          const cfg = STATUS_STYLE[table.status]
+          const cfg = statusStyle[table.status]
           const pax = paxMap[table.id] ?? 1
 
           return (
@@ -275,17 +286,17 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect }: TableMap
                   {/* Pax selector for vacant tables — shown as overlay on hover */}
                   {table.status === 'vacant' && (
                     <div
-                      className="absolute -bottom-7 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-white border border-gray-200 rounded-full px-1 py-0.5 shadow-sm z-10"
+                      className="absolute -bottom-7 left-1/2 -translate-x-1/2 flex items-center gap-0.5 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-full px-1 py-0.5 shadow-sm z-10"
                       onClick={(e) => e.stopPropagation()}
                     >
                       <button
-                        className="w-4 h-4 rounded-full border border-gray-300 text-gray-600 flex items-center justify-center hover:bg-gray-50"
+                        className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-500 text-gray-600 dark:text-gray-300 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600"
                         style={{ fontSize: 10 }}
                         onClick={() => onPaxChange(table.id, Math.max(1, pax - 1))}
                       >–</button>
-                      <span className="text-gray-700 font-medium" style={{ fontSize: 10, minWidth: 14, textAlign: 'center' }}>{pax}</span>
+                      <span className="text-gray-700 dark:text-gray-200 font-medium" style={{ fontSize: 10, minWidth: 14, textAlign: 'center' }}>{pax}</span>
                       <button
-                        className="w-4 h-4 rounded-full border border-gray-300 text-gray-600 flex items-center justify-center hover:bg-gray-50"
+                        className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-500 text-gray-600 dark:text-gray-300 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-600"
                         style={{ fontSize: 10 }}
                         onClick={() => onPaxChange(table.id, Math.min(table.capacity, pax + 1))}
                       >+</button>
@@ -309,10 +320,12 @@ interface TableCardProps {
   onPaxChange: (v: number) => void
   onSelect: () => void
   loading: boolean
+  isDark: boolean
+  statusStyle: Record<TableStatus, { bg: string; border: string; dot: string; label: string }>
 }
 
-function TableCard({ table, pax, onPaxChange, onSelect, loading }: TableCardProps) {
-  const cfg = STATUS_STYLE[table.status]
+function TableCard({ table, pax, onPaxChange, onSelect, loading, isDark, statusStyle }: TableCardProps) {
+  const cfg = statusStyle[table.status]
   const isOccupied = table.status === 'occupied'
   const isVacant = table.status === 'vacant'
   const isClickable = isVacant || isOccupied
@@ -329,24 +342,24 @@ function TableCard({ table, pax, onPaxChange, onSelect, loading }: TableCardProp
       style={{ background: cfg.bg, borderColor: cfg.border }}
     >
       <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full" style={{ background: cfg.dot }} />
-      <p className="font-bold text-gray-800 text-base truncate pr-4">{table.name}</p>
-      <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1">
+      <p className={cn('font-bold text-base truncate pr-4', isDark ? 'text-gray-200' : 'text-gray-800')}>{table.name}</p>
+      <p className={cn('text-xs mt-0.5 flex items-center gap-1', isDark ? 'text-gray-400' : 'text-gray-500')}>
         <Users className="w-3 h-3" />{table.capacity} seats
       </p>
-      <p className="text-xs font-medium mt-2 text-gray-600">{cfg.label}</p>
+      <p className={cn('text-xs font-medium mt-2', isDark ? 'text-gray-300' : 'text-gray-600')}>{cfg.label}</p>
 
       {isVacant && (
         <div className="mt-3 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-          <span className="text-xs text-gray-500 mr-1">Guests:</span>
-          <button onClick={() => onPaxChange(Math.max(1, pax - 1))} className="w-5 h-5 rounded border border-gray-300 bg-white text-xs flex items-center justify-center hover:bg-gray-50">–</button>
-          <span className="text-xs font-semibold w-4 text-center">{pax}</span>
-          <button onClick={() => onPaxChange(Math.min(table.capacity, pax + 1))} className="w-5 h-5 rounded border border-gray-300 bg-white text-xs flex items-center justify-center hover:bg-gray-50">+</button>
+          <span className={cn('text-xs mr-1', isDark ? 'text-gray-400' : 'text-gray-500')}>Guests:</span>
+          <button onClick={() => onPaxChange(Math.max(1, pax - 1))} className={cn('w-5 h-5 rounded border text-xs flex items-center justify-center', isDark ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')}>–</button>
+          <span className={cn('text-xs font-semibold w-4 text-center', isDark ? 'text-gray-300' : 'text-gray-700')}>{pax}</span>
+          <button onClick={() => onPaxChange(Math.min(table.capacity, pax + 1))} className={cn('w-5 h-5 rounded border text-xs flex items-center justify-center', isDark ? 'border-gray-600 bg-gray-700 text-gray-300 hover:bg-gray-600' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50')}>+</button>
         </div>
       )}
 
       {loading && (
-        <div className="absolute inset-0 rounded-2xl bg-white/60 flex items-center justify-center">
-          <RefreshCw className="w-4 h-4 animate-spin text-gray-500" />
+        <div className={cn('absolute inset-0 rounded-2xl flex items-center justify-center', isDark ? 'bg-gray-700/60 text-gray-400' : 'bg-white/60 text-gray-500')}>
+          <RefreshCw className="w-4 h-4 animate-spin" />
         </div>
       )}
     </button>

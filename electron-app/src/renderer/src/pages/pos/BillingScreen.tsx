@@ -264,7 +264,7 @@ export default function BillingScreen() {
               <DrawerLink icon={ClipboardList} label="Order History" onClick={() => { setDrawerOpen(false); navigate('/pos/orders') }} />
               <DrawerLink icon={PauseCircle} label="Held Orders"    onClick={() => { setDrawerOpen(false); navigate('/pos/hold') }} />
               <div className="border-t border-gray-700 my-2" />
-              <DrawerLink icon={Package}   label="Stock Summary"  onClick={() => { setDrawerOpen(false); navigate('/inventory/stock') }} />
+              <DrawerLink icon={Package}   label="Items"          onClick={() => { setDrawerOpen(false); navigate('/inventory/items') }} />
               <div className="border-t border-gray-700 my-2" />
               <DrawerLink icon={BarChart2} label="Sales Summary"  onClick={() => { setDrawerOpen(false); navigate('/reports/sales') }} />
               <DrawerLink icon={FileText} label="Item-Wise Sales" onClick={() => { setDrawerOpen(false); navigate('/reports/items') }} />

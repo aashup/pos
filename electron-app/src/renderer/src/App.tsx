@@ -9,6 +9,12 @@ import { ipc } from './bridge/ipc'
 // Apply persisted theme before first render
 applyTheme(useThemeStore.getState().theme)
 
+// Subscribe to theme changes and apply globally
+useThemeStore.subscribe(
+  (state) => state.theme,
+  (theme) => applyTheme(theme),
+)
+
 // Pages
 import Login from './pages/auth/Login'
 import SetupWizard from './pages/setup/SetupWizard'
@@ -25,7 +31,6 @@ import TableManager from './pages/settings/TableManager'
 import OrderList from './pages/orders/OrderList'
 import OrderDetail from './pages/orders/OrderDetail'
 import HoldOrders from './pages/orders/HoldOrders'
-import StockSummary from './pages/inventory/StockSummary'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -69,8 +74,6 @@ function AppRoutes() {
       <Route path="/pos/orders"         element={<RequireAuth><OrderList /></RequireAuth>} />
       <Route path="/pos/orders/:id"    element={<RequireAuth><OrderDetail /></RequireAuth>} />
       <Route path="/pos/hold"          element={<RequireAuth><HoldOrders /></RequireAuth>} />
-
-      <Route path="/inventory/stock"   element={<RequireAuth><StockSummary /></RequireAuth>} />
 
       <Route path="/settings/device"   element={<RequireAuth><DeviceInfo /></RequireAuth>} />
       <Route path="/settings/printer"  element={<RequireAuth><PrinterSettings /></RequireAuth>} />
