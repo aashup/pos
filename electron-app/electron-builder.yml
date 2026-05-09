@@ -1,0 +1,50 @@
+appId: com.zazzy.pos
+productName: Zazzy POS
+copyright: Copyright © 2024 Zazzy
+
+directories:
+  buildResources: build
+  output: dist
+
+files:
+  - out/**/*
+  - node_modules/**/*
+  - package.json
+
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+  - node_modules/node-thermal-printer/**/*
+
+mac:
+  category: public.app-category.business
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  icon: build/icon.icns
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Office
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Zazzy POS
+
+publish:
+  provider: github
+  owner: zazzy
+  repo: pos
+
+extraMetadata:
+  main: out/main/index.js

@@ -1,0 +1,89 @@
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useAuthStore } from './store/authStore'
+import { useSyncStore } from './store/syncStore'
+import { ipc } from './bridge/ipc'
+
+// Pages
+import Login from './pages/auth/Login'
+import SetupWizard from './pages/setup/SetupWizard'
+import BillingScreen from './pages/pos/BillingScreen'
+import TableSelection from './pages/pos/TableSelection'
+import KitchenDisplay from './pages/kitchen/KitchenDisplay'
+import SalesSummary from './pages/reports/SalesSummary'
+import DayClose from './pages/reports/DayClose'
+import ItemWise from './pages/reports/ItemWise'
+import GSTReport from './pages/reports/GSTReport'
+import DeviceInfo from './pages/settings/DeviceInfo'
+import PrinterSettings from './pages/settings/PrinterSettings'
+import OrderList from './pages/orders/OrderList'
+import OrderDetail from './pages/orders/OrderDetail'
+import HoldOrders from './pages/orders/HoldOrders'
+import StockSummary from './pages/inventory/StockSummary'
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+})
+
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, serverUrl } = useAuthStore()
+  if (!serverUrl) return <Navigate to="/setup" replace />
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
+function AppRoutes() {
+  const { isAuthenticated } = useAuthStore()
+  const { setStatus, setSyncResult } = useSyncStore()
+
+  useEffect(() => {
+    if (typeof window.electronAPI === 'undefined') return
+    const unsub = ipc.sync.onStatusChange((status: unknown) => {
+      const s = status as { status?: string; lastSyncAt?: string; errors?: string[] }
+      if (s?.status === 'syncing') setStatus('syncing')
+      else setSyncResult({ lastSyncAt: s?.lastSyncAt ?? null, errors: s?.errors ?? [] })
+    })
+    return unsub
+  }, [setStatus, setSyncResult])
+
+  return (
+    <Routes>
+      <Route path="/setup"  element={<SetupWizard />} />
+      <Route path="/login"  element={<Login />} />
+      <Route path="/kitchen" element={<KitchenDisplay />} />
+
+      <Route path="/pos/billing" element={<RequireAuth><BillingScreen /></RequireAuth>} />
+      <Route path="/pos/tables"  element={<RequireAuth><TableSelection /></RequireAuth>} />
+
+      <Route path="/reports/sales"      element={<RequireAuth><SalesSummary /></RequireAuth>} />
+      <Route path="/reports/day-close"  element={<RequireAuth><DayClose /></RequireAuth>} />
+      <Route path="/reports/items"      element={<RequireAuth><ItemWise /></RequireAuth>} />
+      <Route path="/reports/gst"        element={<RequireAuth><GSTReport /></RequireAuth>} />
+
+      <Route path="/pos/orders"         element={<RequireAuth><OrderList /></RequireAuth>} />
+      <Route path="/pos/orders/:id"    element={<RequireAuth><OrderDetail /></RequireAuth>} />
+      <Route path="/pos/hold"          element={<RequireAuth><HoldOrders /></RequireAuth>} />
+
+      <Route path="/inventory/stock"   element={<RequireAuth><StockSummary /></RequireAuth>} />
+
+      <Route path="/settings/device"   element={<RequireAuth><DeviceInfo /></RequireAuth>} />
+      <Route path="/settings/printer"  element={<RequireAuth><PrinterSettings /></RequireAuth>} />
+
+      <Route
+        path="*"
+        element={<Navigate to={isAuthenticated ? '/pos/billing' : '/login'} replace />}
+      />
+    </Routes>
+  )
+}
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <HashRouter>
+        <AppRoutes />
+      </HashRouter>
+    </QueryClientProvider>
+  )
+}

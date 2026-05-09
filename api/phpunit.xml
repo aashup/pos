@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/bootstrap.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <!--
+            These are the ENV seen by Laravel when PHPUnit is running locally or in CI.
+
+            If you add/change anything in .env, Beanstalk ENV, or Param Store when we move to ECS;
+            to make your code work, e.g., defining a new ENV, you MUST also define it here with a value appropriate for testing.
+        -->
+        <server name="APP_ENV" value="testing"/>
+        <server name="APP_KEY" value="base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="/>
+        <server name="BCRYPT_ROUNDS" value="4"/>
+        <server name="CACHE_DRIVER" value="array"/>
+        <server name="CACHE_STORE" value="array"/>
+        <!--
+            Use MySQL for tests (supports spatial types).
+            - Local: 'testing' database created by docker/local/01-create-databases.sql
+            - CI: Job runs in a container, so 'mysql' hostname resolves via Docker networking
+        -->
+        <server name="DB_CONNECTION" value="mysql"/>
+        <server name="DB_HOST" value="mysql"/>
+        <server name="DB_PORT" value="3306"/>
+        <server name="DB_DATABASE" value="testing"/>
+        <server name="DB_USERNAME" value="root"/>
+        <server name="DB_PASSWORD" value="tiger"/>
+        <server name="MAIL_MAILER" value="array"/>
+        <server name="QUEUE_CONNECTION" value="sync"/>
+        <server name="SCHEDULE_CACHE_DRIVER" value="array"/>
+        <server name="SESSION_DRIVER" value="array"/>
+        <server name="TELESCOPE_ENABLED" value="false"/>
+        <server name="LOG_CHANNEL" value="single"/>
+        <!-- Disable Datadog APM tracing in tests -->
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+    </php>
+</phpunit>

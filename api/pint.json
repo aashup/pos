@@ -1,0 +1,9 @@
+{
+    "preset": "laravel",
+    "rules": {
+        "array_syntax": {
+            "syntax": "short"
+        },
+        "ordered_imports": true
+    }
+}
