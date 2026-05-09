@@ -3,7 +3,11 @@ import { useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useAuthStore } from './store/authStore'
 import { useSyncStore } from './store/syncStore'
+import { useThemeStore, applyTheme } from './store/themeStore'
 import { ipc } from './bridge/ipc'
+
+// Apply persisted theme before first render
+applyTheme(useThemeStore.getState().theme)
 
 // Pages
 import Login from './pages/auth/Login'
@@ -17,6 +21,7 @@ import ItemWise from './pages/reports/ItemWise'
 import GSTReport from './pages/reports/GSTReport'
 import DeviceInfo from './pages/settings/DeviceInfo'
 import PrinterSettings from './pages/settings/PrinterSettings'
+import TableManager from './pages/settings/TableManager'
 import OrderList from './pages/orders/OrderList'
 import OrderDetail from './pages/orders/OrderDetail'
 import HoldOrders from './pages/orders/HoldOrders'
@@ -69,6 +74,7 @@ function AppRoutes() {
 
       <Route path="/settings/device"   element={<RequireAuth><DeviceInfo /></RequireAuth>} />
       <Route path="/settings/printer"  element={<RequireAuth><PrinterSettings /></RequireAuth>} />
+      <Route path="/settings/tables"   element={<RequireAuth><TableManager /></RequireAuth>} />
 
       <Route
         path="*"

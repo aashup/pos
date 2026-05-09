@@ -3,12 +3,14 @@ import { useNavigate } from 'react-router-dom'
 import {
   RotateCw, LogOut, Menu, X,
   TableIcon, BarChart2, ChefHat, Info, Printer, FileText,
-  Download, ClipboardList, PauseCircle, Package,
+  Download, ClipboardList, PauseCircle, Package, Settings,
+  Sun, Moon,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
 import { useCartStore } from '../../store/cartStore'
 import { useSyncStore } from '../../store/syncStore'
+import { useThemeStore } from '../../store/themeStore'
 import { ordersApi } from '../../api/orders'
 import { ipc } from '../../bridge/ipc'
 import { formatCurrency } from '../../lib/utils'
@@ -21,6 +23,7 @@ export default function BillingScreen() {
   const { user, logout } = useAuthStore()
   const { orderId, orderType, tableId, totals, lines, setOrder, clearOrder } = useCartStore()
   const { status: syncStatus } = useSyncStore()
+  const { theme, toggleTheme } = useThemeStore()
   const [sendingKot, setSendingKot] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
   const [syncing, setSyncing] = useState(false)
@@ -146,7 +149,7 @@ export default function BillingScreen() {
   }, [navigate, handleSendKot, lines.length, orderType])
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
       {/* Top bar */}
       <header className="h-12 bg-gray-900 text-white flex items-center justify-between px-4 shrink-0">
         <div className="flex items-center gap-3">
@@ -177,6 +180,13 @@ export default function BillingScreen() {
 
         <div className="flex items-center gap-3">
           <button
+            onClick={toggleTheme}
+            className="text-gray-400 hover:text-white"
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          >
+            {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+          </button>
+          <button
             onClick={handleSyncNow}
             disabled={syncing}
             className="flex items-center gap-1 text-gray-400 hover:text-white text-xs"
@@ -194,7 +204,7 @@ export default function BillingScreen() {
 
       {/* Main 2-column layout */}
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 overflow-hidden bg-gray-50">
+        <div className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-950">
           <ItemGrid />
         </div>
         <div className="w-80 xl:w-96 shrink-0">
@@ -261,6 +271,7 @@ export default function BillingScreen() {
               <DrawerLink icon={BarChart2} label="Day Close"      onClick={() => { setDrawerOpen(false); navigate('/reports/day-close') }} />
               <DrawerLink icon={FileText} label="GST Summary"     onClick={() => { setDrawerOpen(false); navigate('/reports/gst') }} />
               <div className="border-t border-gray-700 my-2" />
+              <DrawerLink icon={Settings} label="Table Manager"    onClick={() => { setDrawerOpen(false); navigate('/settings/tables') }} />
               <DrawerLink icon={Printer} label="Printer Settings" onClick={() => { setDrawerOpen(false); navigate('/settings/printer') }} />
               <DrawerLink icon={Info}    label="Device Info"      onClick={() => { setDrawerOpen(false); navigate('/settings/device') }} />
             </nav>
