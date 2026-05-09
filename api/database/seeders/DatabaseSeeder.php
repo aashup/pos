@@ -27,6 +27,9 @@ class DatabaseSeeder extends Seeder
             // Parties (observer auto-creates ledgers)
             PartySeeder::class,
 
+            // Restaurant POS
+            FloorPlanSeeder::class,
+
         ]);
 
         // Local-only seeders — dummy invoice data for development

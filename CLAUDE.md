@@ -41,6 +41,10 @@ npm run build        # outputs to out/
 - **HashRouter** — Electron loads `file://` URLs, history router doesn't work
 - **schema.sql uses `?raw` import** — NOT `readFileSync` (causes ENOENT in packaged builds)
 
+## Database Migration Policy
+
+**Do NOT create new migrations** — the project is in initial phase. Always edit the original migration file directly, then re-run `php artisan migrate:fresh --seed` to rebuild the database.
+
 ## Shared Laravel Backend
 
 The `api/` shares the same MySQL database and codebase as `/Users/aashu/erp/api`.
