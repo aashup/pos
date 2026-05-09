@@ -41,6 +41,10 @@ use App\Http\Controllers\Api\V1\SyncController;
 use App\Http\Controllers\Api\V1\ThermalTemplateController;
 use App\Http\Controllers\Api\V1\UnitController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\ComboController;
+use App\Http\Controllers\Api\V1\ItemVariantController;
+use App\Http\Controllers\Api\V1\MediaController;
+use App\Http\Controllers\Api\V1\ModifierGroupController;
 use App\Http\Controllers\Api\V1\VoucherController;
 use Illuminate\Support\Facades\Route;
 
@@ -205,6 +209,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Recipes
     Route::apiResource('recipes', RecipeController::class);
+
+    // Restaurant — Variants, Modifiers, Combos, Media
+    Route::apiResource('item-variants', ItemVariantController::class);
+    Route::apiResource('modifier-groups', ModifierGroupController::class);
+    Route::post('modifier-groups/{modifierGroup}/modifiers', [ModifierGroupController::class, 'storeModifier']);
+    Route::patch('modifier-groups/{modifierGroup}/modifiers/{modifier}', [ModifierGroupController::class, 'updateModifier']);
+    Route::delete('modifier-groups/{modifierGroup}/modifiers/{modifier}', [ModifierGroupController::class, 'destroyModifier']);
+    Route::apiResource('combos', ComboController::class);
+    Route::get('media', [MediaController::class, 'index']);
+    Route::post('media', [MediaController::class, 'store']);
+    Route::delete('media/{medium}', [MediaController::class, 'destroy']);
+    Route::patch('media/{medium}/set-primary', [MediaController::class, 'setPrimary']);
 
     // Restaurant — KOTs (Kitchen Order Tickets)
     Route::patch('kots/{kot}/status', [KotController::class, 'updateStatus']);

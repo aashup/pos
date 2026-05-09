@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import { calcGST, calcRoundOff } from '../lib/utils'
-import type { CartLine, OrderType } from '../types'
+import type { CartLine, Combo, Item, ItemVariant, OrderType, SelectedModifier } from '../types'
 
 interface CartTotals {
   subtotal: number
@@ -35,6 +35,8 @@ interface CartState {
 
   // Cart operations
   addItem: (item: { id: string; name: string; selling_price: number; unit: string; cgst: number; sgst: number; igst: number }) => void
+  addVariantItem: (item: Item, variant: ItemVariant | null, modifiers: SelectedModifier[]) => void
+  addCombo: (combo: Combo, modifiers: SelectedModifier[]) => void
   updateQty: (lineId: string, qty: number) => void
   removeItem: (lineId: string) => void
   setLineNotes: (lineId: string, notes: string) => void
@@ -51,7 +53,8 @@ function computeTotals(lines: CartLine[], isInterState: boolean, discountPct: nu
   let subtotal = 0, cgstTotal = 0, sgstTotal = 0, igstTotal = 0
 
   for (const l of lines) {
-    const taxable = l.quantity * l.rate * (1 - (l.discountPct + discountPct) / 100)
+    const base = l.quantity * (l.rate + l.modifiersTotal)
+    const taxable = base * (1 - (l.discountPct + discountPct) / 100)
     const gst = calcGST(taxable, l.gstRate, isInterState)
     subtotal += taxable
     cgstTotal += gst.cgst
@@ -106,8 +109,10 @@ export const useCartStore = create<CartState>((set, get) => ({
     const { lines, isInterState, discountPct } = get()
     const gstRate = item.cgst + item.sgst + item.igst
 
-    // Increment quantity if same item already in cart (and not yet sent)
-    const existing = lines.find((l) => l.itemId === item.id && l.kotStatus === 'pending')
+    // Increment quantity if same bare item (no variant, no modifiers) already in cart and not yet sent
+    const existing = lines.find(
+      (l) => l.itemId === item.id && !l.variantId && l.selectedModifiers.length === 0 && l.kotStatus === 'pending'
+    )
     let newLines: CartLine[]
 
     if (existing) {
@@ -118,18 +123,76 @@ export const useCartStore = create<CartState>((set, get) => ({
       const newLine: CartLine = {
         id: uuidv4(),
         itemId: item.id,
+        comboId: null,
         name: item.name,
-        rate: item.selling_price,
+        rate: item.selling_price ?? 0,
         unit: item.unit,
         gstRate,
         quantity: 1,
         discountPct: 0,
+        modifiersTotal: 0,
         kotStatus: 'pending',
         notes: '',
+        variantId: null,
+        variantName: null,
+        selectedModifiers: [],
       }
       newLines = [...lines, newLine]
     }
 
+    set({ lines: newLines, totals: computeTotals(newLines, isInterState, discountPct) })
+  },
+
+  addVariantItem: (item, variant, modifiers) => {
+    const { lines, isInterState, discountPct } = get()
+    const gstRate = item.cgst + item.sgst + item.igst
+    const rate = variant?.price_override ?? item.selling_price ?? 0
+    const modifiersTotal = modifiers.reduce((sum, m) => sum + m.price, 0)
+
+    const newLine: CartLine = {
+      id: uuidv4(),
+      itemId: item.id,
+      comboId: null,
+      name: item.name,
+      rate,
+      unit: item.unit,
+      gstRate,
+      quantity: 1,
+      discountPct: 0,
+      modifiersTotal,
+      kotStatus: 'pending',
+      notes: '',
+      variantId: variant?.id ?? null,
+      variantName: variant?.name ?? null,
+      selectedModifiers: modifiers,
+    }
+    const newLines = [...lines, newLine]
+    set({ lines: newLines, totals: computeTotals(newLines, isInterState, discountPct) })
+  },
+
+  addCombo: (combo, modifiers) => {
+    const { lines, isInterState, discountPct } = get()
+    const gstRate = combo.cgst + combo.sgst + combo.igst
+    const modifiersTotal = modifiers.reduce((sum, m) => sum + m.price, 0)
+
+    const newLine: CartLine = {
+      id: uuidv4(),
+      itemId: '',
+      comboId: combo.id,
+      name: combo.name,
+      rate: combo.price,
+      unit: 'NOS',
+      gstRate,
+      quantity: 1,
+      discountPct: 0,
+      modifiersTotal,
+      kotStatus: 'pending',
+      notes: '',
+      variantId: null,
+      variantName: null,
+      selectedModifiers: modifiers,
+    }
+    const newLines = [...lines, newLine]
     set({ lines: newLines, totals: computeTotals(newLines, isInterState, discountPct) })
   },
 

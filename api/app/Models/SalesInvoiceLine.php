@@ -27,6 +27,9 @@ class SalesInvoiceLine extends Model
         'sgst',
         'igst',
         'line_total',
+        'item_variant_id',
+        'combo_id',
+        'modifiers_total',
         'kot_status',
         'notes',
         'created_by',
@@ -46,6 +49,7 @@ class SalesInvoiceLine extends Model
             'sgst' => 'decimal:2',
             'igst' => 'decimal:2',
             'line_total' => 'decimal:2',
+            'modifiers_total' => 'decimal:2',
         ];
     }
 
@@ -77,5 +81,20 @@ class SalesInvoiceLine extends Model
     public function updater()
     {
         return $this->belongsTo(User::class, 'updated_by');
+    }
+
+    public function variant()
+    {
+        return $this->belongsTo(ItemVariant::class, 'item_variant_id');
+    }
+
+    public function combo()
+    {
+        return $this->belongsTo(Combo::class);
+    }
+
+    public function selectedModifiers()
+    {
+        return $this->hasMany(SalesInvoiceLineModifier::class, 'sales_invoice_line_id');
     }
 }

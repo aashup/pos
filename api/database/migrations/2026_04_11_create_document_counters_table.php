@@ -230,6 +230,7 @@ return new class extends Migration
             $table->foreignUuid('item_id')->constrained('items');
             $table->string('item_name', 200);
             $table->string('variant_name', 100)->nullable();
+            $table->string('modifier_summary', 500)->nullable();
             $table->decimal('quantity', 10, 2);
             $table->text('notes')->nullable();
             $table->enum('status', ['pending', 'cooking', 'ready'])->default('pending');

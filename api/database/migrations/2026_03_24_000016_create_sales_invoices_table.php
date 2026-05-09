@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignUuid('branch_id')->nullable()->constrained('branches')->nullOnDelete();
             $table->foreignUuid('sales_order_id')->nullable()->constrained('sales_orders')->nullOnDelete();
             $table->foreignUuid('godown_id')->nullable()->constrained('godowns')->nullOnDelete();
-            $table->string('invoice_number')->unique();
+            $table->string('invoice_number')->nullable()->unique();
             $table->datetime('invoice_date');
             $table->datetime('due_date')->nullable();
             $table->boolean('is_inter_state')->default(false);
@@ -72,6 +72,9 @@ return new class extends Migration
             $table->decimal('sgst', 15, 2)->default(0);
             $table->decimal('igst', 15, 2)->default(0);
             $table->decimal('line_total', 15, 2)->default(0);
+            $table->char('item_variant_id', 36)->nullable()->index();
+            $table->char('combo_id', 36)->nullable()->index();
+            $table->decimal('modifiers_total', 15, 2)->default(0);
             $table->enum('kot_status', ['pending', 'sent', 'cooking', 'ready', 'served'])->default('pending');
             $table->text('notes')->nullable();
             $table->foreignUuid('godown_id')->nullable()->constrained('godowns')->nullOnDelete();

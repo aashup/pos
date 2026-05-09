@@ -71,4 +71,24 @@ class Item extends Model
     {
         return $this->hasMany(ItemAlternateUnit::class);
     }
+
+    public function variants()
+    {
+        return $this->hasMany(ItemVariant::class)->orderBy('sort_order');
+    }
+
+    public function modifierGroups()
+    {
+        return $this->belongsToMany(ModifierGroup::class, 'item_modifier_groups')
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderBy('item_modifier_groups.sort_order');
+    }
+
+    public function media()
+    {
+        return $this->hasMany(Media::class, 'entity_id')
+            ->where('entity_type', 'item')
+            ->orderBy('sort_order');
+    }
 }
