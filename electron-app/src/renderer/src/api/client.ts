@@ -2,7 +2,7 @@ import axios, { AxiosError } from 'axios'
 import toast from 'react-hot-toast'
 
 function getBaseUrl(): string {
-  const serverUrl = localStorage.getItem('serverUrl') || 'http://localhost:8001'
+  const serverUrl = localStorage.getItem('serverUrl') || 'http://127.0.0.1:8000'
   return `${serverUrl}/api/v1`
 }
 

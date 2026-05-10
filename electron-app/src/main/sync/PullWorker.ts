@@ -2,6 +2,7 @@ import axios from 'axios'
 import { TokenStore } from '../auth/TokenStore'
 import { ItemRepository } from '../db/repositories/ItemRepository'
 import { TableRepository } from '../db/repositories/TableRepository'
+import { UnitRepository } from '../db/repositories/UnitRepository'
 import { getDb } from '../db/database'
 
 export interface PullResult {
@@ -23,6 +24,18 @@ export async function pullFromServer(): Promise<PullResult> {
 
   let pulled = 0
   const errors: string[] = []
+
+  // Pull units
+  try {
+    const res = await client.get('/units?per_page=500&status=active')
+    const units = res.data?.data ?? res.data ?? []
+    for (const u of units) {
+      UnitRepository.upsert(u)
+      pulled++
+    }
+  } catch (e: unknown) {
+    errors.push(`units: ${(e as Error).message}`)
+  }
 
   // Pull item groups
   try {

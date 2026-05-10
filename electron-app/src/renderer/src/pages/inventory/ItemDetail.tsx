@@ -7,6 +7,7 @@ import { itemsApi } from '../../api/items'
 import { itemVariantsApi } from '../../api/itemVariants'
 import { modifierGroupsApi } from '../../api/modifierGroups'
 import { mediaApi } from '../../api/media'
+import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import type { Item, ItemVariant, ModifierGroup, MediaItem } from '../../types'
@@ -72,6 +73,13 @@ export default function ItemDetail() {
       return res.data?.data ?? []
     },
     enabled: !isNew && !!id,
+  })
+
+  type POSUnit = { id: string; value: string; label: string }
+  const { data: units = [] } = useQuery<POSUnit[]>({
+    queryKey: ['units'],
+    queryFn: async () => (await ipc.units.getAll()) as POSUnit[],
+    staleTime: Infinity,
   })
 
   // Mutations
@@ -209,15 +217,22 @@ export default function ItemDetail() {
             <div>
               <label className={cn('block text-xs font-medium mb-1', isDark ? 'text-gray-300' : 'text-gray-700')}>Unit *</label>
               <select
-                value={formData.unit || 'PCS'}
+                value={formData.unit || ''}
                 onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
                 className={cn('w-full px-3 py-2 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white')}
               >
-                <option>PCS</option>
-                <option>KG</option>
-                <option>L</option>
-                <option>BOX</option>
-                <option>STRIP</option>
+                <option value="">— Select unit —</option>
+                {units.length > 0
+                  ? units.map((u) => (
+                      <option key={u.id} value={u.value}>
+                        {u.value} — {u.label}
+                      </option>
+                    ))
+                  : /* fallback while SQLite is empty (first run before sync) */
+                    ['PCS', 'KG', 'L', 'BOX', 'STRIP'].map((v) => (
+                      <option key={v} value={v}>{v}</option>
+                    ))
+                }
               </select>
             </div>
             <div>

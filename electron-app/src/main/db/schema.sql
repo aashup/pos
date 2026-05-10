@@ -112,6 +112,15 @@ CREATE TABLE IF NOT EXISTS media (
   synced_at   TEXT
 );
 
+CREATE TABLE IF NOT EXISTS units (
+  id         TEXT PRIMARY KEY,
+  company_id TEXT,
+  value      TEXT,
+  label      TEXT,
+  status     TEXT DEFAULT 'active',
+  synced_at  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS godowns (
   id         TEXT PRIMARY KEY,
   company_id TEXT,

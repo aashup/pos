@@ -1,4 +1,4 @@
-import { api } from './client'
+import api from './client'
 import type { Combo } from '../types'
 
 export const combosApi = {

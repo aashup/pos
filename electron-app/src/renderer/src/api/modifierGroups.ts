@@ -1,4 +1,4 @@
-import { api } from './client'
+import api from './client'
 import type { ModifierGroup, Modifier } from '../types'
 
 export const modifierGroupsApi = {

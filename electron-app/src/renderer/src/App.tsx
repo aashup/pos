@@ -80,7 +80,6 @@ function AppRoutes() {
       <Route path="/pos/hold"          element={<RequireAuth><HoldOrders /></RequireAuth>} />
 
       <Route path="/inventory/items"         element={<RequireAuth><ItemList /></RequireAuth>} />
-      <Route path="/inventory/items/new"     element={<RequireAuth><ItemDetail /></RequireAuth>} />
       <Route path="/inventory/items/:id"     element={<RequireAuth><ItemDetail /></RequireAuth>} />
       <Route path="/inventory/modifiers"     element={<RequireAuth><ModifierGroupManager /></RequireAuth>} />
       <Route path="/inventory/combos"        element={<RequireAuth><ComboManager /></RequireAuth>} />

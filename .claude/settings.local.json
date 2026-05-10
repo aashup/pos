@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm i *)",
+      "PowerShell(npm *)",
+      "PowerShell(nvm *)",
+      "Bash(npm install *)",
+      "PowerShell(& \"C:\\\\Users\\\\xtrox\\\\AppData\\\\Roaming\\\\nvm\\\\nvm.exe\" install 20.11.0)",
+      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\api\" -Recurse -Filter \"api.php\" -Type File)"
+    ]
+  }
+}

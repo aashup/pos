@@ -2,6 +2,7 @@ import { ipcMain, webContents } from 'electron'
 import { TokenStore } from '../auth/TokenStore'
 import { ItemRepository } from '../db/repositories/ItemRepository'
 import { TableRepository } from '../db/repositories/TableRepository'
+import { UnitRepository } from '../db/repositories/UnitRepository'
 import { runSync, getSyncStatus } from '../sync/SyncEngine'
 import { printReceipt, printKOT, type ReceiptData, type KOTData } from '../print/ThermalPrinter'
 
@@ -22,6 +23,9 @@ export function registerIpcHandlers(): void {
     ItemRepository.search(query, groupId),
   )
   ipcMain.handle('items:groups', () => ItemRepository.getGroups())
+
+  // ── Units ─────────────────────────────────────────────────────────────────
+  ipcMain.handle('units:get-all', () => UnitRepository.getAll())
 
   // ── Tables ────────────────────────────────────────────────────────────────
   ipcMain.handle('tables:get-all', () => TableRepository.getAll())

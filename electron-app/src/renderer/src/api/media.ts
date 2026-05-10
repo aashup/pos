@@ -1,4 +1,4 @@
-import { api } from './client'
+import api from './client'
 import type { MediaItem } from '../types'
 
 export const mediaApi = {

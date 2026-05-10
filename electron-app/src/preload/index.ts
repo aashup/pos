@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getGroups: (): Promise<unknown[]> => ipcRenderer.invoke('items:groups'),
   },
 
+  units: {
+    getAll: (): Promise<unknown[]> => ipcRenderer.invoke('units:get-all'),
+  },
+
   tables: {
     getAll:       (): Promise<unknown[]> => ipcRenderer.invoke('tables:get-all'),
     getFloorPlans: (): Promise<unknown[]> => ipcRenderer.invoke('tables:floor-plans'),
