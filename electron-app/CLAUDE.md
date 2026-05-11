@@ -36,11 +36,15 @@ src/
 │   │   └── ipcHandlers.ts    # ALL IPC channel registrations
 │   ├── db/
 │   │   ├── database.ts       # better-sqlite3 singleton (getDb, initDatabase)
-│   │   └── schema.sql        # CREATE TABLE IF NOT EXISTS (idempotent, runs every startup)
+│   │   ├── schema.sql        # CREATE TABLE IF NOT EXISTS (idempotent, runs every startup)
+│   │   └── repositories/
+│   │       ├── ItemRepository.ts   # search(), getGroups(), getAll(), getAllForPOS(), upsert(), upsertGroup()
+│   │       ├── TableRepository.ts  # getAll(), getFloorPlans(), upsert(), upsertFloorPlan()
+│   │       └── UnitRepository.ts   # getAll(), upsert()
 │   ├── sync/
 │   │   ├── SyncEngine.ts     # orchestrates push+pull, broadcasts sync:status-changed
 │   │   ├── SyncScheduler.ts  # 30s foreground / 300s background setInterval
-│   │   ├── PullWorker.ts     # pulls item_groups, items, floor_plans, dining_tables
+│   │   ├── PullWorker.ts     # pulls units, item_groups, items, floor_plans, dining_tables, godowns
 │   │   └── PushWorker.ts     # pushes sales_invoices with sync_status='pending'
 │   ├── print/
 │   │   ├── ThermalPrinter.ts # receipt builder (node-thermal-printer)
@@ -53,14 +57,20 @@ src/
     ├── App.tsx               # HashRouter + QueryClientProvider + RequireAuth + all routes
     ├── api/
     │   ├── client.ts         # axios; baseURL from localStorage('serverUrl'); 401→/login
+    │   ├── auth.ts           # authApi: login, logout, me, registerDevice
     │   ├── orders.ts         # ordersApi: list, create, get, addLines, removeLine,
     │   │                     #   sendKot, checkout, hold, unhold, cancel, transferTable
     │   ├── kots.ts           # kotsApi: list, get, updateStatus, updateLineStatus, reprint
-    │   ├── items.ts          # itemsApi: search, getGroups
+    │   ├── items.ts          # itemsApi: list, get, create, update, delete, groups
+    │   ├── units.ts          # unitsApi: list() → GET /units?per_page=500&status=active
+    │   ├── itemVariants.ts   # itemVariantsApi: listByItem, get, create, update, delete
+    │   ├── modifierGroups.ts # modifierGroupsApi: list, create, update, delete
+    │   ├── media.ts          # mediaApi: upload, getByEntity, setPrimary, delete
+    │   │                     #   ⚠️ is_primary must be sent as '1'/'0' NOT 'true'/'false'
+    │   ├── combos.ts         # combosApi: list, get, create, update, delete
     │   ├── tables.ts         # tablesApi: getAll, getFloorPlans, updateStatus
     │   ├── inventory.ts      # inventoryApi: summary, stockItems, adjustments
-    │   ├── reports.ts        # reportsApi: salesSummary, itemWise, dayClose, gstSummary
-    │   └── auth.ts           # authApi: login, logout, me, registerDevice
+    │   └── reports.ts        # reportsApi: salesSummary, itemWise, dayClose, gstSummary
     ├── bridge/ipc.ts         # typed wrappers for window.electronAPI
     ├── store/
     │   ├── authStore.ts      # user, token, isAuthenticated, serverUrl (persisted localStorage)
@@ -76,7 +86,12 @@ src/
         │   ├── OrderList.tsx          # tabs: Active / Paid Today / All
         │   ├── OrderDetail.tsx        # view order, Resume, Cancel, Reprint
         │   └── HoldOrders.tsx         # pos_held=true orders
-        ├── inventory/StockSummary.tsx # low-stock filter, search, color-coded rows
+        ├── inventory/
+        │   ├── ItemList.tsx           # paginated item list, search, New Item button
+        │   ├── ItemDetail.tsx         # create/edit item: name, unit, price, CGST/SGST, variants table, images
+        │   ├── ModifierGroupManager.tsx
+        │   ├── ComboManager.tsx
+        │   └── StockSummary.tsx       # low-stock filter, search, color-coded rows
         ├── reports/
         │   ├── SalesSummary.tsx       # date presets, KPI cards, by_order_type, daily table
         │   ├── DayClose.tsx           # single date, cash drawer, top 10 items
@@ -84,6 +99,7 @@ src/
         │   └── GSTReport.tsx         # rate-slab breakup, CGST/SGST columns
         └── settings/
             ├── PrinterSettings.tsx   # detect printers, receipt+KOT printer, 58/80mm, test print
+            ├── TableManager.tsx      # manage dining tables
             └── DeviceInfo.tsx        # serverUrl, deviceId, sync status, version
 ```
 
@@ -103,8 +119,11 @@ settings:get (key)        → TokenStore.getSetting()
 settings:set (key, val)   → TokenStore.setSetting()
 settings:delete (key)     → TokenStore.deleteSetting()
 
-items:search (q, groupId) → ItemRepository.search()    (SQLite FTS)
+items:search (q, groupId) → ItemRepository.search()    (SQLite FTS, LIMIT 80)
 items:groups              → ItemRepository.getGroups()
+items:get-all             → ItemRepository.getAllForPOS()  (LIMIT 500, used by POS grid)
+
+units:get-all             → UnitRepository.getAll()     (active units only)
 
 tables:get-all            → TableRepository.getAll()
 tables:floor-plans        → TableRepository.getFloorPlans()
@@ -132,25 +151,34 @@ updater:update-downloaded ← broadcast from autoUpdater
 All use **HashRouter** (Electron file:// URLs).
 
 ```
-/setup              SetupWizard        public
-/login              Login              public
-/kitchen            KitchenDisplay     public (KitchenWindow)
-/pos/billing        BillingScreen      RequireAuth  ← default after login
-/pos/tables         TableSelection     RequireAuth
-/pos/orders         OrderList          RequireAuth
-/pos/orders/:id     OrderDetail        RequireAuth
-/pos/hold           HoldOrders         RequireAuth
-/reports/sales      SalesSummary       RequireAuth
-/reports/day-close  DayClose           RequireAuth
-/reports/items      ItemWise           RequireAuth
-/reports/gst        GSTReport          RequireAuth
-/inventory/stock    StockSummary       RequireAuth
-/settings/device    DeviceInfo         RequireAuth
-/settings/printer   PrinterSettings    RequireAuth
-*                   → /pos/billing (auth) or /login
+/setup                    SetupWizard          public
+/login                    Login                public
+/kitchen                  KitchenDisplay       public (KitchenWindow)
+/pos/billing              BillingScreen        RequireAuth  ← default after login
+/pos/tables               TableSelection       RequireAuth
+/pos/orders               OrderList            RequireAuth
+/pos/orders/:id           OrderDetail          RequireAuth
+/pos/hold                 HoldOrders           RequireAuth
+/reports/sales            SalesSummary         RequireAuth
+/reports/day-close        DayClose             RequireAuth
+/reports/items            ItemWise             RequireAuth
+/reports/gst              GSTReport            RequireAuth
+/inventory/items          ItemList             RequireAuth
+/inventory/items/:id      ItemDetail           RequireAuth  ← id='new' for create
+/inventory/modifiers      ModifierGroupManager RequireAuth
+/inventory/combos         ComboManager         RequireAuth
+/inventory/stock          StockSummary         RequireAuth
+/settings/device          DeviceInfo           RequireAuth
+/settings/printer         PrinterSettings      RequireAuth
+/settings/tables          TableManager         RequireAuth
+*                         → /pos/billing (auth) or /login
 ```
 
 `RequireAuth`: redirects `/setup` if no serverUrl, `/login` if not authenticated.
+
+**⚠️ Route gotcha:** Never add a static `/inventory/items/new` route alongside `/inventory/items/:id`.
+React Router matches the static route first and `useParams()` returns `{}` (id = undefined).
+Use only `/inventory/items/:id` — `id === 'new'` detects the create case.
 
 ---
 
@@ -212,7 +240,7 @@ function calcRoundOff(amount: number) {
 - Immediate trigger via `sync:trigger` IPC
 
 **PullWorker** — pulls DOWN (upsert via INSERT OR REPLACE):
-- `item_groups` (500/page), `items` (200/page, paginated), `floor_plans`, `dining_tables`, `godowns`
+- `units` (500/page, status=active), `item_groups` (500/page), `items` (200/page, paginated), `floor_plans`, `dining_tables`, `godowns`
 
 **PushWorker** — pushes UP:
 - `sales_invoices` + `sales_invoice_lines` where `sync_status='pending'`
@@ -310,8 +338,70 @@ linux:
 
 ```
 F1    → /pos/tables
+F2    → focus item search (handled inside ItemGrid)
 F3    → handleSendKot() (dine_in only)
 F4    → open PaymentModal
 F5    → handleSyncNow()
 Esc   → close modal/drawer
 ```
+
+---
+
+## POS Item Grid (`src/renderer/src/components/pos/ItemGrid.tsx`)
+
+- Loads **all active items (max 500)** from SQLite once on mount via `items:get-all` IPC
+- `useQuery` with `staleTime: 30_000` — re-fetches every 30s aligned with sync interval
+- **All filtering is client-side** using `useMemo` — no IPC calls on search/group change
+- Category group filter: `item.item_group_id === selectedGroup`
+- Text filter: `item.name` + `item.sku` case-insensitive includes
+- Each card shows: name, price (₹), unit, GST rate
+
+---
+
+## Inventory Management (`src/renderer/src/pages/inventory/ItemDetail.tsx`)
+
+### Item form fields
+- Name (full-width), Unit (dropdown from API), Selling Price, CGST %, SGST %
+- **CGST and SGST default to 2.5%** (5% GST slab, most common for restaurant)
+- SKU field is intentionally omitted from the POS item form
+- `is_active` checkbox
+
+### Unit dropdown
+- Fetched live from `GET /units?per_page=500&status=active` via `unitsApi.list()`
+- Falls back to hardcoded PCS/KG/L/BOX/STRIP if API returns empty
+- Unit model fields: `id`, `value` (e.g. "PCS"), `label` (e.g. "Pieces"), `status`
+
+### Variants table (bulk save)
+- Inline editable table: Variant Name | Price (₹) | ✕ per row
+- `+ Add Row` adds a blank local row — no API call
+- `✕` removes row locally — no API call
+- **Save Variants** fires one `Promise.all` that:
+  - Rows without `id` → `itemVariantsApi.create()`
+  - Rows with `id` → `itemVariantsApi.update()`
+  - Server variants whose `id` is missing from table → `itemVariantsApi.delete()`
+- Variants section only shown after item is saved (not on `isNew`)
+
+---
+
+## Media Upload Gotcha
+
+Laravel validates `is_primary` as a boolean. **multipart/form-data must send `'1'` or `'0'`**, not `'true'`/`'false'`.
+
+```typescript
+// ✅ correct
+formData.append('is_primary', isPrimary ? '1' : '0')
+
+// ❌ wrong — Laravel rejects "false" string
+formData.append('is_primary', String(isPrimary))
+```
+
+---
+
+## Adding a New IPC Channel (checklist)
+
+When exposing a new SQLite query to the renderer, touch **4 files** in order:
+
+1. `src/main/db/repositories/<Repo>.ts` — add the query method
+2. `src/main/ipc/ipcHandlers.ts` — `ipcMain.handle('channel:name', () => Repo.method())`
+3. `src/preload/index.ts` — add to `contextBridge.exposeInMainWorld` object
+4. `src/renderer/src/bridge/ipc.ts` — add type declaration in `Window` interface + wrapper in `ipc` export

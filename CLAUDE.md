@@ -50,3 +50,27 @@ npm run build        # outputs to out/
 The `api/` shares the same MySQL database and codebase as `/Users/aashu/erp/api`.
 Restaurant-specific controllers are added alongside ERP controllers.
 Restaurant report routes must appear BEFORE ERP report routes in `routes/api.php`.
+
+## Backend API Endpoints in Use
+
+All under `/api/v1/` (Laravel sanctum auth required).
+
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `GET /items` | ItemController@index | `?per_page`, `?search`, `?is_active`, `?item_group_id` |
+| `POST /items` | ItemController@store | requires `name`, `unit`; CGST/SGST/IGST optional |
+| `GET /items/{id}` | ItemController@show | returns item with batches + alternate units |
+| `PATCH /items/{id}` | ItemController@update | partial update via 'sometimes' validation |
+| `DELETE /items/{id}` | ItemController@destroy | soft delete |
+| `GET /item-groups` | ItemGroupController | flat list |
+| `GET /units` | UnitController@index | `?status=active&per_page=500` |
+| `GET/POST/PATCH/DELETE /item-variants` | ItemVariantController | scoped by `item_id` |
+| `GET/POST/PATCH/DELETE /modifier-groups` | ModifierGroupController | |
+| `POST /media` | MediaController@store | multipart; `entity_type`, `entity_id`, `is_primary` as `'1'`/`'0'` |
+| `GET /media` | MediaController@index | `?entity_type=item&entity_id=` |
+| `DELETE /media/{id}` | MediaController@destroy | |
+| `GET/POST /restaurant/orders` | RestaurantOrderController | |
+| `POST /restaurant/orders/{id}/lines` | RestaurantOrderController | |
+| `POST /restaurant/orders/{id}/kot` | RestaurantOrderController | |
+| `POST /restaurant/orders/{id}/checkout` | RestaurantOrderController | |
+| `POST /restaurant/orders/{id}/hold` | RestaurantOrderController | |

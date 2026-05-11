@@ -33,7 +33,7 @@ export default function Header({ title, onBack, actions = [], showThemeToggle = 
             <ArrowLeft className="w-4 h-4" />
           </button>
         )}
-        <span className="font-bold text-orange-400 text-sm">{title}</span>
+        <span className="font-bold text-orange-400 text-sm">{title} LALA</span>
       </div>
 
       <div className="flex items-center gap-3">
@@ -59,7 +59,7 @@ export default function Header({ title, onBack, actions = [], showThemeToggle = 
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
+          Aas</button>
         )}
       </div>
     </header>

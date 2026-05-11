@@ -15,6 +15,8 @@ useThemeStore.subscribe(
   (theme) => applyTheme(theme),
 )
 
+import toast, { Toaster } from 'react-hot-toast'
+
 // Pages
 import Login from './pages/auth/Login'
 import SetupWizard from './pages/setup/SetupWizard'
@@ -55,8 +57,18 @@ function AppRoutes() {
     if (typeof window.electronAPI === 'undefined') return
     const unsub = ipc.sync.onStatusChange((status: unknown) => {
       const s = status as { status?: string; lastSyncAt?: string; errors?: string[] }
-      if (s?.status === 'syncing') setStatus('syncing')
-      else setSyncResult({ lastSyncAt: s?.lastSyncAt ?? null, errors: s?.errors ?? [] })
+      if (s?.status === 'syncing') {
+        setStatus('syncing')
+      } else {
+        const errors = s?.errors ?? []
+        setSyncResult({ lastSyncAt: s?.lastSyncAt ?? null, errors })
+        if (errors.length > 0) {
+          toast.error(`Sync error: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`, {
+            id: 'sync-error',  // deduplicate — only one toast at a time
+            duration: 6000,
+          })
+        }
+      }
     })
     return unsub
   }, [setStatus, setSyncResult])
@@ -101,6 +113,14 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <HashRouter>
         <AppRoutes />
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: { fontSize: '13px', maxWidth: '420px' },
+            error: { duration: 6000 },
+            success: { duration: 2500 },
+          }}
+        />
       </HashRouter>
     </QueryClientProvider>
   )

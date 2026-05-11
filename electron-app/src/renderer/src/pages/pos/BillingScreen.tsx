@@ -101,10 +101,15 @@ export default function BillingScreen() {
   const handleSyncNow = async () => {
     setSyncing(true)
     try {
-      await ipc.sync.trigger()
-      toast.success('Sync complete')
-    } catch {
-      toast.error('Sync failed')
+      const result = await ipc.sync.trigger() as { errors?: string[]; pulled?: number; pushed?: number }
+      const errors = result?.errors ?? []
+      if (errors.length > 0) {
+        toast.error(`Sync error: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`, { duration: 6000 })
+      } else {
+        toast.success(`Synced${result?.pulled ? ` — ${result.pulled} records` : ''}`)
+      }
+    } catch (e: unknown) {
+      toast.error(`Sync failed: ${(e as Error).message}`)
     } finally {
       setSyncing(false)
     }
@@ -190,11 +195,18 @@ export default function BillingScreen() {
           <button
             onClick={handleSyncNow}
             disabled={syncing}
-            className={`flex items-center gap-1 text-xs ${isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}`}
-            title="F5"
+            className={`flex items-center gap-1.5 text-xs ${
+              syncStatus === 'error'
+                ? 'text-red-500 hover:text-red-400'
+                : isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'
+            }`}
+            title={syncStatus === 'error' ? 'Sync had errors — click to retry (F5)' : 'F5'}
           >
             <RotateCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            {syncStatus === 'syncing' ? 'Syncing…' : 'Sync'}
+            {syncStatus === 'syncing' ? 'Syncing…' : syncStatus === 'error' ? 'Sync error' : 'Sync'}
+            {syncStatus === 'error' && (
+              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+            )}
           </button>
           <span className={isDark ? 'text-gray-400 text-xs' : 'text-gray-600 text-xs'}>{user?.name}</span>
           <button onClick={logout} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'} title="Logout">

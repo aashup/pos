@@ -23,6 +23,7 @@ export function registerIpcHandlers(): void {
     ItemRepository.search(query, groupId),
   )
   ipcMain.handle('items:groups', () => ItemRepository.getGroups())
+  ipcMain.handle('items:get-all', () => ItemRepository.getAllForPOS())
 
   // ── Units ─────────────────────────────────────────────────────────────────
   ipcMain.handle('units:get-all', () => UnitRepository.getAll())

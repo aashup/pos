@@ -68,6 +68,30 @@ export async function pullFromServer(): Promise<PullResult> {
     errors.push(`items: ${(e as Error).message}`)
   }
 
+  // Pull item media (images)
+  try {
+    const db = getDb()
+    const upsertMedia = db.prepare(
+      `INSERT OR REPLACE INTO media (id, company_id, entity_type, entity_id, url, sort_order, is_primary, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    )
+    let page = 1
+    while (true) {
+      const res = await client.get(`/media?entity_type=item&per_page=200&page=${page}`)
+      const payload = res.data
+      const records: unknown[] = payload.data ?? payload ?? []
+      if (records.length === 0) break
+      for (const m of records as any[]) {
+        upsertMedia.run(m.id, m.company_id ?? null, 'item', m.entity_id, m.url, m.sort_order ?? 0, m.is_primary ? 1 : 0)
+        pulled++
+      }
+      if (!payload.next_page_url) break
+      page++
+    }
+  } catch (e: unknown) {
+    errors.push(`media: ${(e as Error).message}`)
+  }
+
   // Pull floor plans
   try {
     const res = await client.get('/floor-plans')

@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   items: {
     search:    (query: string, groupId?: string): Promise<unknown[]> => ipcRenderer.invoke('items:search', query, groupId),
     getGroups: (): Promise<unknown[]> => ipcRenderer.invoke('items:groups'),
+    getAll:    (): Promise<unknown[]> => ipcRenderer.invoke('items:get-all'),
   },
 
   units: {

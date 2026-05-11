@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
-import { Search, UtensilsCrossed } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { ipc } from '../../bridge/ipc'
 import { useCartStore } from '../../store/cartStore'
@@ -8,40 +8,61 @@ import type { Item, ItemGroup } from '../../types'
 
 interface POSItem extends Item {
   selling_price: number
+  image_url?: string | null
+}
+
+// Deterministic pastel background per item name (for placeholder)
+const CARD_COLORS = [
+  'bg-orange-100 text-orange-700',
+  'bg-amber-100 text-amber-700',
+  'bg-lime-100 text-lime-700',
+  'bg-teal-100 text-teal-700',
+  'bg-sky-100 text-sky-700',
+  'bg-violet-100 text-violet-700',
+  'bg-pink-100 text-pink-700',
+  'bg-rose-100 text-rose-700',
+]
+
+function colorFor(name: string) {
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return CARD_COLORS[h % CARD_COLORS.length]
 }
 
 export default function ItemGrid() {
   const addItem = useCartStore((s) => s.addItem)
   const [search, setSearch] = useState('')
   const [selectedGroup, setSelectedGroup] = useState<string | undefined>(undefined)
-  const [items, setItems] = useState<POSItem[]>([])
-  const [loading, setLoading] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const { data: groups } = useQuery({
+  // Load all items (max 500) from SQLite once — includes image_url via subquery
+  const { data: allItems = [], isLoading } = useQuery<POSItem[]>({
+    queryKey: ['pos-items-all'],
+    queryFn: async () => (await ipc.items.getAll()) as POSItem[],
+    staleTime: 30_000,
+  })
+
+  // Load item groups from SQLite
+  const { data: groups = [] } = useQuery<ItemGroup[]>({
     queryKey: ['item-groups-local'],
-    queryFn: async () => {
-      const raw = await ipc.items.getGroups()
-      return raw as ItemGroup[]
-    },
+    queryFn: async () => (await ipc.items.getGroups()) as ItemGroup[],
     staleTime: 60_000,
   })
 
-  useEffect(() => {
-    if (searchTimer.current) clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(async () => {
-      setLoading(true)
-      try {
-        const raw = await ipc.items.search(search, selectedGroup)
-        setItems(raw as POSItem[])
-      } finally {
-        setLoading(false)
-      }
-    }, 150)
-    return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
-  }, [search, selectedGroup])
+  // Client-side filter
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return allItems.filter((item) => {
+      const matchesGroup = !selectedGroup || item.item_group_id === selectedGroup
+      const matchesSearch =
+        !q ||
+        item.name.toLowerCase().includes(q) ||
+        (item.sku ?? '').toLowerCase().includes(q)
+      return matchesGroup && matchesSearch
+    })
+  }, [allItems, search, selectedGroup])
 
+  // F2 focuses search
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'F2') { e.preventDefault(); searchRef.current?.focus() }
@@ -50,12 +71,11 @@ export default function ItemGrid() {
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  const gstRate = (item: POSItem) => item.cgst + item.sgst + item.igst
-
   return (
     <div className="flex flex-col h-full">
+
       {/* Search bar */}
-      <div className="p-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="p-3 border-b border-gray-200 dark:border-gray-700 shrink-0">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -70,8 +90,8 @@ export default function ItemGrid() {
       </div>
 
       {/* Category tabs */}
-      {groups && groups.length > 0 && (
-        <div className="flex gap-1.5 px-3 py-2 overflow-x-auto border-b border-gray-100 dark:border-gray-700 shrink-0">
+      {groups.length > 0 && (
+        <div className="flex gap-1.5 px-3 py-2 overflow-x-auto border-b border-gray-100 dark:border-gray-700 shrink-0 scrollbar-none">
           <button
             onClick={() => setSelectedGroup(undefined)}
             className={cn(
@@ -100,37 +120,89 @@ export default function ItemGrid() {
         </div>
       )}
 
-      {/* Item grid */}
+      {/* Grid */}
       <div className="flex-1 overflow-y-auto p-3">
-        {loading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">Loading…</div>
-        ) : items.length === 0 ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+            Loading…
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-400 dark:text-gray-600">
-            <UtensilsCrossed className="w-8 h-8 mb-2 opacity-40" />
-            <span className="text-sm">{search ? 'No items found' : 'No items synced yet'}</span>
+            <span className="text-2xl mb-2">🍽️</span>
+            <span className="text-sm">{search || selectedGroup ? 'No items found' : 'No items synced yet'}</span>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {items.map((item) => (
-              <button
+          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
+            {filtered.map((item) => (
+              <ItemCard
                 key={item.id}
-                onClick={() => addItem({ ...item, selling_price: item.selling_price ?? 0 })}
-                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3 text-left hover:border-orange-300 dark:hover:border-orange-500 hover:shadow-sm active:scale-95 transition-all"
-              >
-                <p className="font-medium text-sm text-gray-800 dark:text-gray-100 line-clamp-2 leading-snug">{item.name}</p>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-orange-600 dark:text-orange-400 font-semibold text-sm">
-                    ₹{(item.selling_price ?? 0).toFixed(0)}
-                  </span>
-                  {gstRate(item) > 0 && (
-                    <span className="text-xs text-gray-400 dark:text-gray-500">GST {gstRate(item)}%</span>
-                  )}
-                </div>
-              </button>
+                item={item}
+                onAdd={() => addItem({ ...item, selling_price: item.selling_price ?? 0 })}
+              />
             ))}
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+function ItemCard({ item, onAdd }: { item: POSItem; onAdd: () => void }) {
+  const color = colorFor(item.name)
+  const initials = item.name
+    .split(' ')
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? '')
+    .join('')
+
+  return (
+    <button
+      onClick={onAdd}
+      className="group flex flex-col rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-orange-300 dark:hover:border-orange-500 hover:shadow-md active:scale-95 transition-all text-left"
+    >
+      {/* Image / placeholder */}
+      <div className="relative w-full aspect-square overflow-hidden">
+        {item.image_url ? (
+          <img
+            src={item.image_url}
+            alt={item.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+            loading="lazy"
+            onError={(e) => {
+              // On image load error fall back to placeholder
+              ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+              ;(e.currentTarget.nextElementSibling as HTMLElement | null)?.style.setProperty('display', 'flex')
+            }}
+          />
+        ) : null}
+        {/* Placeholder — shown when no URL or image fails to load */}
+        <div
+          className={cn(
+            'absolute inset-0 flex items-center justify-center text-xl font-bold',
+            color,
+            item.image_url ? 'hidden' : 'flex',
+          )}
+        >
+          {initials}
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="p-2 flex flex-col gap-0.5 min-w-0">
+        <p className="font-medium text-xs text-gray-800 dark:text-gray-100 line-clamp-2 leading-snug">
+          {item.name}
+        </p>
+        <div className="flex items-center justify-between gap-1 mt-0.5">
+          <span className="text-orange-600 dark:text-orange-400 font-bold text-sm leading-none">
+            ₹{(item.selling_price ?? 0).toFixed(0)}
+          </span>
+          {item.unit && (
+            <span className="text-xs text-gray-400 dark:text-gray-500 leading-none truncate">
+              {item.unit}
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
   )
 }

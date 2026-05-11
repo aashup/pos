@@ -13,7 +13,7 @@ export default function DeviceInfo() {
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const { user, serverUrl } = useAuthStore()
-  const { status, lastSyncAt } = useSyncStore()
+  const { status, lastSyncAt, errors: syncErrors } = useSyncStore()
   const [deviceId, setDeviceId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -38,9 +38,35 @@ export default function DeviceInfo() {
         <InfoCard label="Company" value={user?.company?.name ?? '—'} isDark={isDark} />
         <InfoCard
           label="Sync Status"
-          value={status === 'syncing' ? 'Syncing…' : lastSyncAt ? `Last synced ${new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}` : 'Never synced'}
+          value={
+            status === 'syncing'
+              ? 'Syncing…'
+              : status === 'error'
+              ? `Error — last attempt ${lastSyncAt ? new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : 'unknown'}`
+              : lastSyncAt
+              ? `OK — ${new Date(lastSyncAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+              : 'Never synced'
+          }
+          valueColor={status === 'error' ? 'text-red-500' : status === 'syncing' ? 'text-orange-500' : 'text-green-500'}
           isDark={isDark}
         />
+
+        {/* Sync error details */}
+        {syncErrors.length > 0 && (
+          <div className={cn('rounded-xl p-4 space-y-2', isDark ? 'bg-gray-900' : 'bg-white')}>
+            <p className={cn('text-xs font-medium', isDark ? 'text-gray-400' : 'text-gray-500')}>
+              Last Sync Errors ({syncErrors.length})
+            </p>
+            <div className="space-y-1">
+              {syncErrors.map((err, i) => (
+                <p key={i} className="text-xs text-red-500 font-mono break-all leading-relaxed">
+                  • {err}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
+
         <InfoCard label="App Version" value="1.0.0" isDark={isDark} />
       </div>
     </div>
@@ -48,15 +74,15 @@ export default function DeviceInfo() {
 }
 
 function InfoCard({
-  label, value, isDark, onCopy, copied,
+  label, value, isDark, onCopy, copied, valueColor,
 }: {
-  label: string; value: string; isDark: boolean; onCopy?: () => void; copied?: boolean
+  label: string; value: string; isDark: boolean; onCopy?: () => void; copied?: boolean; valueColor?: string
 }) {
   return (
     <div className={cn('rounded-xl p-4 flex items-center justify-between', isDark ? 'bg-gray-900' : 'bg-white')}>
       <div>
         <p className={cn('text-xs', isDark ? 'text-gray-500' : 'text-gray-400')}>{label}</p>
-        <p className={cn('text-sm font-medium mt-0.5 break-all', isDark ? 'text-gray-200' : 'text-gray-800')}>{value}</p>
+        <p className={cn('text-sm font-medium mt-0.5 break-all', valueColor ?? (isDark ? 'text-gray-200' : 'text-gray-800'))}>{value}</p>
       </div>
       {onCopy && (
         <button onClick={onCopy} className={cn('ml-3 shrink-0', isDark ? 'text-gray-500 hover:text-gray-400' : 'text-gray-400 hover:text-gray-600')}>

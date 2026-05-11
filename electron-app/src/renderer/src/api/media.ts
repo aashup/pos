@@ -8,7 +8,7 @@ export const mediaApi = {
     formData.append('image', file)
     formData.append('entity_type', entityType)
     formData.append('entity_id', entityId)
-    formData.append('is_primary', String(isPrimary))
+    formData.append('is_primary', isPrimary ? '1' : '0')
 
     return api.post<{ data: MediaItem }>('/media', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },

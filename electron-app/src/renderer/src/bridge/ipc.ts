@@ -15,6 +15,7 @@ declare global {
       items: {
         search(query: string, groupId?: string): Promise<unknown[]>
         getGroups(): Promise<unknown[]>
+        getAll(): Promise<unknown[]>
       }
       units: {
         getAll(): Promise<unknown[]>
@@ -61,6 +62,7 @@ export const ipc = {
   items: {
     search:    (query: string, groupId?: string) => window.electronAPI.items.search(query, groupId),
     getGroups: () => window.electronAPI.items.getGroups(),
+    getAll:    () => window.electronAPI.items.getAll(),
   },
   units: {
     getAll: () => window.electronAPI.units.getAll(),
