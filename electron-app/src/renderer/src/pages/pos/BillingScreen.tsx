@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { v4 as uuidv4 } from 'uuid'
 import { useNavigate } from 'react-router-dom'
 import {
   RotateCw, LogOut, Menu, X,
@@ -17,11 +18,12 @@ import { formatCurrency, cn } from '../../lib/utils'
 import ItemGrid from '../../components/pos/ItemGrid'
 import Cart from '../../components/pos/Cart'
 import PaymentModal from '../../components/pos/PaymentModal'
+import type { Item } from '../../types'
 
 export default function BillingScreen() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
-  const { orderId, orderType, tableId, totals, lines, setOrder, clearOrder } = useCartStore()
+  const { orderId, localOrderId, orderType, tableId, totals, lines, setLocalOrder, setOrder, clearOrder } = useCartStore()
   const { status: syncStatus } = useSyncStore()
   const { theme, toggleTheme } = useThemeStore()
   const isDark = theme === 'dark'
@@ -37,32 +39,69 @@ export default function BillingScreen() {
       navigate('/pos/tables')
       return
     }
+    // Create local SQLite order immediately (offline-first)
     try {
-      const res = await ordersApi.create({ order_type: type })
-      const order = res.data?.data
-      setOrder(order.id, type)
+      const localId = await ipc.order.create({ order_type: type })
+      setLocalOrder(localId, type)
     } catch {
-      setOrder('local-' + Date.now(), type)
+      toast.error('Failed to create order')
     }
   }
 
-  const handleSendKot = useCallback(async () => {
-    if (!orderId) {
-      toast.error('No active order. Select a table or start a takeaway order.')
-      return
+  /**
+   * Add item to cart and persist to SQLite (offline-first).
+   * For occupied/resumed dine-in (orderId = server UUID), SQLite write is skipped.
+   */
+  const handleAddItem = useCallback((item: Item & { selling_price: number }) => {
+    const state = useCartStore.getState()
+    const { localOrderId: lid, lines: currentLines } = state
+
+    // Check if same pending bare item already exists → will increment qty
+    const existing = currentLines.find(
+      (l) => l.itemId === item.id && !l.variantId && l.selectedModifiers.length === 0 && l.kotStatus === 'pending',
+    )
+
+    if (existing) {
+      const newQty = existing.quantity + 1
+      if (lid) ipc.order.updateLineQty(existing.id, newQty).catch(() => {})
+      state.updateQty(existing.id, newQty)
+    } else {
+      const lineId = uuidv4()
+      if (lid) {
+        ipc.order.addLine(lid, {
+          id: lineId,
+          item_id: item.id,
+          item_name: item.name,
+          quantity: 1,
+          rate: item.selling_price ?? 0,
+          discount_percent: 0,
+          gst_rate: (item.cgst ?? 0) + (item.sgst ?? 0) + (item.igst ?? 0),
+          notes: null,
+        }).catch(() => {})
+      }
+      state.addItem({ ...item, selling_price: item.selling_price ?? 0 }, lineId)
     }
+  }, [])
+
+  const handleSendKot = useCallback(async () => {
     const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
     if (pendingLines.length === 0) return
 
     setSendingKot(true)
     try {
-      let activeOrderId = orderId
-      if (orderId.startsWith('local-')) {
-        const res = await ordersApi.create({ order_type: orderType, table_id: tableId ?? undefined })
-        activeOrderId = res.data?.data?.id
-        setOrder(activeOrderId, orderType, tableId ?? undefined)
+      if (localOrderId) {
+        // Offline-first: create local KOT, print, push to server in background
+        const result = await ipc.order.sendKot(localOrderId)
+        if (!result.success) {
+          toast.error(result.error ?? 'No pending items')
+          return
+        }
+        toast.success(`KOT ${result.kotNumber ?? ''} sent to kitchen`)
+        useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
+      } else if (orderId) {
+        // Resumed occupied table — push any new lines first, then generate KOT on server
         await ordersApi.addLines(
-          activeOrderId,
+          orderId,
           pendingLines.map((l) => ({
             item_id: l.itemId,
             quantity: l.quantity,
@@ -72,17 +111,19 @@ export default function BillingScreen() {
             notes: l.notes || undefined,
           })),
         )
+        const res = await ordersApi.sendKot(orderId)
+        const kot = res.data?.data
+        toast.success(`KOT ${kot?.kot_number ?? ''} sent to kitchen`)
+        useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
+      } else {
+        toast.error('No active order. Select a table or choose an order type.')
       }
-      const res = await ordersApi.sendKot(activeOrderId)
-      const kot = res.data?.data
-      toast.success(`KOT ${kot?.kot_number ?? ''} sent to kitchen`)
-      useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
     } catch {
       toast.error('Failed to send KOT')
     } finally {
       setSendingKot(false)
     }
-  }, [orderId, lines, orderType, tableId, setOrder])
+  }, [orderId, localOrderId, lines])
 
   const handleHoldOrder = useCallback(async () => {
     if (!orderId || orderId.startsWith('local-')) { toast.error('No active server order to hold'); return }
@@ -218,7 +259,7 @@ export default function BillingScreen() {
       {/* Main 2-column layout */}
       <div className="flex-1 flex overflow-hidden">
         <div className={cn('flex-1 overflow-hidden', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-          <ItemGrid />
+          <ItemGrid onItemAdd={handleAddItem} />
         </div>
         <div className="w-80 xl:w-96 shrink-0">
           <Cart
@@ -299,12 +340,15 @@ export default function BillingScreen() {
       {showPayment && (
         <PaymentModal
           orderId={orderId}
+          localOrderId={localOrderId}
           orderType={orderType}
           lines={lines}
           totals={totals}
           onClose={() => setShowPayment(false)}
-          onSuccess={() => {
+          onSuccess={(serverId?: string) => {
             setShowPayment(false)
+            // Mark local SQLite order as confirmed so SyncWorker skips re-push
+            if (localOrderId) ipc.order.markConfirmed(localOrderId, serverId).catch(() => {})
             clearOrder()
             toast.success('Payment complete!')
           }}

@@ -1,6 +1,8 @@
+import { Worker } from 'worker_threads'
+import { join } from 'path'
 import { BrowserWindow } from 'electron'
-import { pullFromServer, type PullResult } from './PullWorker'
-import { pushToServer, type PushResult } from './PushWorker'
+import { TokenStore } from '../auth/TokenStore'
+import { getDbPath } from '../db/database'
 
 export interface SyncResult {
   pushed: number
@@ -10,37 +12,66 @@ export interface SyncResult {
 }
 
 let lastSyncAt: string | null = null
-let isSyncing = false
+let isSyncing = false   // simple boolean set synchronously — no race condition possible
 
-export async function runSync(): Promise<SyncResult> {
-  if (isSyncing) return { pushed: 0, pulled: 0, errors: ['Sync already in progress'], lastSyncAt }
+export function runSync(): Promise<SyncResult> {
+  // Hard gate — set synchronously before any async work so two callers can never both pass
+  if (isSyncing) {
+    return Promise.resolve({ pushed: 0, pulled: 0, errors: ['Sync already in progress'], lastSyncAt })
+  }
+  isSyncing = true      // lock immediately
 
-  isSyncing = true
+  const token = TokenStore.getToken()
+  const serverUrl = TokenStore.getSetting('serverUrl')
+
+  if (!token || !serverUrl) {
+    isSyncing = false
+    const result: SyncResult = { pushed: 0, pulled: 0, errors: ['Not authenticated'], lastSyncAt }
+    broadcastStatus({ status: 'idle', ...result })
+    return Promise.resolve(result)
+  }
+
   broadcastStatus({ status: 'syncing', lastSyncAt })
 
-  let pushResult: PushResult = { pushed: 0, errors: [] }
-  let pullResult: PullResult = { pulled: 0, errors: [] }
+  return new Promise((resolve) => {
+    let settled = false
 
-  try {
-    pushResult = await pushToServer()
-    pullResult = await pullFromServer()
-    lastSyncAt = new Date().toISOString()
-  } catch (e: unknown) {
-    pullResult.errors.push(`sync error: ${(e as Error).message}`)
-  } finally {
-    isSyncing = false
-  }
+    function finish(result: SyncResult) {
+      if (settled) return   // guard against message + exit both firing
+      settled = true
+      isSyncing = false     // always release lock
+      broadcastStatus({ status: result.errors.length ? 'error' : 'idle', ...result })
+      resolve(result)
+    }
 
-  const result: SyncResult = {
-    pushed: pushResult.pushed,
-    pulled: pullResult.pulled,
-    errors: [...pushResult.errors, ...pullResult.errors],
-    lastSyncAt,
-  }
+    const workerPath = join(__dirname, 'SyncWorker.js')
+    const worker = new Worker(workerPath, {
+      workerData: { dbPath: getDbPath(), token, serverUrl },
+    })
 
-  broadcastStatus({ status: 'idle', lastSyncAt, ...result })
+    worker.on('message', (data: { pushed: number; pulled: number; errors: string[] }) => {
+      lastSyncAt = new Date().toISOString()
+      finish({ ...data, lastSyncAt })
+    })
 
-  return result
+    worker.on('error', (err) => {
+      finish({ pushed: 0, pulled: 0, errors: [`Worker error: ${err.message}`], lastSyncAt })
+    })
+
+    worker.on('exit', (code) => {
+      // Always release lock on exit, regardless of code
+      // finish() is a no-op if message already fired
+      if (code !== 0) {
+        finish({ pushed: 0, pulled: 0, errors: [`Worker exited with code ${code}`], lastSyncAt })
+      } else {
+        // Normal exit — just make sure lock is released if message never fired
+        if (!settled) {
+          settled = true
+          isSyncing = false
+        }
+      }
+    })
+  })
 }
 
 export function getSyncStatus() {

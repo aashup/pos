@@ -114,7 +114,7 @@ export default function App() {
       <HashRouter>
         <AppRoutes />
         <Toaster
-          position="bottom-right"
+          position="top-right"
           toastOptions={{
             style: { fontSize: '13px', maxWidth: '420px' },
             error: { duration: 6000 },

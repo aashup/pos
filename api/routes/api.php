@@ -218,6 +218,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('modifier-groups/{modifierGroup}/modifiers/{modifier}', [ModifierGroupController::class, 'destroyModifier']);
     Route::apiResource('combos', ComboController::class);
     Route::get('media', [MediaController::class, 'index']);
+    Route::get('media/sync', [MediaController::class, 'sync']);   // bulk sync by entity_type (no entity_id needed)
     Route::post('media', [MediaController::class, 'store']);
     Route::delete('media/{medium}', [MediaController::class, 'destroy']);
     Route::patch('media/{medium}/set-primary', [MediaController::class, 'setPrimary']);

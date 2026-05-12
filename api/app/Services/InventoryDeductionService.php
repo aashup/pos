@@ -46,7 +46,7 @@ class InventoryDeductionService
                     'quantity'       => -$deductQty,
                     'rate'           => 0,
                     'value'          => 0,
-                    'narration'      => "Recipe deduction: {$recipe->item->name ?? ''} × {$line->quantity}",
+                    'narration'      => "Recipe deduction: {$recipe->item->name ?? ''} x {$line->quantity}",
                     'created_by'     => $userId,
                 ]);
             }

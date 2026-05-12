@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS sales_invoices (
   id               TEXT PRIMARY KEY,
   company_id       TEXT,
   device_id        TEXT,
+  server_id        TEXT,
   order_type       TEXT DEFAULT 'takeaway',
   table_id         TEXT,
   pax              INTEGER DEFAULT 1,
@@ -227,6 +228,7 @@ CREATE TABLE IF NOT EXISTS sales_invoice_line_modifiers (
 CREATE TABLE IF NOT EXISTS kots (
   id               TEXT PRIMARY KEY,
   company_id       TEXT,
+  server_id        TEXT,
   sales_invoice_id TEXT,
   kot_number       TEXT,
   status           TEXT DEFAULT 'new',

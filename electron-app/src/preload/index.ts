@@ -29,6 +29,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getFloorPlans: (): Promise<unknown[]> => ipcRenderer.invoke('tables:floor-plans'),
   },
 
+  order: {
+    create: (data: { order_type: string; table_id?: string | null; pax?: number }): Promise<string> =>
+      ipcRenderer.invoke('order:create', data),
+    addLine: (invoiceId: string, line: {
+      id: string; item_id: string; item_name: string; quantity: number
+      rate: number; discount_percent: number; gst_rate: number; notes?: string | null
+    }): Promise<void> => ipcRenderer.invoke('order:add-line', invoiceId, line),
+    updateLineQty: (lineId: string, qty: number): Promise<void> =>
+      ipcRenderer.invoke('order:update-line-qty', lineId, qty),
+    removeLine: (lineId: string): Promise<void> =>
+      ipcRenderer.invoke('order:remove-line', lineId),
+    sendKot: (localOrderId: string): Promise<{ success: boolean; kotNumber?: string; lines?: unknown[]; error?: string }> =>
+      ipcRenderer.invoke('order:send-kot', localOrderId),
+    markConfirmed: (localId: string, serverId?: string | null): Promise<void> =>
+      ipcRenderer.invoke('order:mark-confirmed', localId, serverId),
+  },
+
   sync: {
     trigger:      (): Promise<unknown> => ipcRenderer.invoke('sync:trigger'),
     getStatus:    (): Promise<unknown> => ipcRenderer.invoke('sync:status'),

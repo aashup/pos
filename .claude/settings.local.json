@@ -6,7 +6,11 @@
       "PowerShell(nvm *)",
       "Bash(npm install *)",
       "PowerShell(& \"C:\\\\Users\\\\xtrox\\\\AppData\\\\Roaming\\\\nvm\\\\nvm.exe\" install 20.11.0)",
-      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\api\" -Recurse -Filter \"api.php\" -Type File)"
+      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\api\" -Recurse -Filter \"api.php\" -Type File)",
+      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\main\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(Sort-Object FullName)",
+      "Bash(npx tsc *)"
     ]
   }
 }

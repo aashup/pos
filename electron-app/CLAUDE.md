@@ -235,22 +235,49 @@ function calcRoundOff(amount: number) {
 ## Sync Architecture
 
 **SyncScheduler** (`src/main/sync/SyncScheduler.ts`):
-- 30s interval when app is focused
-- 300s interval when app is in background
-- Immediate trigger via `sync:trigger` IPC
+- 30-minute `setInterval` — `const SYNC_INTERVAL = 30 * 60 * 1000`
+- Re-syncs immediately when network comes back online (`net.on('online', ...)`)
+- Immediate trigger also available via `sync:trigger` IPC → `triggerNow()`
 
-**PullWorker** — pulls DOWN (upsert via INSERT OR REPLACE):
-- `units` (500/page, status=active), `item_groups` (500/page), `items` (200/page, paginated), `floor_plans`, `dining_tables`, `godowns`
+**SyncEngine** (`src/main/sync/SyncEngine.ts`):
+- `isSyncing` boolean is set **synchronously** before any async work — prevents overlap
+- Spawns `SyncWorker.js` as a `worker_threads` Worker so main thread is never blocked
+- `finished` flag inside the Promise prevents double-resolve if both `message` and `exit` fire
+- Always releases `isSyncing` in the `exit` handler regardless of exit code
+- Broadcasts `sync:status-changed` to all BrowserWindows on start, success, and error
+- Returns `SyncResult { pushed, pulled, errors, lastSyncAt }`
 
-**PushWorker** — pushes UP:
-- `sales_invoices` + `sales_invoice_lines` where `sync_status='pending'`
-- Sets `sync_status='synced'` on success
+**SyncWorker** (`src/main/sync/SyncWorker.ts`):
+- Runs in its own worker thread — opens its own `better-sqlite3` connection
+- Receives `{ dbPath, token, serverUrl }` via `workerData`
+- Uses `db.transaction()` for every batch upsert (atomic, avoids lock contention)
+- Sets `busy_timeout = 5000` so concurrent reads from main thread don't cause SQLITE_BUSY
+- **PUSH** — `sales_invoices` where `sync_status='pending'` (LIMIT 50); marks `'synced'` or `'failed'`
+- **PULL** — in order: `units`, `item_groups`, `items` (paginated), `media` (paginated), `floor_plans`, `dining_tables`, `godowns`
+- Posts `{ pushed, pulled, errors }` via `parentPort.postMessage()` then exits
 
-**SyncEngine.runSync()**:
-1. Guard with `isSyncing` flag (no concurrent syncs)
-2. `PushWorker.push()`
-3. `PullWorker.pull()`
-4. Broadcast `sync:status-changed` to all BrowserWindows
+**electron-vite config** — SyncWorker is a second rollup entry point:
+```typescript
+build: { rollupOptions: { input: {
+  index: resolve('src/main/index.ts'),
+  SyncWorker: resolve('src/main/sync/SyncWorker.ts'),
+}}}
+```
+The compiled output is at `out/main/SyncWorker.js` — SyncEngine references it via `join(__dirname, 'SyncWorker.js')`.
+
+### ⚠️ Media Sync Gotcha
+
+`GET /media` (`MediaController@index`) requires **both** `entity_type` AND `entity_id` (UUID).
+Calling it without `entity_id` returns **422**.
+
+The SyncWorker uses the bulk sync endpoint instead:
+```
+GET /media/sync?entity_type=item&per_page=200&page=N
+```
+This endpoint (`MediaController@sync`) requires only `entity_type` and returns paginated results
+with `next_page_url` for the cursor loop — no `entity_id` needed.
+
+Do NOT change `SyncWorker.ts` to call `/media` — it will 422 every time.
 
 ---
 

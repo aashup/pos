@@ -4,8 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { Users, RefreshCw, LayoutGrid, Map } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tablesApi } from '../../api/tables'
-import { ordersApi } from '../../api/orders'
 import { useCartStore } from '../../store/cartStore'
+import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import Header from '../../components/layout/Header'
@@ -30,7 +30,7 @@ const STATUS_STYLE = (isDark: boolean): Record<TableStatus, { bg: string; border
 
 export default function TableSelection() {
   const navigate = useNavigate()
-  const { setOrder } = useCartStore()
+  const { setOrder, setLocalOrder } = useCartStore()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const [activeFloor, setActiveFloor] = useState<string | null>(null)
@@ -62,6 +62,7 @@ export default function TableSelection() {
 
   const handleSelectTable = async (table: DiningTable) => {
     if (table.status === 'occupied' && table.current_order_id) {
+      // Resume existing server order — no local SQLite order needed
       setOrder(table.current_order_id, 'dine_in', table.id, table.name)
       navigate('/pos/billing')
       return
@@ -75,9 +76,9 @@ export default function TableSelection() {
     setSelecting(table.id)
     try {
       const pax = paxMap[table.id] ?? 1
-      const res = await ordersApi.create({ order_type: 'dine_in', table_id: table.id, pax })
-      const order = res.data?.data
-      setOrder(order.id, 'dine_in', table.id, table.name)
+      // Offline-first: create local SQLite order — server push happens in background on KOT/checkout
+      const localId = await ipc.order.create({ order_type: 'dine_in', table_id: table.id, pax })
+      setLocalOrder(localId, 'dine_in', table.id, table.name)
       navigate('/pos/billing')
     } catch {
       toast.error('Failed to open table')

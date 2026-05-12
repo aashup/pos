@@ -303,7 +303,8 @@ app/Http/Controllers/Api/V1/
 ├── RestaurantReportController.php  # 5 POS report endpoints
 ├── KotController.php               # kitchen display
 ├── FloorPlanController.php         # floor plan CRUD
-└── DiningTableController.php       # dining tables
+├── DiningTableController.php       # dining tables
+└── MediaController.php             # image upload + sync (shared with ERP)
 ```
 
 ### Routes Added in `routes/api.php`
@@ -367,7 +368,34 @@ Route::get('reports/payment-mode', [RestaurantReportController::class, 'paymentM
 
 **`AccountingService@postPOSSale`**: creates balanced journal voucher; Dr: cash/bank/receivable ledger; Cr: sales + GST output ledgers.
 
-### Sync Endpoints (for electron app PullWorker)
+### MediaController — Two Separate Endpoints
+
+`MediaController` has two GET methods with different validation rules:
+
+| Method | Route | Required params | Purpose |
+|--------|-------|-----------------|---------|
+| `index()` | `GET /media` | `entity_type` + `entity_id` (UUID) | Single-entity fetch (item detail page) |
+| `sync()` | `GET /media/sync` | `entity_type` only | Bulk paginated fetch for POS sync worker |
+
+⚠️ **Route order matters** — `GET /media/sync` must be registered **before** `GET /media/{medium}` in `routes/api.php`, otherwise `sync` is treated as a `{medium}` UUID and route model binding fails.
+
+```php
+Route::get('media', [MediaController::class, 'index']);
+Route::get('media/sync', [MediaController::class, 'sync']);   // ← must come before {medium}
+Route::post('media', [MediaController::class, 'store']);
+Route::delete('media/{medium}', [MediaController::class, 'destroy']);
+Route::patch('media/{medium}/set-primary', [MediaController::class, 'setPrimary']);
+```
+
+`sync()` response shape (same cursor loop as paginated items):
+```json
+{ "data": [...], "next_page_url": "..." }
+```
+
+### Sync Endpoints (for electron app SyncWorker)
+
+The electron app uses a single `SyncWorker` (worker_threads) — not the `/sync/push` and `/sync/pull`
+endpoints below. Those exist but are not actively used by the current worker-based sync.
 
 ```
 POST /api/v1/sync/push     receive pending records
@@ -375,4 +403,6 @@ GET  /api/v1/sync/pull     changes since ?since= timestamp
 GET  /api/v1/sync/status
 ```
 
-Pull returns item_groups, items, floor_plans, dining_tables, godowns.
+The SyncWorker directly calls individual resource endpoints:
+- **PUSH**: `POST /restaurant/orders` for each pending `sales_invoice`
+- **PULL**: `GET /units`, `GET /item-groups`, `GET /items` (paginated), `GET /media/sync` (paginated), `GET /floor-plans`, `GET /dining-tables`, `GET /godowns`

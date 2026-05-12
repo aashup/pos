@@ -1,33 +1,18 @@
 import { net } from 'electron'
 import { runSync } from './SyncEngine'
 
-const FOREGROUND_INTERVAL = 30_000  // 30s
-const BACKGROUND_INTERVAL = 300_000 // 5min
+const SYNC_INTERVAL = 30 * 60 * 1000  // 30 minutes
 
 let timer: ReturnType<typeof setInterval> | null = null
-let inBackground = false
 
 export const SyncScheduler = {
   start(): void {
-    this.scheduleNext()
+    if (timer) return  // already started
 
-    // Sync immediately on network reconnect
-    net.on?.('online' as Parameters<typeof net.on>[0], () => {
-      void runSync()
-    })
-  },
+    timer = setInterval(() => void runSync(), SYNC_INTERVAL)
 
-  scheduleNext(): void {
-    if (timer) clearInterval(timer)
-    const interval = inBackground ? BACKGROUND_INTERVAL : FOREGROUND_INTERVAL
-    timer = setInterval(() => void runSync(), interval)
-  },
-
-  setBackground(bg: boolean): void {
-    if (inBackground !== bg) {
-      inBackground = bg
-      this.scheduleNext()
-    }
+    // Also sync immediately when network comes back online
+    net.on?.('online' as Parameters<typeof net.on>[0], () => void runSync())
   },
 
   stop(): void {

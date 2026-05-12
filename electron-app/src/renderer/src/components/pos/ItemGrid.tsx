@@ -6,9 +6,13 @@ import { useCartStore } from '../../store/cartStore'
 import { cn } from '../../lib/utils'
 import type { Item, ItemGroup } from '../../types'
 
-interface POSItem extends Item {
+export interface POSItem extends Item {
   selling_price: number
   image_url?: string | null
+}
+
+interface Props {
+  onItemAdd?: (item: POSItem) => void
 }
 
 // Deterministic pastel background per item name (for placeholder)
@@ -29,8 +33,16 @@ function colorFor(name: string) {
   return CARD_COLORS[h % CARD_COLORS.length]
 }
 
-export default function ItemGrid() {
+export default function ItemGrid({ onItemAdd }: Props = {}) {
   const addItem = useCartStore((s) => s.addItem)
+
+  const handleAdd = (item: POSItem) => {
+    if (onItemAdd) {
+      onItemAdd(item)
+    } else {
+      addItem({ ...item, selling_price: item.selling_price ?? 0 })
+    }
+  }
   const [search, setSearch] = useState('')
   const [selectedGroup, setSelectedGroup] = useState<string | undefined>(undefined)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -137,7 +149,7 @@ export default function ItemGrid() {
               <ItemCard
                 key={item.id}
                 item={item}
-                onAdd={() => addItem({ ...item, selling_price: item.selling_price ?? 0 })}
+                onAdd={() => handleAdd(item)}
               />
             ))}
           </div>

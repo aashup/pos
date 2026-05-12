@@ -24,43 +24,44 @@ export async function pullFromServer(): Promise<PullResult> {
 
   let pulled = 0
   const errors: string[] = []
+  const db = getDb()
 
-  // Pull units
+  // ── Units ─────────────────────────────────────────────────────────────────
   try {
     const res = await client.get('/units?per_page=500&status=active')
-    const units = res.data?.data ?? res.data ?? []
-    for (const u of units) {
-      UnitRepository.upsert(u)
-      pulled++
-    }
+    const units: any[] = res.data?.data ?? res.data ?? []
+    const insertMany = db.transaction((rows: any[]) => {
+      for (const u of rows) { UnitRepository.upsert(u); pulled++ }
+    })
+    insertMany(units)
   } catch (e: unknown) {
     errors.push(`units: ${(e as Error).message}`)
   }
 
-  // Pull item groups
+  // ── Item groups ───────────────────────────────────────────────────────────
   try {
     const res = await client.get('/item-groups?per_page=500')
-    const groups = res.data?.data ?? res.data ?? []
-    for (const g of groups) {
-      ItemRepository.upsertGroup(g)
-      pulled++
-    }
+    const groups: any[] = res.data?.data ?? res.data ?? []
+    const insertMany = db.transaction((rows: any[]) => {
+      for (const g of rows) { ItemRepository.upsertGroup(g); pulled++ }
+    })
+    insertMany(groups)
   } catch (e: unknown) {
     errors.push(`item-groups: ${(e as Error).message}`)
   }
 
-  // Pull items
+  // ── Items (paginated) ─────────────────────────────────────────────────────
   try {
     let page = 1
     while (true) {
       const res = await client.get(`/items?per_page=200&page=${page}&is_active=true`)
       const payload = res.data
-      const records: unknown[] = payload.data ?? payload ?? []
+      const records: any[] = payload.data ?? payload ?? []
       if (records.length === 0) break
-      for (const item of records) {
-        ItemRepository.upsert(item as Parameters<typeof ItemRepository.upsert>[0])
-        pulled++
-      }
+      const insertMany = db.transaction((rows: any[]) => {
+        for (const item of rows) { ItemRepository.upsert(item); pulled++ }
+      })
+      insertMany(records)
       if (!payload.next_page_url) break
       page++
     }
@@ -68,23 +69,25 @@ export async function pullFromServer(): Promise<PullResult> {
     errors.push(`items: ${(e as Error).message}`)
   }
 
-  // Pull item media (images)
+  // ── Item media (paginated) ────────────────────────────────────────────────
   try {
-    const db = getDb()
     const upsertMedia = db.prepare(
       `INSERT OR REPLACE INTO media (id, company_id, entity_type, entity_id, url, sort_order, is_primary, synced_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     )
+    const insertMany = db.transaction((rows: any[]) => {
+      for (const m of rows) {
+        upsertMedia.run(m.id, m.company_id ?? null, 'item', m.entity_id, m.url, m.sort_order ?? 0, m.is_primary ? 1 : 0)
+        pulled++
+      }
+    })
     let page = 1
     while (true) {
       const res = await client.get(`/media?entity_type=item&per_page=200&page=${page}`)
       const payload = res.data
-      const records: unknown[] = payload.data ?? payload ?? []
+      const records: any[] = payload.data ?? payload ?? []
       if (records.length === 0) break
-      for (const m of records as any[]) {
-        upsertMedia.run(m.id, m.company_id ?? null, 'item', m.entity_id, m.url, m.sort_order ?? 0, m.is_primary ? 1 : 0)
-        pulled++
-      }
+      insertMany(records)
       if (!payload.next_page_url) break
       page++
     }
@@ -92,42 +95,45 @@ export async function pullFromServer(): Promise<PullResult> {
     errors.push(`media: ${(e as Error).message}`)
   }
 
-  // Pull floor plans
+  // ── Floor plans ───────────────────────────────────────────────────────────
   try {
     const res = await client.get('/floor-plans')
-    const plans = res.data?.data ?? []
-    for (const fp of plans) {
-      TableRepository.upsertFloorPlan(fp)
-      pulled++
-    }
+    const plans: any[] = res.data?.data ?? []
+    const insertMany = db.transaction((rows: any[]) => {
+      for (const fp of rows) { TableRepository.upsertFloorPlan(fp); pulled++ }
+    })
+    insertMany(plans)
   } catch (e: unknown) {
     errors.push(`floor-plans: ${(e as Error).message}`)
   }
 
-  // Pull dining tables
+  // ── Dining tables ─────────────────────────────────────────────────────────
   try {
     const res = await client.get('/dining-tables?is_active=1')
-    const tables = res.data?.data ?? []
-    for (const t of tables) {
-      TableRepository.upsert(t)
-      pulled++
-    }
+    const tables: any[] = res.data?.data ?? []
+    const insertMany = db.transaction((rows: any[]) => {
+      for (const t of rows) { TableRepository.upsert(t); pulled++ }
+    })
+    insertMany(tables)
   } catch (e: unknown) {
     errors.push(`dining-tables: ${(e as Error).message}`)
   }
 
-  // Pull godowns
+  // ── Godowns ───────────────────────────────────────────────────────────────
   try {
     const res = await client.get('/godowns')
-    const godowns = res.data?.data ?? []
-    const db = getDb()
-    for (const g of godowns) {
-      db.prepare(
-        `INSERT OR REPLACE INTO godowns (id, company_id, name, is_default, synced_at)
-         VALUES (?, ?, ?, ?, datetime('now'))`,
-      ).run(g.id, g.company_id, g.name, g.is_default ? 1 : 0)
-      pulled++
-    }
+    const godowns: any[] = res.data?.data ?? []
+    const upsertGodown = db.prepare(
+      `INSERT OR REPLACE INTO godowns (id, company_id, name, is_default, synced_at)
+       VALUES (?, ?, ?, ?, datetime('now'))`,
+    )
+    const insertMany = db.transaction((rows: any[]) => {
+      for (const g of rows) {
+        upsertGodown.run(g.id, g.company_id, g.name, g.is_default ? 1 : 0)
+        pulled++
+      }
+    })
+    insertMany(godowns)
   } catch (e: unknown) {
     errors.push(`godowns: ${(e as Error).message}`)
   }

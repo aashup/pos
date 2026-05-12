@@ -14,7 +14,8 @@ interface CartTotals {
 }
 
 interface CartState {
-  orderId: string | null
+  orderId: string | null        // server UUID (set when order pushed to server or resumed occupied table)
+  localOrderId: string | null   // local SQLite UUID (set when order created offline-first)
   orderType: OrderType
   tableId: string | null
   tableName: string | null
@@ -26,6 +27,7 @@ interface CartState {
 
   // Order management
   setOrder: (orderId: string, orderType: OrderType, tableId?: string, tableName?: string) => void
+  setLocalOrder: (localOrderId: string, orderType: OrderType, tableId?: string, tableName?: string) => void
   clearOrder: () => void
   setOrderType: (type: OrderType) => void
   setTable: (tableId: string, tableName: string, pax?: number) => void
@@ -34,7 +36,7 @@ interface CartState {
   setDiscount: (pct: number) => void
 
   // Cart operations
-  addItem: (item: { id: string; name: string; selling_price: number; unit: string; cgst: number; sgst: number; igst: number }) => void
+  addItem: (item: { id: string; name: string; selling_price: number; unit: string; cgst: number; sgst: number; igst: number }, lineId?: string) => void
   addVariantItem: (item: Item, variant: ItemVariant | null, modifiers: SelectedModifier[]) => void
   addCombo: (combo: Combo, modifiers: SelectedModifier[]) => void
   updateQty: (lineId: string, qty: number) => void
@@ -77,6 +79,7 @@ function computeTotals(lines: CartLine[], isInterState: boolean, discountPct: nu
 
 export const useCartStore = create<CartState>((set, get) => ({
   orderId: null,
+  localOrderId: null,
   orderType: 'takeaway',
   tableId: null,
   tableName: null,
@@ -86,11 +89,16 @@ export const useCartStore = create<CartState>((set, get) => ({
   discountPct: 0,
   totals: ZERO_TOTALS,
 
+  // Set a server-side order (occupied table resume, or after inline server creation)
   setOrder: (orderId, orderType, tableId, tableName) =>
     set({ orderId, orderType, tableId: tableId ?? null, tableName: tableName ?? null }),
 
+  // Set a locally-created order (offline-first: takeaway, delivery, vacant dine_in)
+  setLocalOrder: (localOrderId, orderType, tableId, tableName) =>
+    set({ localOrderId, orderId: null, orderType, tableId: tableId ?? null, tableName: tableName ?? null }),
+
   clearOrder: () =>
-    set({ orderId: null, orderType: 'takeaway', tableId: null, tableName: null, pax: 1, lines: [], discountPct: 0, totals: ZERO_TOTALS }),
+    set({ orderId: null, localOrderId: null, orderType: 'takeaway', tableId: null, tableName: null, pax: 1, lines: [], discountPct: 0, totals: ZERO_TOTALS }),
 
   setOrderType: (type) => set({ orderType: type }),
 
@@ -105,7 +113,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({ discountPct: pct, totals: computeTotals(lines, isInterState, pct) })
   },
 
-  addItem: (item) => {
+  addItem: (item, lineId) => {
     const { lines, isInterState, discountPct } = get()
     const gstRate = item.cgst + item.sgst + item.igst
 
@@ -121,7 +129,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       )
     } else {
       const newLine: CartLine = {
-        id: uuidv4(),
+        id: lineId ?? uuidv4(),
         itemId: item.id,
         comboId: null,
         name: item.name,

@@ -1,8 +1,10 @@
 import { ipcMain, webContents } from 'electron'
+import axios from 'axios'
 import { TokenStore } from '../auth/TokenStore'
 import { ItemRepository } from '../db/repositories/ItemRepository'
 import { TableRepository } from '../db/repositories/TableRepository'
 import { UnitRepository } from '../db/repositories/UnitRepository'
+import { OrderRepository } from '../db/repositories/OrderRepository'
 import { runSync, getSyncStatus } from '../sync/SyncEngine'
 import { printReceipt, printKOT, type ReceiptData, type KOTData } from '../print/ThermalPrinter'
 
@@ -31,6 +33,100 @@ export function registerIpcHandlers(): void {
   // ── Tables ────────────────────────────────────────────────────────────────
   ipcMain.handle('tables:get-all', () => TableRepository.getAll())
   ipcMain.handle('tables:floor-plans', () => TableRepository.getFloorPlans())
+
+  // ── Orders (offline-first) ────────────────────────────────────────────────
+  ipcMain.handle('order:create', (_, data: { order_type: string; table_id?: string | null; pax?: number }) =>
+    OrderRepository.createOrder(data),
+  )
+
+  ipcMain.handle('order:add-line', (_, invoiceId: string, line: {
+    id: string; item_id: string; item_name: string; quantity: number
+    rate: number; discount_percent: number; gst_rate: number; notes?: string | null
+  }) => OrderRepository.addLine(invoiceId, line))
+
+  ipcMain.handle('order:update-line-qty', (_, lineId: string, qty: number) =>
+    OrderRepository.updateLineQty(lineId, qty),
+  )
+
+  ipcMain.handle('order:remove-line', (_, lineId: string) =>
+    OrderRepository.removeLine(lineId),
+  )
+
+  ipcMain.handle('order:mark-confirmed', (_, localId: string, serverId?: string | null) =>
+    OrderRepository.markConfirmed(localId, serverId),
+  )
+
+  /**
+   * Create a local KOT, print it immediately, then fire-and-forget push to server.
+   * Returns { kotNumber, lines } — the renderer marks Zustand lines as 'sent'.
+   */
+  ipcMain.handle('order:send-kot', async (_, localOrderId: string) => {
+    const kot = OrderRepository.createKot(localOrderId)
+    if (!kot) return { success: false, error: 'No pending items' }
+
+    // Print locally — non-blocking, failure is non-critical
+    try {
+      await printKOT({
+        kotNumber: kot.kot_number,
+        items: kot.lines.map((l) => ({ name: l.item_name, qty: l.quantity, notes: l.notes ?? undefined })),
+      } as KOTData)
+    } catch {
+      // KOT printed nothing — user can reprint from order detail
+    }
+
+    // Background push to server (fire-and-forget — SyncWorker retries on failure)
+    const token = TokenStore.getToken()
+    const serverUrl = TokenStore.getSetting('serverUrl')
+    if (token && serverUrl) {
+      setImmediate(async () => {
+        try {
+          const client = axios.create({
+            baseURL: `${serverUrl}/api/v1`,
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            timeout: 15000,
+          })
+
+          const order = OrderRepository.getOrder(localOrderId)
+          if (!order) return
+
+          // 1. Ensure server order exists
+          let serverId: string = order.server_id
+          if (!serverId) {
+            const res = await client.post('/restaurant/orders', {
+              order_type: order.order_type,
+              table_id: order.table_id ?? undefined,
+              pax: order.pax ?? 1,
+            })
+            serverId = res.data?.data?.id
+            OrderRepository.setServerId(localOrderId, serverId)
+          }
+
+          // 2. Push unsynced lines
+          const unsynced = OrderRepository.getPendingLines(localOrderId)
+          if (unsynced.length > 0) {
+            await client.post(`/restaurant/orders/${serverId}/lines`, {
+              lines: unsynced.map((l) => ({
+                item_id: l.item_id,
+                quantity: l.quantity,
+                rate: l.rate,
+                discount_percent: l.discount_percent ?? 0,
+                gst_rate: l.gst_rate ?? 0,
+                notes: l.notes ?? undefined,
+              })),
+            })
+            OrderRepository.markLinesSynced(localOrderId)
+          }
+
+          // 3. Generate KOT on server
+          await client.post(`/restaurant/orders/${serverId}/kot`)
+        } catch {
+          // Silent — SyncWorker will retry
+        }
+      })
+    }
+
+    return { success: true, kotNumber: kot.kot_number, lines: kot.lines }
+  })
 
   // ── Sync ──────────────────────────────────────────────────────────────────
   ipcMain.handle('sync:trigger', () => runSync())

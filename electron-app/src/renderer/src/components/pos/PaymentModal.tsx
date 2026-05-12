@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Loader2, Banknote, Smartphone, CreditCard, Tag, SplitSquareHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ordersApi, type CheckoutPayload } from '../../api/orders'
+import { useCartStore } from '../../store/cartStore'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import type { CartLine } from '../../types'
@@ -15,12 +16,13 @@ interface CartTotals {
 }
 
 interface Props {
-  orderId: string | null
+  orderId: string | null        // server UUID (occupied table resume) or null
+  localOrderId: string | null   // local SQLite UUID (offline-first new orders)
   orderType: string
   lines: CartLine[]
   totals: CartTotals
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (serverId?: string) => void
 }
 
 type PayMode = 'cash' | 'upi' | 'card' | 'credit'
@@ -40,7 +42,7 @@ const MODE_LABELS: Record<PayMode, string> = {
   cash: 'Cash', upi: 'UPI', card: 'Card', credit: 'Credit',
 }
 
-export default function PaymentModal({ orderId, orderType, lines, totals, onClose, onSuccess }: Props) {
+export default function PaymentModal({ orderId, localOrderId, orderType, lines, totals, onClose, onSuccess }: Props) {
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const [payMode, setPayMode] = useState<PayMode>('cash')
@@ -80,8 +82,6 @@ export default function PaymentModal({ orderId, orderType, lines, totals, onClos
   }
 
   const handleCheckout = async () => {
-    if (!orderId) { toast.error('No active order'); return }
-
     if (isSplit) {
       if (Math.abs(splitTotal - netPayable) > 0.5) {
         toast.error(`Split amounts (${formatCurrency(splitTotal)}) must equal bill total (${formatCurrency(netPayable)})`)
@@ -102,6 +102,44 @@ export default function PaymentModal({ orderId, orderType, lines, totals, onClos
 
     setLoading(true)
     try {
+      // 1. Resolve the server order ID.
+      //    Priority: explicit server orderId (occupied table resume) → create new server order
+      let activeOrderId: string
+      if (orderId && !orderId.startsWith('local-')) {
+        // Resumed occupied table — server order already exists
+        activeOrderId = orderId
+      } else {
+        // Offline-first new order (localOrderId set) or legacy local- fallback
+        const res = await ordersApi.create({
+          order_type: orderType as 'takeaway' | 'dine_in' | 'delivery',
+        })
+        activeOrderId = res.data?.data?.id
+        // Update store so a retry reuses this server order
+        useCartStore.getState().setOrder(
+          activeOrderId,
+          orderType as 'takeaway' | 'dine_in' | 'delivery',
+        )
+      }
+
+      // 2. Push any pending lines to server (items not yet sent via KOT)
+      const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
+      if (pendingLines.length > 0) {
+        await ordersApi.addLines(
+          activeOrderId,
+          pendingLines.map((l) => ({
+            item_id: l.itemId,
+            quantity: l.quantity,
+            rate: l.rate,
+            discount_percent: l.discountPct,
+            gst_rate: l.gstRate,
+            notes: l.notes || undefined,
+          })),
+        )
+        // Mark sent so a checkout retry doesn't re-add them
+        useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
+      }
+
+      // 3. Build payload and checkout
       let payload: CheckoutPayload
       if (isSplit) {
         payload = {
@@ -124,8 +162,9 @@ export default function PaymentModal({ orderId, orderType, lines, totals, onClos
           notes: notes.trim() || undefined,
         }
       }
-      await ordersApi.checkout(orderId, payload)
-      onSuccess()
+      await ordersApi.checkout(activeOrderId, payload)
+      // Pass server order ID back so BillingScreen can mark local SQLite order confirmed
+      onSuccess(activeOrderId)
     } catch {
       // Error handled by axios interceptor
     } finally {

@@ -67,7 +67,8 @@ All under `/api/v1/` (Laravel sanctum auth required).
 | `GET/POST/PATCH/DELETE /item-variants` | ItemVariantController | scoped by `item_id` |
 | `GET/POST/PATCH/DELETE /modifier-groups` | ModifierGroupController | |
 | `POST /media` | MediaController@store | multipart; `entity_type`, `entity_id`, `is_primary` as `'1'`/`'0'` |
-| `GET /media` | MediaController@index | `?entity_type=item&entity_id=` |
+| `GET /media` | MediaController@index | `?entity_type=&entity_id=` — **both required** (use for single-entity fetch) |
+| `GET /media/sync` | MediaController@sync | `?entity_type=item&per_page=200` — bulk paginated, **no entity_id** (POS sync only) |
 | `DELETE /media/{id}` | MediaController@destroy | |
 | `GET/POST /restaurant/orders` | RestaurantOrderController | |
 | `POST /restaurant/orders/{id}/lines` | RestaurantOrderController | |

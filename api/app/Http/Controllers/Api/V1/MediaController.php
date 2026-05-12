@@ -25,6 +25,31 @@ class MediaController extends Controller
         return response()->json(['data' => $media]);
     }
 
+    /**
+     * Bulk sync endpoint — returns all media for an entity_type (paginated).
+     * Used by the POS electron app SyncWorker to pull item images in bulk.
+     * Does NOT require entity_id, only entity_type.
+     *
+     * GET /media/sync?entity_type=item&per_page=200&page=1
+     */
+    public function sync(Request $request): JsonResponse
+    {
+        $request->validate([
+            'entity_type' => 'required|in:item,item_variant,combo,modifier_group',
+            'per_page'    => 'integer|min:1|max:500',
+        ]);
+
+        $media = Media::where('entity_type', $request->entity_type)
+            ->orderBy('entity_id')
+            ->orderBy('sort_order')
+            ->paginate($request->integer('per_page', 200));
+
+        return response()->json([
+            'data'          => $media->items(),
+            'next_page_url' => $media->nextPageUrl(),
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $request->validate([
