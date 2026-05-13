@@ -33,7 +33,7 @@ export default function Login() {
       // Trigger initial sync after login
       ipc.sync.trigger().catch(() => {})
 
-      navigate('/pos/billing')
+      navigate('/pos/tables')
     } catch {
       // Error handled by axios interceptor toast
     } finally {

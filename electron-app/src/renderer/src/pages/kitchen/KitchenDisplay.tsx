@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle, Clock, ChefHat, Loader2, WifiOff } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { kotsApi } from '../../api/kots'
+import { kotsApi } from '../../api/kots'   // used for background API sync only
 import { ipc, type LocalKot } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
@@ -60,26 +60,18 @@ export default function KitchenDisplay() {
     return () => clearInterval(id)
   }, [qc])
 
-  // KOT status advance: write to SQLite immediately, fire API async
+  // KOT status advance: SQLite only — main process handles background API push
   const advanceMutation = useMutation({
-    mutationFn: async ({ id, serverId, status }: { id: string; serverId: string | null; status: 'in_progress' | 'ready' | 'served' }) => {
-      await ipc.kots.updateStatus(id, status)
-      if (serverId) {
-        kotsApi.updateStatus(serverId, status).catch(() => {})
-      }
-    },
+    mutationFn: ({ id, status }: { id: string; status: 'in_progress' | 'ready' | 'served' }) =>
+      ipc.kots.updateStatus(id, status),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['kitchen-kots'] }),
     onError: () => toast.error('Failed to update status'),
   })
 
-  // Line status toggle: write to SQLite immediately, fire API async
+  // Line status toggle: SQLite only — main process handles background API push
   const lineMutation = useMutation({
-    mutationFn: async ({ kotId, kotServerId, lineId, status }: { kotId: string; kotServerId: string | null; lineId: string; status: 'cooking' | 'ready' }) => {
-      await ipc.kots.updateLineStatus(kotId, lineId, status)
-      if (kotServerId) {
-        kotsApi.updateLineStatus(kotServerId, lineId, status).catch(() => {})
-      }
-    },
+    mutationFn: ({ kotId, lineId, status }: { kotId: string; lineId: string; status: 'cooking' | 'ready' }) =>
+      ipc.kots.updateLineStatus(kotId, lineId, status),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['kitchen-kots'] }),
     onError: () => toast.error('Failed to update item'),
   })
@@ -142,9 +134,9 @@ export default function KitchenDisplay() {
                       key={kot.id}
                       kot={kot}
                       now={now}
-                      onAdvance={(status) => advanceMutation.mutate({ id: kot.id, serverId: kot.server_id, status })}
+                      onAdvance={(status) => advanceMutation.mutate({ id: kot.id, status })}
                       onLineToggle={(lineId, status) =>
-                        lineMutation.mutate({ kotId: kot.id, kotServerId: kot.server_id, lineId, status })
+                        lineMutation.mutate({ kotId: kot.id, lineId, status })
                       }
                       advancing={advanceMutation.isPending}
                       isDark={isDark}

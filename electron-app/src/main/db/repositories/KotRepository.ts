@@ -175,4 +175,19 @@ export const KotRepository = {
       WHERE id = ?
     `).run(serverId, localId)
   },
+
+  /** Mark a KOT as synced after a successful status push to the server. */
+  markSynced(id: string): void {
+    const db = getDb()
+    db.prepare(`
+      UPDATE kots SET sync_status = 'synced', synced_at = datetime('now') WHERE id = ?
+    `).run(id)
+  },
+
+  /** Return the server_id for a given local KOT id (used by background push). */
+  getServerId(id: string): string | null {
+    const db = getDb()
+    const row = db.prepare('SELECT server_id FROM kots WHERE id = ?').get(id) as { server_id: string | null } | undefined
+    return row?.server_id ?? null
+  },
 }

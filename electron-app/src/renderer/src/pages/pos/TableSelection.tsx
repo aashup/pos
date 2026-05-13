@@ -30,7 +30,7 @@ const STATUS_STYLE = (isDark: boolean): Record<TableStatus, { bg: string; border
 
 export default function TableSelection() {
   const navigate = useNavigate()
-  const { setOrder, setLocalOrder } = useCartStore()
+  const { setOrder, setLocalOrder, clearOrder } = useCartStore()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const [activeFloor, setActiveFloor] = useState<string | null>(null)
@@ -62,7 +62,8 @@ export default function TableSelection() {
 
   const handleSelectTable = async (table: DiningTable) => {
     if (table.status === 'occupied' && table.current_order_id) {
-      // Resume existing server order — no local SQLite order needed
+      // Clear any previous table's cart before resuming this order
+      clearOrder()
       setOrder(table.current_order_id, 'dine_in', table.id, table.name)
       navigate('/pos/billing')
       return
@@ -76,6 +77,8 @@ export default function TableSelection() {
     setSelecting(table.id)
     try {
       const pax = paxMap[table.id] ?? 1
+      // Clear any previous table's cart before opening a new one
+      clearOrder()
       // Offline-first: create local SQLite order — server push happens in background on KOT/checkout
       const localId = await ipc.order.create({ order_type: 'dine_in', table_id: table.id, pax })
       setLocalOrder(localId, 'dine_in', table.id, table.name)

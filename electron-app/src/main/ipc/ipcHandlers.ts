@@ -139,12 +139,59 @@ export function registerIpcHandlers(): void {
 
   // ── KOTs (kitchen display — offline-first) ───────────────────────────────
   ipcMain.handle('kots:list', () => KotRepository.listActive())
-  ipcMain.handle('kots:update-status', (_, id: string, status: string) =>
-    KotRepository.updateStatus(id, status),
-  )
-  ipcMain.handle('kots:update-line-status', (_, kotId: string, lineId: string, status: string) =>
-    KotRepository.updateLineStatus(kotId, lineId, status),
-  )
+
+  ipcMain.handle('kots:update-status', (_, id: string, status: string) => {
+    // 1. Write to SQLite immediately (works offline)
+    KotRepository.updateStatus(id, status)
+
+    // 2. Background push to server — fire-and-forget, stays pending on failure
+    const token = TokenStore.getToken()
+    const serverUrl = TokenStore.getSetting('serverUrl')
+    if (token && serverUrl) {
+      setImmediate(async () => {
+        try {
+          const serverId = KotRepository.getServerId(id)
+          if (!serverId) return  // not yet on server — next pull will reconcile
+          const client = axios.create({
+            baseURL: `${serverUrl}/api/v1`,
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            timeout: 10000,
+          })
+          await client.patch(`/kots/${serverId}/status`, { status })
+          KotRepository.markSynced(id)
+        } catch {
+          // Stays sync_status='pending' — background API pull will reconcile
+        }
+      })
+    }
+  })
+
+  ipcMain.handle('kots:update-line-status', (_, kotId: string, lineId: string, status: string) => {
+    // 1. Write to SQLite immediately (works offline)
+    KotRepository.updateLineStatus(kotId, lineId, status)
+
+    // 2. Background push — only possible when KOT has a server_id and
+    //    line IDs from server-synced KOTs ARE server UUIDs
+    const token = TokenStore.getToken()
+    const serverUrl = TokenStore.getSetting('serverUrl')
+    if (token && serverUrl) {
+      setImmediate(async () => {
+        try {
+          const serverId = KotRepository.getServerId(kotId)
+          if (!serverId) return  // locally-created KOT not yet on server
+          const client = axios.create({
+            baseURL: `${serverUrl}/api/v1`,
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            timeout: 10000,
+          })
+          await client.patch(`/kots/${serverId}/lines/${lineId}/status`, { status })
+        } catch {
+          // Silent — KOT status will still auto-advance on next pull
+        }
+      })
+    }
+  })
+
   ipcMain.handle('kots:upsert-from-server', (_, kot: unknown) =>
     KotRepository.upsertFromServer(kot as Parameters<typeof KotRepository.upsertFromServer>[0]),
   )
