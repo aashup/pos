@@ -33,7 +33,7 @@ export default function HoldOrders() {
       const order = orders.find((o) => o.id === id)
       if (order) {
         setOrder(order.id, order.order_type, order.table_id ?? undefined, order.dining_table?.name)
-        navigate('/pos/billing')
+        navigate('/pos/tables')
       }
     },
     onError: () => toast.error('Failed to resume order'),
@@ -41,7 +41,7 @@ export default function HoldOrders() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <Header title={`Held Orders (${orders.length})`} onBack={() => navigate('/pos/billing')} />
+      <Header title={`Held Orders (${orders.length})`} onBack={() => navigate('/pos/tables')} />
 
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading ? (

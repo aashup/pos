@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { ipc } from '../../bridge/ipc'
+import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useCartStore } from '../../store/cartStore'
 import { cn } from '../../lib/utils'
 import type { Item, ItemGroup } from '../../types'
@@ -74,14 +75,11 @@ export default function ItemGrid({ onItemAdd }: Props = {}) {
     })
   }, [allItems, search, selectedGroup])
 
-  // F2 focuses search
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'F2') { e.preventDefault(); searchRef.current?.focus() }
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [])
+  // F2 focuses search — registered via global shortcut stack so conflicts resolve correctly
+  const f2Shortcut = useMemo(() => [
+    { key: 'F2', label: 'Focus item search', action: () => searchRef.current?.focus() },
+  ], [])
+  useKeyboardShortcuts(f2Shortcut)
 
   return (
     <div className="flex flex-col h-full">

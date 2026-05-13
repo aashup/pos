@@ -5,6 +5,7 @@ import { useAuthStore } from './store/authStore'
 import { useSyncStore } from './store/syncStore'
 import { useThemeStore, applyTheme } from './store/themeStore'
 import { ipc } from './bridge/ipc'
+import { useGlobalShortcuts } from './hooks/useKeyboardShortcuts'
 
 // Apply persisted theme before first render
 applyTheme(useThemeStore.getState().theme)
@@ -50,6 +51,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
+  useGlobalShortcuts()
   const { isAuthenticated } = useAuthStore()
   const { setStatus, setSyncResult } = useSyncStore()
 
@@ -102,7 +104,7 @@ function AppRoutes() {
 
       <Route
         path="*"
-        element={<Navigate to={isAuthenticated ? '/pos/billing' : '/login'} replace />}
+        element={<Navigate to={isAuthenticated ? '/pos/tables' : '/login'} replace />}
       />
     </Routes>
   )

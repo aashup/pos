@@ -160,7 +160,7 @@ export default function BillingScreen() {
 
   const handleSendKot = useCallback(async () => {
     const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
-    if (pendingLines.length === 0) return
+    if (sendingKot || pendingLines.length === 0) return
 
     setSendingKot(true)
     try {
@@ -238,37 +238,21 @@ export default function BillingScreen() {
     return unsubDownloaded
   }, [])
 
-  // Keyboard shortcuts
+  // Keyboard shortcut events — dispatched by the global useKeyboardShortcuts hook in AppRoutes
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+    const onSendKot = () => { if (orderType === 'dine_in') handleSendKot() }
+    const onPayment  = () => { if (lines.length > 0) setShowPayment(true) }
+    const onEscape   = () => { setDrawerOpen(false); setShowPayment(false) }
 
-      switch (e.key) {
-        case 'F1':
-          e.preventDefault()
-          navigate('/pos/tables')
-          break
-        case 'F3':
-          e.preventDefault()
-          if (orderType === 'dine_in') handleSendKot()
-          break
-        case 'F4':
-          e.preventDefault()
-          if (lines.length > 0) setShowPayment(true)
-          break
-        case 'F5':
-          e.preventDefault()
-          handleSyncNow()
-          break
-        case 'Escape':
-          setDrawerOpen(false)
-          setShowPayment(false)
-          break
-      }
+    window.addEventListener('shortcut:send-kot', onSendKot)
+    window.addEventListener('shortcut:payment',  onPayment)
+    window.addEventListener('shortcut:escape',   onEscape)
+    return () => {
+      window.removeEventListener('shortcut:send-kot', onSendKot)
+      window.removeEventListener('shortcut:payment',  onPayment)
+      window.removeEventListener('shortcut:escape',   onEscape)
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [navigate, handleSendKot, lines.length, orderType])
+  }, [orderType, handleSendKot, lines.length])
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
@@ -426,6 +410,7 @@ export default function BillingScreen() {
             if (localOrderId) ipc.order.markConfirmed(localOrderId, serverId).catch(() => {})
             clearOrder()
             toast.success('Payment complete!')
+            navigate('/pos/tables')
           }}
         />
       )}

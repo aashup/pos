@@ -13,8 +13,8 @@ export default function Login() {
   const { setAuth } = useAuthStore()
   const { theme, toggleTheme } = useThemeStore()
   const isDark = theme === 'dark'
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('admin@demo.com')
+  const [password, setPassword] = useState('Aashu@123')
   const [loading, setLoading] = useState(false)
 
   const handleLogin = async (e: React.FormEvent) => {

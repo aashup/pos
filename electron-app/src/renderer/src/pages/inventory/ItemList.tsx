@@ -43,7 +43,7 @@ export default function ItemList() {
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       <header className={cn('h-12 flex items-center justify-between px-4 shrink-0', isDark ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 border-b border-gray-200')}>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('/pos/billing')} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}>
+          <button onClick={() => navigate('/pos/tables')} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}>
             <ArrowLeft className="w-4 h-4" />
           </button>
           <span className="font-bold text-orange-400 text-sm">Item Management</span>
