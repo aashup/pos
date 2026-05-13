@@ -1,3 +1,26 @@
+export interface LocalKot {
+  id: string
+  server_id: string | null
+  sales_invoice_id: string
+  kot_number: string
+  status: 'new' | 'in_progress' | 'ready' | 'served'
+  notes: string | null
+  print_count: number
+  sync_status: string
+  created_at: string
+  lines: {
+    id: string
+    kot_id: string
+    item_id: string
+    item_name: string
+    variant_name: string | null
+    modifier_summary: string | null
+    quantity: number
+    notes: string | null
+    status: 'pending' | 'cooking' | 'ready'
+  }[]
+}
+
 declare global {
   interface Window {
     electronAPI: {
@@ -44,6 +67,12 @@ declare global {
         receipt(data: unknown): Promise<{ success: boolean; error?: string }>
         kot(data: unknown): Promise<{ success: boolean; error?: string }>
         listPrinters(): Promise<string[]>
+      }
+      kots: {
+        list(): Promise<LocalKot[]>
+        updateStatus(id: string, status: string): Promise<void>
+        updateLineStatus(kotId: string, lineId: string, status: string): Promise<void>
+        upsertFromServer(kot: unknown): Promise<void>
       }
       window: {
         openKitchen(): Promise<void>
@@ -99,6 +128,12 @@ export const ipc = {
     receipt:      (data: unknown) => window.electronAPI.print.receipt(data),
     kot:          (data: unknown) => window.electronAPI.print.kot(data),
     listPrinters: () => window.electronAPI.print.listPrinters(),
+  },
+  kots: {
+    list:             () => window.electronAPI.kots.list(),
+    updateStatus:     (id: string, status: string) => window.electronAPI.kots.updateStatus(id, status),
+    updateLineStatus: (kotId: string, lineId: string, status: string) => window.electronAPI.kots.updateLineStatus(kotId, lineId, status),
+    upsertFromServer: (kot: unknown) => window.electronAPI.kots.upsertFromServer(kot),
   },
   window: {
     openKitchen:  () => window.electronAPI.window.openKitchen(),

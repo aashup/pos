@@ -80,8 +80,9 @@ export default function TableSelection() {
       const localId = await ipc.order.create({ order_type: 'dine_in', table_id: table.id, pax })
       setLocalOrder(localId, 'dine_in', table.id, table.name)
       navigate('/pos/billing')
-    } catch {
-      toast.error('Failed to open table')
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      toast.error(`Failed to open table: ${msg}`)
     } finally {
       setSelecting(null)
     }

@@ -10,7 +10,8 @@
       "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\main\" -Recurse -File)",
       "Bash(Select-Object FullName)",
       "Bash(Sort-Object FullName)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(make pos-fresh *)"
     ]
   }
 }

@@ -61,6 +61,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     listPrinters: (): Promise<string[]> => ipcRenderer.invoke('print:list-printers'),
   },
 
+  kots: {
+    list:             (): Promise<unknown[]> => ipcRenderer.invoke('kots:list'),
+    updateStatus:     (id: string, status: string): Promise<void> => ipcRenderer.invoke('kots:update-status', id, status),
+    updateLineStatus: (kotId: string, lineId: string, status: string): Promise<void> => ipcRenderer.invoke('kots:update-line-status', kotId, lineId, status),
+    upsertFromServer: (kot: unknown): Promise<void> => ipcRenderer.invoke('kots:upsert-from-server', kot),
+  },
+
   window: {
     openKitchen:  (): Promise<void> => ipcRenderer.invoke('window:open-kitchen'),
     closeKitchen: (): Promise<void> => ipcRenderer.invoke('window:close-kitchen'),

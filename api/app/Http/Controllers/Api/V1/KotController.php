@@ -18,7 +18,7 @@ class KotController extends Controller
     {
         $query = KitchenOrderTicket::with('lines', 'invoice.diningTable')
             ->where('company_id', $request->user()->company_id)
-            ->when($request->status, fn ($q, $s) => $q->where('status', $s))
+            ->when($request->status, fn ($q, $s) => $q->whereIn('status', explode(',', $s)))
             ->when($request->date, fn ($q, $d) => $q->whereDate('created_at', $d))
             ->when(! $request->status, fn ($q) => $q->whereNotIn('status', ['served']))
             ->latest();

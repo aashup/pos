@@ -5,6 +5,7 @@ import { ItemRepository } from '../db/repositories/ItemRepository'
 import { TableRepository } from '../db/repositories/TableRepository'
 import { UnitRepository } from '../db/repositories/UnitRepository'
 import { OrderRepository } from '../db/repositories/OrderRepository'
+import { KotRepository } from '../db/repositories/KotRepository'
 import { runSync, getSyncStatus } from '../sync/SyncEngine'
 import { printReceipt, printKOT, type ReceiptData, type KOTData } from '../print/ThermalPrinter'
 
@@ -117,8 +118,12 @@ export function registerIpcHandlers(): void {
             OrderRepository.markLinesSynced(localOrderId)
           }
 
-          // 3. Generate KOT on server
-          await client.post(`/restaurant/orders/${serverId}/kot`)
+          // 3. Generate KOT on server and record its server UUID locally
+          const kotRes = await client.post(`/restaurant/orders/${serverId}/kot`)
+          const serverKotId: string | undefined = kotRes.data?.data?.id
+          if (serverKotId) {
+            KotRepository.setServerId(kot.id, serverKotId)
+          }
         } catch {
           // Silent — SyncWorker will retry
         }
@@ -127,6 +132,18 @@ export function registerIpcHandlers(): void {
 
     return { success: true, kotNumber: kot.kot_number, lines: kot.lines }
   })
+
+  // ── KOTs (kitchen display — offline-first) ───────────────────────────────
+  ipcMain.handle('kots:list', () => KotRepository.listActive())
+  ipcMain.handle('kots:update-status', (_, id: string, status: string) =>
+    KotRepository.updateStatus(id, status),
+  )
+  ipcMain.handle('kots:update-line-status', (_, kotId: string, lineId: string, status: string) =>
+    KotRepository.updateLineStatus(kotId, lineId, status),
+  )
+  ipcMain.handle('kots:upsert-from-server', (_, kot: unknown) =>
+    KotRepository.upsertFromServer(kot as Parameters<typeof KotRepository.upsertFromServer>[0]),
+  )
 
   // ── Sync ──────────────────────────────────────────────────────────────────
   ipcMain.handle('sync:trigger', () => runSync())

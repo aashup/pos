@@ -242,12 +242,14 @@ export interface DiningTable {
 
 export interface KOT {
   id: string
+  server_id?: string | null
   company_id: string
   sales_invoice_id: string
   kot_number: string
   status: 'new' | 'in_progress' | 'ready' | 'served'
   print_count: number
   notes: string | null
+  created_at?: string
   lines?: KOTLine[]
 }
 

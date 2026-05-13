@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
+import { mkdirSync } from 'fs'
 import schema from './schema.sql?raw'
 
 let db: Database.Database | null = null
@@ -17,7 +18,9 @@ export function getDbPath(): string {
 }
 
 export function initDatabase(): void {
-  dbPath = join(app.getPath('userData'), 'zazzy-pos.db')
+  const userDataPath = app.getPath('userData')
+  mkdirSync(userDataPath, { recursive: true })
+  dbPath = join(userDataPath, 'zazzy-pos.db')
 
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
