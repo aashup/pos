@@ -66,6 +66,7 @@ declare global {
       tables: {
         getAll(): Promise<unknown[]>
         getFloorPlans(): Promise<unknown[]>
+        updateStatus(id: string, status: string, currentOrderId: string | null): Promise<void>
       }
       order: {
         create(data: { order_type: string; table_id?: string | null; pax?: number }): Promise<string>
@@ -129,8 +130,10 @@ export const ipc = {
     getAll: () => window.electronAPI.units.getAll(),
   },
   tables: {
-    getAll:       () => window.electronAPI.tables.getAll(),
+    getAll:        () => window.electronAPI.tables.getAll(),
     getFloorPlans: () => window.electronAPI.tables.getFloorPlans(),
+    updateStatus:  (id: string, status: string, currentOrderId: string | null) =>
+      window.electronAPI.tables.updateStatus(id, status, currentOrderId),
   },
   order: {
     create:         (data: { order_type: string; table_id?: string | null; pax?: number }) => window.electronAPI.order.create(data),

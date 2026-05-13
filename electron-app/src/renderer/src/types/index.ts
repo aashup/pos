@@ -141,6 +141,7 @@ export interface CartLine {
   discountPct: number
   modifiersTotal: number
   kotStatus: 'pending' | 'sent' | 'cooking' | 'ready' | 'served'
+  isServerNative?: boolean
   notes: string
   variantId: string | null
   variantName: string | null

@@ -25,8 +25,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   tables: {
-    getAll:       (): Promise<unknown[]> => ipcRenderer.invoke('tables:get-all'),
+    getAll:        (): Promise<unknown[]> => ipcRenderer.invoke('tables:get-all'),
     getFloorPlans: (): Promise<unknown[]> => ipcRenderer.invoke('tables:floor-plans'),
+    updateStatus:  (id: string, status: string, currentOrderId: string | null): Promise<void> =>
+      ipcRenderer.invoke('tables:update-status', id, status, currentOrderId),
   },
 
   order: {

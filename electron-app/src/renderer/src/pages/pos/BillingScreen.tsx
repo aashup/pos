@@ -10,6 +10,7 @@ import {
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
 import { useCartStore } from '../../store/cartStore'
+import { useTablesStore } from '../../store/tablesStore'
 import { useSyncStore } from '../../store/syncStore'
 import { useThemeStore } from '../../store/themeStore'
 import { ordersApi } from '../../api/orders'
@@ -24,6 +25,7 @@ export default function BillingScreen() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
   const { orderId, localOrderId, orderType, tableId, totals, lines, setLocalOrder, setOrder, clearOrder, populateLines } = useCartStore()
+  const { updateTableStatus } = useTablesStore()
   const { status: syncStatus } = useSyncStore()
   const { theme, toggleTheme } = useThemeStore()
   const isDark = theme === 'dark'
@@ -97,7 +99,7 @@ export default function BillingScreen() {
               variantName: null,
               selectedModifiers: [],
             }))
-            populateLines(cartLines)
+            populateLines(cartLines, undefined, true)
           }
         } catch {
           // Offline and no local copy — blank cart is acceptable
@@ -173,23 +175,28 @@ export default function BillingScreen() {
         }
         toast.success(`KOT ${result.kotNumber ?? ''} sent to kitchen`)
         useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
+        if (tableId) updateTableStatus(tableId, 'occupied', localOrderId)
       } else if (orderId) {
-        // Resumed occupied table — push any new lines first, then generate KOT on server
-        await ordersApi.addLines(
-          orderId,
-          pendingLines.map((l) => ({
-            item_id: l.itemId,
-            quantity: l.quantity,
-            rate: l.rate,
-            discount_percent: l.discountPct,
-            gst_rate: l.gstRate,
-            notes: l.notes || undefined,
-          })),
-        )
+        // Resumed occupied table — only push NEW lines (not server-native ones that already exist)
+        const newLines = pendingLines.filter((l) => !l.isServerNative)
+        if (newLines.length > 0) {
+          await ordersApi.addLines(
+            orderId,
+            newLines.map((l) => ({
+              item_id: l.itemId,
+              quantity: l.quantity,
+              rate: l.rate,
+              discount_percent: l.discountPct,
+              gst_rate: l.gstRate,
+              notes: l.notes || undefined,
+            })),
+          )
+        }
         const res = await ordersApi.sendKot(orderId)
         const kot = res.data?.data
         toast.success(`KOT ${kot?.kot_number ?? ''} sent to kitchen`)
         useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
+        if (tableId) updateTableStatus(tableId, 'occupied', orderId)
       } else {
         toast.error('No active order. Select a table or choose an order type.')
       }
@@ -408,6 +415,10 @@ export default function BillingScreen() {
             setShowPayment(false)
             // Mark local SQLite order as confirmed so SyncWorker skips re-push
             if (localOrderId) ipc.order.markConfirmed(localOrderId, serverId).catch(() => {})
+            // Free the table before clearing cart (tableId lives in cartStore)
+            if (tableId && orderType === 'dine_in') {
+              updateTableStatus(tableId, 'vacant', null)
+            }
             clearOrder()
             toast.success('Payment complete!')
             navigate('/pos/tables')

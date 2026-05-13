@@ -48,7 +48,7 @@ interface CartState {
    * Bulk-load lines from an existing order (SQLite or API). Optionally restores
    * localOrderId so subsequent KOT sends use the offline-first path.
    */
-  populateLines: (incoming: CartLine[], localId?: string) => void
+  populateLines: (incoming: CartLine[], localId?: string, markAsServerNative?: boolean) => void
 }
 
 const ZERO_TOTALS: CartTotals = {
@@ -235,10 +235,14 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   clearCart: () => set({ lines: [], discountPct: 0, totals: ZERO_TOTALS }),
 
-  populateLines: (incoming, localId) =>
+  populateLines: (incoming, localId, markAsServerNative) => {
+    const lines = markAsServerNative
+      ? incoming.map((l) => ({ ...l, isServerNative: true }))
+      : incoming
     set((s) => ({
-      lines: incoming,
-      totals: computeTotals(incoming, s.isInterState, s.discountPct),
+      lines,
+      totals: computeTotals(lines, s.isInterState, s.discountPct),
       ...(localId ? { localOrderId: localId } : {}),
-    })),
+    }))
+  },
 }))

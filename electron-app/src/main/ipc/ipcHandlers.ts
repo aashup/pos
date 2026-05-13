@@ -34,6 +34,10 @@ export function registerIpcHandlers(): void {
   // ── Tables ────────────────────────────────────────────────────────────────
   ipcMain.handle('tables:get-all', () => TableRepository.getAll())
   ipcMain.handle('tables:floor-plans', () => TableRepository.getFloorPlans())
+  ipcMain.handle('tables:update-status',
+    (_, id: string, status: string, currentOrderId: string | null) =>
+      TableRepository.updateStatus(id, status, currentOrderId),
+  )
 
   // ── Orders (offline-first) ────────────────────────────────────────────────
   ipcMain.handle('order:create', (_, data: { order_type: string; table_id?: string | null; pax?: number }) =>

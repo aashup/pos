@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Users, RefreshCw, LayoutGrid, Map } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { tablesApi } from '../../api/tables'
 import { useCartStore } from '../../store/cartStore'
+import { useTablesStore } from '../../store/tablesStore'
+import { useSyncStore } from '../../store/syncStore'
 import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
@@ -31,12 +33,16 @@ const STATUS_STYLE = (isDark: boolean): Record<TableStatus, { bg: string; border
 export default function TableSelection() {
   const navigate = useNavigate()
   const { setOrder, setLocalOrder, clearOrder } = useCartStore()
+  const { tables, isLoaded, loadTables } = useTablesStore()
+  const { status: syncStatus } = useSyncStore()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const [activeFloor, setActiveFloor] = useState<string | null>(null)
   const [selecting, setSelecting] = useState<string | null>(null)
   const [paxMap, setPaxMap] = useState<Record<string, number>>({})
-  const [viewMode, setViewMode] = useState<'map' | 'grid'>('map')
+  const [viewMode, setViewMode] = useState<'map' | 'grid'>(
+    () => (localStorage.getItem('tableViewMode') as 'map' | 'grid') ?? 'grid',
+  )
 
   const { data: floors = [], isLoading, refetch } = useQuery<FloorPlan[]>({
     queryKey: ['floor-plans'],
@@ -46,14 +52,19 @@ export default function TableSelection() {
     },
   })
 
-  const { data: tables = [], isLoading: tablesLoading } = useQuery<DiningTable[]>({
-    queryKey: ['dining-tables'],
-    queryFn: async () => {
-      const res = await tablesApi.tables()
-      return res.data?.data ?? []
-    },
-    refetchInterval: 15000,
-  })
+  // Load tables from SQLite on mount (offline-first, instant — no network round-trip)
+  useEffect(() => {
+    loadTables()
+  }, [])
+
+  // Reload from SQLite whenever a sync finishes (fresh server data was pulled)
+  const prevSyncStatus = useRef(syncStatus)
+  useEffect(() => {
+    if (prevSyncStatus.current === 'syncing' && syncStatus === 'idle') {
+      loadTables()
+    }
+    prevSyncStatus.current = syncStatus
+  }, [syncStatus])
 
   const activeFloorId = activeFloor ?? floors[0]?.id ?? null
   const visibleTables = tables.filter(
@@ -91,7 +102,7 @@ export default function TableSelection() {
     }
   }
 
-  const loading = isLoading || tablesLoading
+  const loading = isLoading || !isLoaded
 
   const statusStyle = STATUS_STYLE(isDark)
 
@@ -101,8 +112,8 @@ export default function TableSelection() {
         title="Table Map"
         onBack={() => navigate('/pos/billing')}
         actions={[
-          { icon: viewMode === 'map' ? LayoutGrid : Map, label: viewMode === 'map' ? 'Grid' : 'Map', onClick: () => setViewMode(viewMode === 'map' ? 'grid' : 'map'), className: 'text-xs' },
-          { icon: RefreshCw, label: 'Refresh', onClick: () => refetch(), className: 'text-xs' },
+          { icon: viewMode === 'map' ? LayoutGrid : Map, label: viewMode === 'map' ? 'Grid' : 'Map', onClick: () => { const next = viewMode === 'map' ? 'grid' : 'map'; setViewMode(next); localStorage.setItem('tableViewMode', next) }, className: 'text-xs' },
+          { icon: RefreshCw, label: 'Refresh', onClick: () => { refetch(); loadTables() }, className: 'text-xs' },
         ]}
       />
 
