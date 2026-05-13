@@ -14,6 +14,26 @@ export interface LocalKot {
   lines: LocalKotLine[]
 }
 
+export interface LocalOrderLine {
+  id: string
+  item_id: string
+  item_name: string
+  item_variant_id: string | null
+  quantity: number
+  rate: number
+  discount_percent: number
+  gst_rate: number
+  notes: string | null
+  kot_status: string
+  unit: string
+}
+
+export interface LocalActiveOrder {
+  id: string
+  order_type: string
+  lines: LocalOrderLine[]
+}
+
 export const OrderRepository = {
   /**
    * Create a new draft order in SQLite. Returns the local UUID.
@@ -183,6 +203,35 @@ export const OrderRepository = {
         WHERE id = ?
       `).run(localId)
     }
+  },
+
+  /**
+   * Find the most recent draft order for a given table (used to resume an order
+   * after app restart or navigation away). Returns the order with its lines, or
+   * null if no draft exists for that table.
+   */
+  findActiveByTableId(tableId: string): LocalActiveOrder | null {
+    const db = getDb()
+    const order = db.prepare(`
+      SELECT id, order_type
+      FROM sales_invoices
+      WHERE table_id = ? AND status = 'draft'
+      ORDER BY created_at DESC LIMIT 1
+    `).get(tableId) as Record<string, string> | undefined
+    if (!order) return null
+
+    const lines = db.prepare(`
+      SELECT sil.id, sil.item_id, sil.item_name, sil.item_variant_id,
+             sil.quantity, sil.rate, sil.discount_percent, sil.gst_rate,
+             sil.notes, sil.kot_status,
+             COALESCE(i.unit, 'PCS') AS unit
+      FROM sales_invoice_lines sil
+      LEFT JOIN items i ON sil.item_id = i.id
+      WHERE sil.sales_invoice_id = ? AND sil.kot_status != 'served'
+      ORDER BY sil.rowid
+    `).all(order.id) as LocalOrderLine[]
+
+    return { id: order.id, order_type: order.order_type, lines }
   },
 
   getOrder(localId: string): Record<string, any> | null {

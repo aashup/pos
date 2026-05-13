@@ -230,6 +230,7 @@ CREATE TABLE IF NOT EXISTS kots (
   company_id       TEXT,
   server_id        TEXT,
   sales_invoice_id TEXT,
+  order_session_id TEXT,
   kot_number       TEXT,
   status           TEXT DEFAULT 'new',
   notes            TEXT,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -23,7 +23,7 @@ import type { Item } from '../../types'
 export default function BillingScreen() {
   const navigate = useNavigate()
   const { user, logout } = useAuthStore()
-  const { orderId, localOrderId, orderType, tableId, totals, lines, setLocalOrder, setOrder, clearOrder } = useCartStore()
+  const { orderId, localOrderId, orderType, tableId, totals, lines, setLocalOrder, setOrder, clearOrder, populateLines } = useCartStore()
   const { status: syncStatus } = useSyncStore()
   const { theme, toggleTheme } = useThemeStore()
   const isDark = theme === 'dark'
@@ -33,6 +33,81 @@ export default function BillingScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [updateReady, setUpdateReady] = useState(false)
   const [holdingOrder, setHoldingOrder] = useState(false)
+
+  // ── Resume existing order ────────────────────────────────────────────────────
+  // Runs once per mount. If cart is already populated (same session) it skips.
+  // Otherwise: try SQLite by tableId (offline-first), then fall back to API.
+  const orderLoadedRef = useRef(false)
+
+  useEffect(() => {
+    // Already have live data from this session — nothing to load
+    if (localOrderId && lines.length > 0) { orderLoadedRef.current = true; return }
+    // Already loaded, or genuinely new blank order with no context
+    if (orderLoadedRef.current || (!tableId && !orderId)) return
+
+    orderLoadedRef.current = true
+
+    const loadExistingOrder = async () => {
+      // Step 1: Try local SQLite (works offline)
+      if (tableId) {
+        const local = await ipc.order.findByTable(tableId)
+        if (local && local.lines.length > 0) {
+          const cartLines = local.lines.map((l) => ({
+            id: l.id,
+            itemId: l.item_id,
+            comboId: null,
+            name: l.item_name,
+            rate: l.rate,
+            unit: l.unit,
+            gstRate: l.gst_rate,
+            quantity: l.quantity,
+            discountPct: l.discount_percent ?? 0,
+            modifiersTotal: 0,
+            kotStatus: l.kot_status as 'pending' | 'sent' | 'cooking' | 'ready' | 'served',
+            notes: l.notes ?? '',
+            variantId: l.item_variant_id ?? null,
+            variantName: null,
+            selectedModifiers: [],
+          }))
+          populateLines(cartLines, local.id)
+          return
+        }
+      }
+
+      // Step 2: Fall back to API (needed for orders from another device)
+      if (orderId && !localOrderId) {
+        try {
+          const res = await ordersApi.get(orderId)
+          const order = res.data?.data
+          if (order?.lines?.length) {
+            const cartLines = order.lines.map((l: any) => ({
+              id: l.id,
+              itemId: l.item_id ?? '',
+              comboId: l.combo_id ?? null,
+              name: l.item?.name ?? l.item_name ?? 'Item',
+              rate: l.rate,
+              unit: l.item?.unit ?? 'PCS',
+              gstRate: l.gst_rate ?? 0,
+              quantity: l.quantity,
+              discountPct: l.discount_percent ?? 0,
+              modifiersTotal: l.modifiers_total ?? 0,
+              kotStatus: l.kot_status as 'pending' | 'sent' | 'cooking' | 'ready' | 'served',
+              notes: l.notes ?? '',
+              variantId: l.item_variant_id ?? null,
+              variantName: null,
+              selectedModifiers: [],
+            }))
+            populateLines(cartLines)
+          }
+        } catch {
+          // Offline and no local copy — blank cart is acceptable
+        }
+      }
+    }
+
+    loadExistingOrder()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tableId, orderId])
 
   const handleOrderTypeChange = async (type: 'takeaway' | 'dine_in' | 'delivery') => {
     if (type === 'dine_in') {

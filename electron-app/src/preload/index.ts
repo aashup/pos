@@ -44,6 +44,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('order:send-kot', localOrderId),
     markConfirmed: (localId: string, serverId?: string | null): Promise<void> =>
       ipcRenderer.invoke('order:mark-confirmed', localId, serverId),
+    findByTable: (tableId: string): Promise<unknown> =>
+      ipcRenderer.invoke('order:find-by-table', tableId),
   },
 
   sync: {

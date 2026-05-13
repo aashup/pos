@@ -211,7 +211,7 @@ return new class extends Migration
             $table->uuid('id')->primary()->default(DB::raw('(UUID())'));
             $table->foreignUuid('company_id')->constrained('companies')->cascadeOnDelete();
             $table->char('sales_invoice_id', 36)->nullable()->index();
-            $table->char('order_session_id', 36)->index();
+            $table->char('order_session_id', 36)->nullable()->index();
             $table->string('kot_number', 20);
             $table->enum('status', ['new', 'in_progress', 'ready', 'served'])->default('new');
             $table->text('notes')->nullable();

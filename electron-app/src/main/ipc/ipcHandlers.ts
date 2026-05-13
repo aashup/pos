@@ -57,6 +57,10 @@ export function registerIpcHandlers(): void {
     OrderRepository.markConfirmed(localId, serverId),
   )
 
+  ipcMain.handle('order:find-by-table', (_, tableId: string) =>
+    OrderRepository.findActiveByTableId(tableId),
+  )
+
   /**
    * Create a local KOT, print it immediately, then fire-and-forget push to server.
    * Returns { kotNumber, lines } — the renderer marks Zustand lines as 'sent'.

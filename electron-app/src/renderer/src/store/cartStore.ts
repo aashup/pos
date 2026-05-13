@@ -44,6 +44,11 @@ interface CartState {
   setLineNotes: (lineId: string, notes: string) => void
   markLinesSent: (lineIds: string[]) => void
   clearCart: () => void
+  /**
+   * Bulk-load lines from an existing order (SQLite or API). Optionally restores
+   * localOrderId so subsequent KOT sends use the offline-first path.
+   */
+  populateLines: (incoming: CartLine[], localId?: string) => void
 }
 
 const ZERO_TOTALS: CartTotals = {
@@ -229,4 +234,11 @@ export const useCartStore = create<CartState>((set, get) => ({
     })),
 
   clearCart: () => set({ lines: [], discountPct: 0, totals: ZERO_TOTALS }),
+
+  populateLines: (incoming, localId) =>
+    set((s) => ({
+      lines: incoming,
+      totals: computeTotals(incoming, s.isInterState, s.discountPct),
+      ...(localId ? { localOrderId: localId } : {}),
+    })),
 }))

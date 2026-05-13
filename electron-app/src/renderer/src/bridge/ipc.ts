@@ -1,3 +1,23 @@
+export interface LocalOrderLine {
+  id: string
+  item_id: string
+  item_name: string
+  item_variant_id: string | null
+  quantity: number
+  rate: number
+  discount_percent: number
+  gst_rate: number
+  notes: string | null
+  kot_status: string
+  unit: string
+}
+
+export interface LocalActiveOrder {
+  id: string
+  order_type: string
+  lines: LocalOrderLine[]
+}
+
 export interface LocalKot {
   id: string
   server_id: string | null
@@ -57,6 +77,7 @@ declare global {
         removeLine(lineId: string): Promise<void>
         sendKot(localOrderId: string): Promise<{ success: boolean; kotNumber?: string; lines?: unknown[]; error?: string }>
         markConfirmed(localId: string, serverId?: string | null): Promise<void>
+        findByTable(tableId: string): Promise<LocalActiveOrder | null>
       }
       sync: {
         trigger(): Promise<unknown>
@@ -118,6 +139,7 @@ export const ipc = {
     removeLine:     (lineId: string) => window.electronAPI.order.removeLine(lineId),
     sendKot:        (localOrderId: string) => window.electronAPI.order.sendKot(localOrderId),
     markConfirmed:  (localId: string, serverId?: string | null) => window.electronAPI.order.markConfirmed(localId, serverId),
+    findByTable:    (tableId: string) => window.electronAPI.order.findByTable(tableId),
   },
   sync: {
     trigger:        () => window.electronAPI.sync.trigger(),
