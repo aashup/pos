@@ -1,13 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, RefreshCw } from 'lucide-react'
-import { ordersApi } from '../../api/orders'
+import { ipc } from '../../bridge/ipc'
+import { useSyncStore } from '../../store/syncStore'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import Header from '../../components/layout/Header'
-import type { SalesInvoice } from '../../types'
+import type { LocalOrderSummary } from '../../bridge/ipc'
 
 const getStatusColors = (isDark: boolean): Record<string, string> => ({
   draft:     isDark ? 'bg-yellow-900 text-yellow-200' : 'bg-yellow-100 text-yellow-700',
@@ -16,7 +17,7 @@ const getStatusColors = (isDark: boolean): Record<string, string> => ({
 })
 
 const TABS = [
-  { key: '',          label: 'Active' },
+  { key: 'draft',     label: 'Active' },
   { key: 'confirmed', label: 'Paid Today' },
   { key: 'all',       label: 'All' },
 ]
@@ -24,25 +25,34 @@ const TABS = [
 export default function OrderList() {
   const navigate = useNavigate()
   const { theme } = useThemeStore()
+  const { status: syncStatus } = useSyncStore()
   const isDark = theme === 'dark'
-  const [tab, setTab]       = useState('')
+  const [tab, setTab]       = useState('draft')
   const [search, setSearch] = useState('')
+
+  const filters =
+    tab === 'all'       ? undefined :
+    tab === 'confirmed' ? { status: 'confirmed', today: true } :
+                          { status: 'draft' }
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['orders-list', tab],
-    queryFn: async () => {
-      const params = tab === 'all' ? { per_page: 100 } : tab ? { status: tab, per_page: 100 } : { per_page: 100 }
-      const res = await ordersApi.list(params as Parameters<typeof ordersApi.list>[0])
-      return (res.data?.data ?? res.data?.data ?? []) as SalesInvoice[]
-    },
-    refetchInterval: 30_000,
+    queryFn: () => ipc.order.list(filters as any),
+    staleTime: 10_000,
   })
 
-  const orders = (data ?? []).filter((o) => {
+  // Re-read after every sync cycle
+  const prevSync = useRef(syncStatus)
+  useEffect(() => {
+    if (prevSync.current === 'syncing' && syncStatus === 'idle') refetch()
+    prevSync.current = syncStatus
+  }, [syncStatus])
+
+  const orders = (data ?? []).filter((o: LocalOrderSummary) => {
     if (!search) return true
     return (
-      o.invoice_number?.toLowerCase().includes(search.toLowerCase()) ||
-      String(o.id).toLowerCase().includes(search.toLowerCase())
+      (o.invoice_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
+      o.id.toLowerCase().includes(search.toLowerCase())
     )
   })
 
@@ -52,7 +62,7 @@ export default function OrderList() {
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       <Header
         title="Orders"
-        onBack={() => navigate('/pos/billing')}
+        onBack={() => navigate('/pos/tables')}
         actions={[{ icon: RefreshCw, label: '', onClick: () => refetch() }]}
       />
 
@@ -93,7 +103,7 @@ export default function OrderList() {
         ) : orders.length === 0 ? (
           <div className={cn('flex items-center justify-center h-40 text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>No orders found</div>
         ) : (
-          orders.map((order) => (
+          orders.map((order: LocalOrderSummary) => (
             <button
               key={order.id}
               onClick={() => navigate(`/pos/orders/${order.id}`)}
@@ -104,17 +114,22 @@ export default function OrderList() {
                   <span className={cn('font-semibold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>
                     {order.invoice_number ?? `Draft #${order.id.slice(-6)}`}
                   </span>
-                  {order.pos_held && (
+                  {order.pos_held === 1 && (
                     <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium', isDark ? 'bg-purple-900 text-purple-200' : 'bg-purple-100 text-purple-700')}>
                       Held
+                    </span>
+                  )}
+                  {order.sync_status === 'pending' && (
+                    <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium', isDark ? 'bg-orange-900 text-orange-300' : 'bg-orange-100 text-orange-700')}>
+                      Unsynced
                     </span>
                   )}
                 </div>
                 <p className={cn('text-xs mt-0.5', isDark ? 'text-gray-400' : 'text-gray-500')}>
                   {order.order_type.replace('_', ' ')}
-                  {order.dining_table ? ` · Table ${order.dining_table.name}` : ''}
+                  {order.table_name ? ` · Table ${order.table_name}` : ''}
                   {' · '}
-                  {order.lines?.length ?? 0} items
+                  {order.line_count} items
                 </p>
               </div>
               <div className="text-right ml-4 shrink-0">

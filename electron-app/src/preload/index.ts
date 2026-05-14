@@ -48,6 +48,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('order:mark-confirmed', localId, serverId),
     findByTable: (tableId: string): Promise<unknown> =>
       ipcRenderer.invoke('order:find-by-table', tableId),
+    list: (filters?: { status?: string; today?: boolean }): Promise<unknown[]> =>
+      ipcRenderer.invoke('order:list', filters),
+    get: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('order:get', id),
+    listHeld: (): Promise<unknown[]> =>
+      ipcRenderer.invoke('order:list-held'),
+    hold: (id: string): Promise<void> =>
+      ipcRenderer.invoke('order:hold', id),
+    unhold: (id: string): Promise<void> =>
+      ipcRenderer.invoke('order:unhold', id),
+    cancel: (id: string): Promise<void> =>
+      ipcRenderer.invoke('order:cancel', id),
+    checkout: (id: string, data: unknown): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('order:checkout', id, data),
   },
 
   sync: {

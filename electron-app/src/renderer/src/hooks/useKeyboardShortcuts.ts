@@ -87,7 +87,7 @@ export function useGlobalShortcuts(): void {
   const location = useLocation()
 
   const shortcuts = useMemo<ShortcutDef[]>(() => {
-    const onBilling = location.pathname === '/pos/billing'
+    const onBilling = location.pathname === '/pos/tables'
     return [
       {
         key: 'F1',

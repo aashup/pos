@@ -2,36 +2,53 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Printer, RotateCcw, Loader2, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { ordersApi } from '../../api/orders'
 import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import { useCartStore } from '../../store/cartStore'
 import Header from '../../components/layout/Header'
-import type { SalesInvoice } from '../../types'
+import type { LocalOrderFull, LocalOrderLine } from '../../bridge/ipc'
+
+function mapToCartLines(lines: LocalOrderLine[]) {
+  return lines.map((l) => ({
+    id: l.id,
+    itemId: l.item_id,
+    comboId: null,
+    name: l.item_name,
+    rate: l.rate,
+    unit: l.unit,
+    gstRate: l.gst_rate,
+    quantity: l.quantity,
+    discountPct: l.discount_percent ?? 0,
+    modifiersTotal: 0,
+    kotStatus: l.kot_status as 'pending' | 'sent' | 'cooking' | 'ready' | 'served',
+    notes: l.notes ?? '',
+    variantId: l.item_variant_id ?? null,
+    variantName: null,
+    selectedModifiers: [],
+  }))
+}
 
 export default function OrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const { setOrder } = useCartStore()
+  const { setLocalOrder, populateLines } = useCartStore()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
 
-  const { data: order, isLoading } = useQuery<SalesInvoice>({
+  const { data: order, isLoading } = useQuery<LocalOrderFull>({
     queryKey: ['order', id],
-    queryFn: async () => {
-      const res = await ordersApi.get(id!)
-      return res.data?.data
-    },
+    queryFn: () => ipc.order.get(id!) as Promise<LocalOrderFull>,
     enabled: !!id,
   })
 
   const cancelMutation = useMutation({
-    mutationFn: () => ordersApi.cancel(id!),
+    mutationFn: () => ipc.order.cancel(id!),
     onSuccess: () => {
       toast.success('Order cancelled')
       qc.invalidateQueries({ queryKey: ['orders-list'] })
+      qc.invalidateQueries({ queryKey: ['order', id] })
       navigate('/pos/orders')
     },
     onError: () => toast.error('Failed to cancel order'),
@@ -39,7 +56,9 @@ export default function OrderDetail() {
 
   const resumeOrder = () => {
     if (!order) return
-    setOrder(order.id, order.order_type, order.table_id ?? undefined, order.dining_table?.name)
+    const cartLines = mapToCartLines(order.lines ?? [])
+    populateLines(cartLines, order.id)
+    setLocalOrder(order.id, order.order_type, order.table_id ?? undefined, order.table_name ?? undefined)
     navigate('/pos/billing')
   }
 
@@ -49,15 +68,15 @@ export default function OrderDetail() {
     const result = await ipc.print.receipt({
       outletName:     'Zazzy Restaurant',
       invoiceNumber:  order.invoice_number ?? 'DRAFT',
-      invoiceDate:    new Date(order.invoice_date).toLocaleDateString('en-IN'),
+      invoiceDate:    order.invoice_date ? new Date(order.invoice_date).toLocaleDateString('en-IN') : new Date(order.created_at).toLocaleDateString('en-IN'),
       orderType:      order.order_type,
-      tableName:      order.dining_table?.name,
+      tableName:      order.table_name ?? undefined,
       items: lines.map((l) => ({
-        name:      l.item?.name ?? 'Item',
+        name:      l.item_name,
         quantity:  Number(l.quantity),
         rate:      Number(l.rate),
         gstRate:   Number(l.gst_rate),
-        lineTotal: Number(l.line_total),
+        lineTotal: Number((l as any).line_total ?? 0),
       })),
       subtotal:       Number(order.taxable_amount),
       cgst:           Number(order.cgst_total),
@@ -81,7 +100,6 @@ export default function OrderDetail() {
   }
 
   const lines = order.lines ?? []
-
   const actions = order.status === 'confirmed' ? [{ icon: Printer, label: 'Reprint', onClick: handleReprint }] : []
 
   return (
@@ -106,13 +124,16 @@ export default function OrderDetail() {
             </span>
           </div>
           <InfoRow label="Order Type" value={order.order_type.replace('_', ' ')} isDark={isDark} />
-          {order.dining_table && <InfoRow label="Table" value={order.dining_table.name} isDark={isDark} />}
+          {order.table_name && <InfoRow label="Table" value={order.table_name} isDark={isDark} />}
           {order.pax > 0 && <InfoRow label="Guests" value={String(order.pax)} isDark={isDark} />}
-          {order.invoice_date && (
-            <InfoRow label="Date" value={new Date(order.invoice_date).toLocaleString('en-IN')} isDark={isDark} />
+          {order.created_at && (
+            <InfoRow label="Date" value={new Date(order.created_at).toLocaleString('en-IN')} isDark={isDark} />
           )}
           {order.pos_payment_mode && <InfoRow label="Payment" value={order.pos_payment_mode.toUpperCase()} isDark={isDark} />}
           {order.notes && <InfoRow label="Notes" value={order.notes} isDark={isDark} />}
+          {order.sync_status === 'pending' && (
+            <InfoRow label="Sync" value="Pending upload" isDark={isDark} />
+          )}
         </div>
 
         {/* Items */}
@@ -124,14 +145,14 @@ export default function OrderDetail() {
             {lines.map((line) => (
               <div key={line.id} className="px-4 py-3 flex items-center justify-between">
                 <div>
-                  <p className={cn('text-sm font-medium', isDark ? 'text-gray-200' : 'text-gray-800')}>{line.item?.name ?? 'Item'}</p>
+                  <p className={cn('text-sm font-medium', isDark ? 'text-gray-200' : 'text-gray-800')}>{line.item_name}</p>
                   <p className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>
                     ₹{Number(line.rate).toFixed(2)} × {Number(line.quantity)} · GST {line.gst_rate}%
                   </p>
                   {line.notes && <p className={cn('text-xs', isDark ? 'text-orange-400' : 'text-orange-600')}>{line.notes}</p>}
                 </div>
                 <div className="text-right">
-                  <p className={cn('font-semibold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>{formatCurrency(Number(line.line_total))}</p>
+                  <p className={cn('font-semibold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>{formatCurrency(Number((line as any).line_total ?? 0))}</p>
                   <span className={`text-xs font-medium ${
                     line.kot_status === 'ready' ? (isDark ? 'text-green-400' : 'text-green-600') :
                     line.kot_status === 'cooking' ? (isDark ? 'text-orange-400' : 'text-orange-500') :

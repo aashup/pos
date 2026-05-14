@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Loader2, Banknote, Smartphone, CreditCard, Tag, SplitSquareHorizontal } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ordersApi, type CheckoutPayload } from '../../api/orders'
+import { ipc, type CheckoutData } from '../../bridge/ipc'
 import { useCartStore } from '../../store/cartStore'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, cn } from '../../lib/utils'
@@ -102,69 +103,69 @@ export default function PaymentModal({ orderId, localOrderId, orderType, lines, 
 
     setLoading(true)
     try {
-      // 1. Resolve the server order ID.
-      //    Priority: explicit server orderId (occupied table resume) → create new server order
-      let activeOrderId: string
-      if (orderId && !orderId.startsWith('local-')) {
-        // Resumed occupied table — server order already exists
-        activeOrderId = orderId
-      } else {
-        // Offline-first new order (localOrderId set) or legacy local- fallback
-        const res = await ordersApi.create({
-          order_type: orderType as 'takeaway' | 'dine_in' | 'delivery',
-        })
-        activeOrderId = res.data?.data?.id
-        // Update store so a retry reuses this server order
-        useCartStore.getState().setOrder(
-          activeOrderId,
-          orderType as 'takeaway' | 'dine_in' | 'delivery',
-        )
-      }
-
-      // 2. Push any pending lines to server (items not yet sent via KOT)
-      const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
-      if (pendingLines.length > 0) {
-        await ordersApi.addLines(
-          activeOrderId,
-          pendingLines.map((l) => ({
-            item_id: l.itemId,
-            quantity: l.quantity,
-            rate: l.rate,
-            discount_percent: l.discountPct,
-            gst_rate: l.gstRate,
-            notes: l.notes || undefined,
-          })),
-        )
-        // Mark sent so a checkout retry doesn't re-add them
-        useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
-      }
-
-      // 3. Build payload and checkout
-      let payload: CheckoutPayload
-      if (isSplit) {
-        payload = {
-          payment_mode: 'split',
-          discount_amount: discountNum > 0 ? discountNum : undefined,
+      if (localOrderId) {
+        // ── Offline-first path: write to SQLite, push to server in background ──
+        const tenderedFinal = !isSplit && payMode === 'cash' ? (tenderedNum || netPayable) : netPayable
+        const checkoutData: CheckoutData = {
+          payment_mode: isSplit ? 'split' : payMode,
+          amount_paid: netPayable,
+          amount_tendered: tenderedFinal,
+          change_amount: Math.max(0, tenderedFinal - netPayable),
+          balance_due: 0,
+          discount_amount: discountNum,
+          grand_total: netPayable,
+          taxable_amount: totals.subtotal,
+          cgst_total: totals.cgstTotal,
+          sgst_total: totals.sgstTotal,
+          split_payments: isSplit
+            ? splitRows
+                .filter((r) => (parseFloat(r.amount) || 0) > 0)
+                .map((r) => ({ mode: r.mode, amount: parseFloat(r.amount) || 0, tendered: parseFloat(r.tendered) || undefined }))
+            : undefined,
           notes: notes.trim() || undefined,
-          split_payments: splitRows
-            .filter((r) => (parseFloat(r.amount) || 0) > 0)
-            .map((r) => ({
-              mode: r.mode,
-              amount: parseFloat(r.amount) || 0,
-              tendered: parseFloat(r.tendered) || undefined,
+        }
+        await ipc.order.checkout(localOrderId, checkoutData)
+        onSuccess()
+      } else if (orderId && !orderId.startsWith('local-')) {
+        // ── Server-resumed occupied table: API path ──────────────────────────
+        const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
+        if (pendingLines.length > 0) {
+          await ordersApi.addLines(
+            orderId,
+            pendingLines.map((l) => ({
+              item_id: l.itemId,
+              quantity: l.quantity,
+              rate: l.rate,
+              discount_percent: l.discountPct,
+              gst_rate: l.gstRate,
+              notes: l.notes || undefined,
             })),
+          )
+          useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
         }
+        let payload: CheckoutPayload
+        if (isSplit) {
+          payload = {
+            payment_mode: 'split',
+            discount_amount: discountNum > 0 ? discountNum : undefined,
+            notes: notes.trim() || undefined,
+            split_payments: splitRows
+              .filter((r) => (parseFloat(r.amount) || 0) > 0)
+              .map((r) => ({ mode: r.mode, amount: parseFloat(r.amount) || 0, tendered: parseFloat(r.tendered) || undefined })),
+          }
+        } else {
+          payload = {
+            payment_mode: payMode,
+            amount_tendered: payMode === 'cash' ? (tenderedNum || netPayable) : netPayable,
+            discount_amount: discountNum > 0 ? discountNum : undefined,
+            notes: notes.trim() || undefined,
+          }
+        }
+        await ordersApi.checkout(orderId, payload)
+        onSuccess(orderId)
       } else {
-        payload = {
-          payment_mode: payMode,
-          amount_tendered: payMode === 'cash' ? (tenderedNum || netPayable) : netPayable,
-          discount_amount: discountNum > 0 ? discountNum : undefined,
-          notes: notes.trim() || undefined,
-        }
+        toast.error('No active order')
       }
-      await ordersApi.checkout(activeOrderId, payload)
-      // Pass server order ID back so BillingScreen can mark local SQLite order confirmed
-      onSuccess(activeOrderId)
     } catch {
       // Error handled by axios interceptor
     } finally {

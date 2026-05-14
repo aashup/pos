@@ -131,17 +131,28 @@ export const KotRepository = {
             UPDATE kots SET status = ?, notes = ?, print_count = ?, sync_status = 'synced', synced_at = datetime('now')
             WHERE id = ?
           `).run(kot.status, kot.notes ?? null, kot.print_count ?? 0, existing.id)
-        }
-        for (const line of kot.lines ?? []) {
-          db.prepare(`
-            INSERT INTO kot_lines (id, kot_id, item_id, item_name, variant_name, modifier_summary, quantity, notes, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET status = excluded.status
-          `).run(
-            line.id, existing.id, line.item_id, line.item_name,
-            line.variant_name ?? null, line.modifier_summary ?? null,
-            line.quantity, line.notes ?? null, line.status,
-          )
+        
+          for (const line of kot.lines ?? []) {
+            db.prepare(`
+              INSERT INTO kot_lines (id, kot_id, item_id, item_name, variant_name, modifier_summary, quantity, notes, status)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(kot_id, item_id) 
+              DO UPDATE SET 
+                quantity = excluded.quantity,
+                status = excluded.status,
+                notes = excluded.notes
+            `).run(
+              line.id, 
+              existing.id, 
+              line.item_id, 
+              line.item_name,
+              line.variant_name ?? null, 
+              line.modifier_summary ?? null,
+              line.quantity, 
+              line.notes ?? null, 
+              line.status
+            )
+          }
         }
       } else {
         // New KOT from another device

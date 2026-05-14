@@ -4,7 +4,7 @@ import { TokenStore } from '../auth/TokenStore'
 import { ItemRepository } from '../db/repositories/ItemRepository'
 import { TableRepository } from '../db/repositories/TableRepository'
 import { UnitRepository } from '../db/repositories/UnitRepository'
-import { OrderRepository } from '../db/repositories/OrderRepository'
+import { OrderRepository, type CheckoutData } from '../db/repositories/OrderRepository'
 import { KotRepository } from '../db/repositories/KotRepository'
 import { runSync, getSyncStatus } from '../sync/SyncEngine'
 import { printReceipt, printKOT, type ReceiptData, type KOTData } from '../print/ThermalPrinter'
@@ -139,6 +139,149 @@ export function registerIpcHandlers(): void {
     }
 
     return { success: true, kotNumber: kot.kot_number, lines: kot.lines }
+  })
+
+  // ── Orders: read + mutation channels ─────────────────────────────────────
+  ipcMain.handle('order:list', (_, filters?: { status?: string; today?: boolean }) =>
+    OrderRepository.list(filters),
+  )
+
+  ipcMain.handle('order:get', (_, id: string) =>
+    OrderRepository.getById(id),
+  )
+
+  ipcMain.handle('order:list-held', () =>
+    OrderRepository.listHeld(),
+  )
+
+  ipcMain.handle('order:hold', (_, id: string) => {
+    OrderRepository.hold(id)
+    const token = TokenStore.getToken()
+    const serverUrl = TokenStore.getSetting('serverUrl')
+    if (token && serverUrl) {
+      setImmediate(async () => {
+        try {
+          const order = OrderRepository.getOrder(id)
+          if (!order?.server_id) return
+          const client = axios.create({
+            baseURL: `${serverUrl}/api/v1`,
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            timeout: 10000,
+          })
+          await client.post(`/restaurant/orders/${order.server_id}/hold`)
+        } catch { /* silent — local hold already written */ }
+      })
+    }
+  })
+
+  ipcMain.handle('order:unhold', (_, id: string) => {
+    OrderRepository.unhold(id)
+    const token = TokenStore.getToken()
+    const serverUrl = TokenStore.getSetting('serverUrl')
+    if (token && serverUrl) {
+      setImmediate(async () => {
+        try {
+          const order = OrderRepository.getOrder(id)
+          if (!order?.server_id) return
+          const client = axios.create({
+            baseURL: `${serverUrl}/api/v1`,
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            timeout: 10000,
+          })
+          await client.post(`/restaurant/orders/${order.server_id}/unhold`)
+        } catch { /* silent */ }
+      })
+    }
+  })
+
+  ipcMain.handle('order:cancel', (_, id: string) => {
+    OrderRepository.cancel(id)
+    const token = TokenStore.getToken()
+    const serverUrl = TokenStore.getSetting('serverUrl')
+    if (token && serverUrl) {
+      setImmediate(async () => {
+        try {
+          const order = OrderRepository.getOrder(id)
+          if (!order?.server_id) return
+          const client = axios.create({
+            baseURL: `${serverUrl}/api/v1`,
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            timeout: 10000,
+          })
+          await client.post(`/restaurant/orders/${order.server_id}/cancel`)
+        } catch { /* silent */ }
+      })
+    }
+  })
+
+  ipcMain.handle('order:checkout', (_, localOrderId: string, data: CheckoutData) => {
+    // 1. Write to SQLite immediately — works offline
+    OrderRepository.checkout(localOrderId, data)
+
+    // 2. Fire-and-forget push to server
+    const token = TokenStore.getToken()
+    const serverUrl = TokenStore.getSetting('serverUrl')
+    if (token && serverUrl) {
+      setImmediate(async () => {
+        try {
+          const client = axios.create({
+            baseURL: `${serverUrl}/api/v1`,
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            timeout: 15000,
+          })
+
+          const order = OrderRepository.getOrder(localOrderId)
+          if (!order) return
+
+          // Ensure server order exists
+          let serverId: string = order.server_id
+          if (!serverId) {
+            const res = await client.post('/restaurant/orders', {
+              order_type: order.order_type,
+              table_id: order.table_id ?? undefined,
+              pax: order.pax ?? 1,
+            })
+            serverId = res.data?.data?.id
+            OrderRepository.setServerId(localOrderId, serverId)
+          }
+
+          // Push any unsynced lines
+          const unsynced = OrderRepository.getPendingLines(localOrderId)
+          if (unsynced.length > 0) {
+            await client.post(`/restaurant/orders/${serverId}/lines`, {
+              lines: unsynced.map((l) => ({
+                item_id: l.item_id,
+                quantity: l.quantity,
+                rate: l.rate,
+                discount_percent: l.discount_percent ?? 0,
+                gst_rate: l.gst_rate ?? 0,
+                notes: l.notes ?? undefined,
+              })),
+            })
+            OrderRepository.markLinesSynced(localOrderId)
+          }
+
+          // Call checkout on server
+          const payload = data.payment_mode === 'split'
+            ? {
+                payment_mode: 'split',
+                discount_amount: data.discount_amount > 0 ? data.discount_amount : undefined,
+                notes: data.notes || undefined,
+                split_payments: data.split_payments,
+              }
+            : {
+                payment_mode: data.payment_mode,
+                amount_tendered: data.amount_tendered,
+                discount_amount: data.discount_amount > 0 ? data.discount_amount : undefined,
+                notes: data.notes || undefined,
+              }
+          await client.post(`/restaurant/orders/${serverId}/checkout`, payload)
+          OrderRepository.markConfirmed(localOrderId, serverId)
+        } catch { /* silent — SyncWorker will retry */ }
+      })
+    }
+
+    return { success: true }
   })
 
   // ── KOTs (kitchen display — offline-first) ───────────────────────────────

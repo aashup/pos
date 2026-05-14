@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Users, RefreshCw, LayoutGrid, Map } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { tablesApi } from '../../api/tables'
+
 import { useCartStore } from '../../store/cartStore'
 import { useTablesStore } from '../../store/tablesStore'
 import { useSyncStore } from '../../store/syncStore'
@@ -45,11 +45,9 @@ export default function TableSelection() {
   )
 
   const { data: floors = [], isLoading, refetch } = useQuery<FloorPlan[]>({
-    queryKey: ['floor-plans'],
-    queryFn: async () => {
-      const res = await tablesApi.floorPlans()
-      return res.data?.data ?? []
-    },
+    queryKey: ['floor-plans-local'],
+    queryFn: async () => (await ipc.tables.getFloorPlans()) as FloorPlan[],
+    staleTime: 90_000,
   })
 
   // Load tables from SQLite on mount (offline-first, instant — no network round-trip)
@@ -62,6 +60,7 @@ export default function TableSelection() {
   useEffect(() => {
     if (prevSyncStatus.current === 'syncing' && syncStatus === 'idle') {
       loadTables()
+      refetch()
     }
     prevSyncStatus.current = syncStatus
   }, [syncStatus])
@@ -103,7 +102,6 @@ export default function TableSelection() {
   }
 
   const loading = isLoading || !isLoaded
-
   const statusStyle = STATUS_STYLE(isDark)
 
   return (

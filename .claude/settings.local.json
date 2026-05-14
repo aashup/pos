@@ -11,7 +11,8 @@
       "Bash(Select-Object FullName)",
       "Bash(Sort-Object FullName)",
       "Bash(npx tsc *)",
-      "Bash(make pos-fresh *)"
+      "Bash(make pos-fresh *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\main\\\\db\\\\repositories\\\\\" -File | Select-Object Name)"
     ]
   }
 }

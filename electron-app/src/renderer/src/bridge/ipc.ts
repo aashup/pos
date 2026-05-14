@@ -1,3 +1,52 @@
+export interface CheckoutData {
+  payment_mode: string
+  amount_paid: number
+  amount_tendered: number
+  change_amount: number
+  balance_due: number
+  discount_amount: number
+  grand_total: number
+  taxable_amount: number
+  cgst_total: number
+  sgst_total: number
+  split_payments?: Array<{ mode: string; amount: number; tendered?: number }>
+  notes?: string
+}
+
+export interface LocalOrderSummary {
+  id: string
+  server_id: string | null
+  order_type: string
+  table_id: string | null
+  table_name: string | null
+  pax: number
+  status: string
+  pos_held: number
+  grand_total: number
+  discount_amount: number
+  taxable_amount: number
+  cgst_total: number
+  sgst_total: number
+  pos_payment_mode: string | null
+  kot_count: number
+  notes: string | null
+  invoice_number: string | null
+  sync_status: string
+  created_at: string
+  line_count: number
+}
+
+export interface LocalOrderFull extends LocalOrderSummary {
+  amount_paid: number
+  amount_tendered: number
+  change_amount: number
+  balance_due: number
+  invoice_date: string | null
+  lines: LocalOrderLine[]
+}
+
+export type LocalHeldOrder = LocalOrderSummary & { lines: LocalOrderLine[] }
+
 export interface LocalOrderLine {
   id: string
   item_id: string
@@ -79,6 +128,13 @@ declare global {
         sendKot(localOrderId: string): Promise<{ success: boolean; kotNumber?: string; lines?: unknown[]; error?: string }>
         markConfirmed(localId: string, serverId?: string | null): Promise<void>
         findByTable(tableId: string): Promise<LocalActiveOrder | null>
+        list(filters?: { status?: string; today?: boolean }): Promise<LocalOrderSummary[]>
+        get(id: string): Promise<LocalOrderFull | null>
+        listHeld(): Promise<LocalHeldOrder[]>
+        hold(id: string): Promise<void>
+        unhold(id: string): Promise<void>
+        cancel(id: string): Promise<void>
+        checkout(id: string, data: CheckoutData): Promise<{ success: boolean }>
       }
       sync: {
         trigger(): Promise<unknown>
@@ -143,6 +199,13 @@ export const ipc = {
     sendKot:        (localOrderId: string) => window.electronAPI.order.sendKot(localOrderId),
     markConfirmed:  (localId: string, serverId?: string | null) => window.electronAPI.order.markConfirmed(localId, serverId),
     findByTable:    (tableId: string) => window.electronAPI.order.findByTable(tableId),
+    list:           (filters?: { status?: string; today?: boolean }) => window.electronAPI.order.list(filters),
+    get:            (id: string) => window.electronAPI.order.get(id),
+    listHeld:       () => window.electronAPI.order.listHeld(),
+    hold:           (id: string) => window.electronAPI.order.hold(id),
+    unhold:         (id: string) => window.electronAPI.order.unhold(id),
+    cancel:         (id: string) => window.electronAPI.order.cancel(id),
+    checkout:       (id: string, data: CheckoutData) => window.electronAPI.order.checkout(id, data),
   },
   sync: {
     trigger:        () => window.electronAPI.sync.trigger(),

@@ -166,6 +166,7 @@ export default function BillingScreen() {
 
     setSendingKot(true)
     try {
+      console.log(localOrderId, orderId, )
       if (localOrderId) {
         // Offline-first: create local KOT, print, push to server in background
         const result = await ipc.order.sendKot(localOrderId)
@@ -208,10 +209,16 @@ export default function BillingScreen() {
   }, [orderId, localOrderId, lines])
 
   const handleHoldOrder = useCallback(async () => {
-    if (!orderId || orderId.startsWith('local-')) { toast.error('No active server order to hold'); return }
     setHoldingOrder(true)
     try {
-      await ordersApi.hold(orderId)
+      if (localOrderId) {
+        await ipc.order.hold(localOrderId)
+      } else if (orderId) {
+        await ordersApi.hold(orderId)
+      } else {
+        toast.error('No active order to hold')
+        return
+      }
       clearOrder()
       toast.success('Order placed on hold')
     } catch {
@@ -219,7 +226,7 @@ export default function BillingScreen() {
     } finally {
       setHoldingOrder(false)
     }
-  }, [orderId, clearOrder])
+  }, [orderId, localOrderId, clearOrder])
 
   const handleSyncNow = async () => {
     setSyncing(true)
@@ -331,7 +338,7 @@ export default function BillingScreen() {
           <Cart
             onSendKot={handleSendKot}
             onCharge={() => setShowPayment(true)}
-            onHold={orderId && !orderId.startsWith('local-') ? handleHoldOrder : undefined}
+            onHold={localOrderId || (orderId && !orderId.startsWith('local-')) ? handleHoldOrder : undefined}
             sendingKot={sendingKot}
             holdingOrder={holdingOrder}
           />
@@ -413,8 +420,9 @@ export default function BillingScreen() {
           onClose={() => setShowPayment(false)}
           onSuccess={(serverId?: string) => {
             setShowPayment(false)
-            // Mark local SQLite order as confirmed so SyncWorker skips re-push
-            if (localOrderId) ipc.order.markConfirmed(localOrderId, serverId).catch(() => {})
+            // Only mark confirmed when server checkout was used (serverId provided).
+            // When ipc.order.checkout is used the order is already confirmed in SQLite.
+            if (localOrderId && serverId) ipc.order.markConfirmed(localOrderId, serverId).catch(() => {})
             // Free the table before clearing cart (tableId lives in cartStore)
             if (tableId && orderType === 'dine_in') {
               updateTableStatus(tableId, 'vacant', null)

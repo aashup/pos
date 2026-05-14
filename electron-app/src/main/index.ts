@@ -47,7 +47,7 @@ function createMainWindow(): void {
 
   const token     = TokenStore.getToken()
   const serverUrl = TokenStore.getSetting('serverUrl')
-  const startRoute = !serverUrl ? '/setup' : !token ? '/login' : '/pos/billing'
+  const startRoute = !serverUrl ? '/setup' : !token ? '/login' : '/pos/tables'
   loadRoute(mainWindow, startRoute)
 }
 

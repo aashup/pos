@@ -199,6 +199,77 @@ async function run() {
     })(rows)
   } catch (e: unknown) { errors.push(`godowns: ${(e as Error).message}`) }
 
+  // Orders (paginated) — skip records where local sync_status='pending' to avoid overwriting unsent changes
+  try {
+    const invoiceStmt = db.prepare(`
+      INSERT OR REPLACE INTO sales_invoices
+        (id, server_id, order_type, table_id, pax, status, pos_held,
+         grand_total, discount_amount, taxable_amount, cgst_total, sgst_total,
+         amount_paid, amount_tendered, change_amount, balance_due,
+         pos_payment_mode, kot_count, notes, invoice_number,
+         sync_status, synced_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?,
+              ?, ?, ?, ?, ?,
+              ?, ?, ?, ?,
+              ?, ?, ?, ?,
+              'synced', datetime('now'), ?, ?)
+    `)
+    const lineStmt = db.prepare(`
+      INSERT OR REPLACE INTO sales_invoice_lines
+        (id, sales_invoice_id, item_id, item_name, quantity, rate,
+         discount_percent, gst_rate, cgst, sgst, igst,
+         taxable_amount, line_total, kot_status, sync_status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, 'synced')
+    `)
+    let page = 1
+    while (true) {
+      const res = await client.get(`/restaurant/orders?per_page=100&page=${page}`)
+      const payload = res.data
+      const rows: any[] = payload.data ?? payload ?? []
+      if (rows.length === 0) break
+      db.transaction((orders: any[]) => {
+        for (const o of orders) {
+          const existing = db.prepare(
+            `SELECT sync_status FROM sales_invoices WHERE server_id = ? OR id = ?`,
+          ).get(o.id, o.id) as { sync_status: string } | undefined
+          if (existing?.sync_status === 'pending') continue
+
+          invoiceStmt.run(
+            o.id, o.id, o.order_type, o.table_id ?? null, o.pax ?? 1,
+            o.status ?? 'draft', o.pos_held ? 1 : 0,
+            Number(o.grand_total ?? 0), Number(o.discount_amount ?? 0),
+            Number(o.taxable_amount ?? 0), Number(o.cgst_total ?? 0), Number(o.sgst_total ?? 0),
+            Number(o.amount_paid ?? 0), Number(o.amount_tendered ?? 0),
+            Number(o.change_amount ?? 0), Number(o.balance_due ?? 0),
+            o.pos_payment_mode ?? null, o.kot_count ?? 0,
+            o.notes ?? null, o.invoice_number ?? null,
+            o.created_at ?? new Date().toISOString(),
+            o.updated_at ?? new Date().toISOString(),
+          )
+
+          if (Array.isArray(o.lines)) {
+            for (const l of o.lines) {
+              const existingLine = db.prepare(
+                `SELECT sync_status FROM sales_invoice_lines WHERE id = ?`,
+              ).get(l.id) as { sync_status: string } | undefined
+              if (existingLine?.sync_status === 'pending') continue
+              lineStmt.run(
+                l.id, o.id, l.item_id, l.item?.name ?? l.item_name ?? 'Item',
+                l.quantity, l.rate, l.discount_percent ?? 0, l.gst_rate ?? 0,
+                Number(l.cgst ?? 0), Number(l.sgst ?? 0),
+                Number(l.taxable_amount ?? 0), Number(l.line_total ?? 0),
+                l.kot_status ?? 'pending',
+              )
+            }
+          }
+          pulled++
+        }
+      })(rows)
+      if (!payload.next_page_url) break
+      page++
+    }
+  } catch (e: unknown) { errors.push(`orders: ${(e as Error).message}`) }
+
   db.close()
   parentPort?.postMessage({ pulled, pushed, errors })
 }

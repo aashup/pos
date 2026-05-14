@@ -279,3 +279,4 @@ CREATE INDEX IF NOT EXISTS idx_img_item              ON item_modifier_groups(ite
 CREATE INDEX IF NOT EXISTS idx_combo_items_combo     ON combo_items(combo_id);
 CREATE INDEX IF NOT EXISTS idx_media_entity          ON media(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_line_modifiers_line   ON sales_invoice_line_modifiers(sales_invoice_line_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kot_item       ON kot_lines (kot_id, item_id);
