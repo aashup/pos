@@ -39,13 +39,18 @@ src/
 │   │   ├── schema.sql        # CREATE TABLE IF NOT EXISTS (idempotent, runs every startup)
 │   │   └── repositories/
 │   │       ├── ItemRepository.ts   # search(), getGroups(), getAll(), getAllForPOS(), upsert(), upsertGroup()
-│   │       ├── TableRepository.ts  # getAll(), getFloorPlans(), upsert(), upsertFloorPlan()
-│   │       └── UnitRepository.ts   # getAll(), upsert()
+│   │       ├── TableRepository.ts  # getAll(), getFloorPlans(), upsert(), upsertFloorPlan(), updateStatus()
+│   │       ├── UnitRepository.ts   # getAll(), upsert()
+│   │       ├── KotRepository.ts    # listActive(), updateStatus(), updateLineStatus(), setServerId(), getServerId(), markSynced(), upsertFromServer()
+│   │       └── OrderRepository.ts  # createOrder(), addLine(), updateLineQty(), removeLine(), createKot(),
+│   │                               # setServerId(), markLinesSynced(), markConfirmed(), findActiveByTableId(),
+│   │                               # getOrder(), getPendingLines(),
+│   │                               # list(filters?), getById(), listHeld(), hold(), unhold(), cancel(),
+│   │                               # checkout(), upsertFromServer()
 │   ├── sync/
 │   │   ├── SyncEngine.ts     # orchestrates push+pull, broadcasts sync:status-changed
-│   │   ├── SyncScheduler.ts  # 30s foreground / 300s background setInterval
-│   │   ├── PullWorker.ts     # pulls units, item_groups, items, floor_plans, dining_tables, godowns
-│   │   └── PushWorker.ts     # pushes sales_invoices with sync_status='pending'
+│   │   ├── SyncScheduler.ts  # 30-minute foreground / re-syncs on network online
+│   │   └── SyncWorker.ts     # worker_threads; PUSH pending invoices + PULL all reference data + orders
 │   ├── print/
 │   │   ├── ThermalPrinter.ts # receipt builder (node-thermal-printer)
 │   │   └── KotPrinter.ts     # KOT slip builder
@@ -55,20 +60,19 @@ src/
 │   └── index.ts              # contextBridge → window.electronAPI (all channels)
 └── renderer/src/
     ├── App.tsx               # HashRouter + QueryClientProvider + RequireAuth + all routes
-    ├── api/
+    ├── api/                  # ⚠️ Legacy API clients — POS pages now use ipc.order.* instead
     │   ├── client.ts         # axios; baseURL from localStorage('serverUrl'); 401→/login
     │   ├── auth.ts           # authApi: login, logout, me, registerDevice
-    │   ├── orders.ts         # ordersApi: list, create, get, addLines, removeLine,
-    │   │                     #   sendKot, checkout, hold, unhold, cancel, transferTable
-    │   ├── kots.ts           # kotsApi: list, get, updateStatus, updateLineStatus, reprint
-    │   ├── items.ts          # itemsApi: list, get, create, update, delete, groups
-    │   ├── units.ts          # unitsApi: list() → GET /units?per_page=500&status=active
+    │   ├── orders.ts         # ordersApi: still used by BillingScreen server-resume path only
+    │   ├── kots.ts           # kotsApi: (offline KOT flow now via ipc.order.sendKot)
+    │   ├── items.ts          # itemsApi: used by inventory management pages
+    │   ├── units.ts          # unitsApi: used by ItemDetail unit dropdown
     │   ├── itemVariants.ts   # itemVariantsApi: listByItem, get, create, update, delete
     │   ├── modifierGroups.ts # modifierGroupsApi: list, create, update, delete
     │   ├── media.ts          # mediaApi: upload, getByEntity, setPrimary, delete
     │   │                     #   ⚠️ is_primary must be sent as '1'/'0' NOT 'true'/'false'
     │   ├── combos.ts         # combosApi: list, get, create, update, delete
-    │   ├── tables.ts         # tablesApi: getAll, getFloorPlans, updateStatus
+    │   ├── tables.ts         # tablesApi: updateStatus only (getAll/getFloorPlans now via IPC)
     │   ├── inventory.ts      # inventoryApi: summary, stockItems, adjustments
     │   └── reports.ts        # reportsApi: salesSummary, itemWise, dayClose, gstSummary
     ├── bridge/ipc.ts         # typed wrappers for window.electronAPI
@@ -80,12 +84,12 @@ src/
         ├── auth/Login.tsx
         ├── setup/SetupWizard.tsx
         ├── pos/BillingScreen.tsx      # main POS: item grid + cart + keyboard shortcuts
-        ├── pos/TableSelection.tsx     # floor plan tabs, color-coded table cards
+        ├── pos/TableSelection.tsx     # floor plan tabs, color-coded table cards; occupied→resume via ipc.order.findByTable
         ├── kitchen/KitchenDisplay.tsx # dark Kanban (new/in_progress/ready), 10s refetch
         ├── orders/
-        │   ├── OrderList.tsx          # tabs: Active / Paid Today / All
-        │   ├── OrderDetail.tsx        # view order, Resume, Cancel, Reprint
-        │   └── HoldOrders.tsx         # pos_held=true orders
+        │   ├── OrderList.tsx          # tabs: Active / Paid Today / All — reads from ipc.order.list()
+        │   ├── OrderDetail.tsx        # view order, Resume, Cancel, Reprint — reads from ipc.order.get()
+        │   └── HoldOrders.tsx         # pos_held=true orders — reads from ipc.order.listHeld()
         ├── inventory/
         │   ├── ItemList.tsx           # paginated item list, search, New Item button
         │   ├── ItemDetail.tsx         # create/edit item: name, unit, price, CGST/SGST, variants table, images
@@ -127,6 +131,27 @@ units:get-all             → UnitRepository.getAll()     (active units only)
 
 tables:get-all            → TableRepository.getAll()
 tables:floor-plans        → TableRepository.getFloorPlans()
+tables:update-status (id, status, orderId) → TableRepository.updateStatus()
+
+order:create (data)       → OrderRepository.createOrder()   returns local UUID
+order:add-line (invoiceId, line)            → OrderRepository.addLine()
+order:update-line-qty (lineId, qty)         → OrderRepository.updateLineQty()
+order:remove-line (lineId)                  → OrderRepository.removeLine()
+order:send-kot (localOrderId)               → OrderRepository.createKot() + print + fire-and-forget server push
+order:mark-confirmed (localId, serverId?)   → OrderRepository.markConfirmed()
+order:find-by-table (tableId)              → OrderRepository.findActiveByTableId()  (used by TableSelection resume)
+order:list (filters?)     → OrderRepository.list()          offline-first
+order:get (id)            → OrderRepository.getById()       offline-first
+order:list-held           → OrderRepository.listHeld()      offline-first
+order:hold (id)           → OrderRepository.hold() + fire-and-forget server PATCH
+order:unhold (id)         → OrderRepository.unhold() + fire-and-forget server PATCH
+order:cancel (id)         → OrderRepository.cancel() + fire-and-forget server POST
+order:checkout (id, data) → OrderRepository.checkout() (SQLite immediate) + fire-and-forget server push
+
+kots:list                         → KotRepository.listActive()
+kots:update-status (id, status)   → KotRepository.updateStatus() + fire-and-forget server PATCH
+kots:update-line-status (kotId, lineId, status) → KotRepository.updateLineStatus() + fire-and-forget
+kots:upsert-from-server (kot)     → KotRepository.upsertFromServer()
 
 sync:trigger              → SyncEngine.runSync()
 sync:status               → SyncEngine.getSyncStatus()
@@ -188,7 +213,8 @@ Use only `/inventory/items/:id` — `id === 'new'` detects the create case.
 ```typescript
 // State
 lines: CartLine[]           // kotStatus: 'pending'|'sent'|'cooking'|'ready'|'served'
-orderId: string | null      // server order ID, or 'local-{timestamp}' before first KOT
+localOrderId: string | null // local SQLite UUID — always set for offline-first orders
+orderId: string | null      // server UUID — only set after order syncs to server
 orderType: 'takeaway'|'dine_in'|'delivery'
 tableId: string | null
 tableName: string | null
@@ -198,13 +224,17 @@ totals: { subtotal, cgstTotal, sgstTotal, netPayable, roundOff }
 addItem(item)               // increments qty if same pending item, else new line
 updateQty(lineId, qty)      // only works if kotStatus='pending'
 removeItem(lineId)          // only works if kotStatus='pending'
-markLinesSent(lineIds)      // sets kotStatus='sent' (called after sendKot API success)
-setOrder(id, type, tableId?, tableName?)
+markLinesSent(lineIds)      // sets kotStatus='sent' (called after sendKot success)
+setOrder(id, type, tableId?, tableName?)       // sets orderId (server path — legacy)
+setLocalOrder(id, type, tableId?, tableName?)  // sets localOrderId (offline-first path)
+populateLines(lines, localId?)                 // bulk-loads CartLine[] + sets localOrderId
 clearOrder()                // full reset including lines
-clearCart()                 // clears lines only, keeps orderId
+clearCart()                 // clears lines only, keeps orderId/localOrderId
 ```
 
 `totals` is computed on every state change via `computeTotals()` — calls `calcGST()` per line.
+
+**localOrderId vs orderId:** `localOrderId` is the SQLite UUID created at order creation and is always the primary key for all IPC calls. `orderId` is the server UUID received after a successful push to the API — used only for the legacy server-resume path (occupied tables synced from another device).
 
 ### authStore (`src/renderer/src/store/authStore.ts`)
 Persists: `user`, `token`, `isAuthenticated`, `serverUrl` to localStorage.
@@ -253,7 +283,8 @@ function calcRoundOff(amount: number) {
 - Uses `db.transaction()` for every batch upsert (atomic, avoids lock contention)
 - Sets `busy_timeout = 5000` so concurrent reads from main thread don't cause SQLITE_BUSY
 - **PUSH** — `sales_invoices` where `sync_status='pending'` (LIMIT 50); marks `'synced'` or `'failed'`
-- **PULL** — in order: `units`, `item_groups`, `items` (paginated), `media` (paginated), `floor_plans`, `dining_tables`, `godowns`
+- **PULL** — in order: `units`, `item_groups`, `items` (paginated), `media` (paginated), `floor_plans`, `dining_tables`, `godowns`, `orders` (paginated)
+- Orders pull skips any row where local `sync_status='pending'` to avoid overwriting unsynced local changes
 - Posts `{ pushed, pulled, errors }` via `parentPort.postMessage()` then exits
 
 **electron-vite config** — SyncWorker is a second rollup entry point:
@@ -350,14 +381,18 @@ linux:
 
 ---
 
-## PaymentModal Split Payment
+## PaymentModal
 
 `src/renderer/src/components/pos/PaymentModal.tsx`:
 - Single mode: cash / upi / card / credit
 - Split: toggle → per-row `{mode, amount}` + cash tendered row; "Autofill remaining" button
 - Validates: sum of split amounts must equal `netPayable`
-- Sends to API: `{ payment_mode: 'split', split_payments: [{mode, amount}, ...] }`
 - Quick cash buttons: ₹100, ₹200, ₹500, ₹1000, "Exact"
+
+**Checkout flow (offline-first):**
+- If `localOrderId` is set → `ipc.order.checkout(localOrderId, CheckoutData)` writes SQLite immediately, fire-and-forget server push in background
+- If only `orderId` (legacy server-resume path) → original API flow: addLines + checkout endpoint
+- `CheckoutData` shape: `{ payment_mode, amount_paid, amount_tendered, change_amount, balance_due, discount_amount, grand_total, taxable_amount, cgst_total, sgst_total, split_payments?, notes? }`
 
 ---
 
@@ -420,6 +455,46 @@ formData.append('is_primary', isPrimary ? '1' : '0')
 
 // ❌ wrong — Laravel rejects "false" string
 formData.append('is_primary', String(isPrimary))
+```
+
+---
+
+## Offline-First POS Pages
+
+All core POS pages now read from local SQLite via IPC and write SQLite first with fire-and-forget server sync. API calls are never on the critical path.
+
+| Page / Action | IPC channel used | Fire-and-forget push |
+|---------------|-----------------|----------------------|
+| TableSelection — load floor plans | `tables:floor-plans` | SyncWorker pulls |
+| TableSelection — occupied table resume | `order:find-by-table` | — |
+| BillingScreen — new order | `order:create` | on KOT send |
+| BillingScreen — send KOT | `order:send-kot` | creates server order + KOT |
+| BillingScreen — hold | `order:hold` | PATCH hold on server |
+| PaymentModal — checkout | `order:checkout` | creates server order + checkout |
+| OrderList | `order:list` | SyncWorker pulls |
+| OrderDetail | `order:get` | SyncWorker pulls |
+| OrderDetail — cancel | `order:cancel` | POST cancel on server |
+| HoldOrders | `order:list-held` | SyncWorker pulls |
+| HoldOrders — resume | `order:unhold` + `order:get` | PATCH unhold on server |
+| KitchenDisplay | `kots:list` | SyncWorker pulls |
+| KitchenDisplay — status update | `kots:update-status` | PATCH status on server |
+
+**Sync-complete refetch pattern** (used by OrderList, HoldOrders, TableSelection):
+```typescript
+const prevSyncStatus = useRef(syncStatus)
+useEffect(() => {
+  if (prevSyncStatus.current === 'syncing' && syncStatus === 'idle') refetch()
+  prevSyncStatus.current = syncStatus
+}, [syncStatus])
+```
+
+**Resume order pattern** (used by OrderDetail, HoldOrders, TableSelection):
+```typescript
+const cartLines = lines.map((l) => ({ id, itemId, name, rate, unit, gstRate, quantity,
+  discountPct, modifiersTotal: 0, kotStatus, notes, variantId, variantName: null, selectedModifiers: [] }))
+populateLines(cartLines, order.id)
+setLocalOrder(order.id, order.order_type, order.table_id, order.table_name)
+navigate('/pos/billing')
 ```
 
 ---

@@ -12,6 +12,7 @@ import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import Header from '../../components/layout/Header'
 import type { FloorPlan, DiningTable, TableStatus } from '../../types'
+import type { LocalOrderLine } from '../../bridge/ipc'
 
 // Canvas dimensions — tables use a 0–100 coordinate space
 const CANVAS_W = 900
@@ -23,6 +24,26 @@ const TABLE_SIZE: Record<DiningTable['shape'], { w: number; h: number }> = {
   rectangle: { w: 100, h: 60 },
 }
 
+function mapToCartLines(lines: LocalOrderLine[]) {
+  return lines.map((l) => ({
+    id: l.id,
+    itemId: l.item_id,
+    comboId: null,
+    name: l.item_name,
+    rate: l.rate,
+    unit: l.unit,
+    gstRate: l.gst_rate,
+    quantity: l.quantity,
+    discountPct: l.discount_percent ?? 0,
+    modifiersTotal: 0,
+    kotStatus: l.kot_status as 'pending' | 'sent' | 'cooking' | 'ready' | 'served',
+    notes: l.notes ?? '',
+    variantId: l.item_variant_id ?? null,
+    variantName: null,
+    selectedModifiers: [],
+  }))
+}
+
 const STATUS_STYLE = (isDark: boolean): Record<TableStatus, { bg: string; border: string; dot: string; label: string }> => ({
   vacant:   { bg: isDark ? '#064e3b' : '#f0fdf4', border: isDark ? '#10b981' : '#86efac', dot: '#4ade80', label: 'Vacant' },
   occupied: { bg: isDark ? '#4c0519' : '#fef2f2', border: isDark ? '#f87171' : '#fca5a5', dot: '#f87171', label: 'Occupied' },
@@ -32,7 +53,7 @@ const STATUS_STYLE = (isDark: boolean): Record<TableStatus, { bg: string; border
 
 export default function TableSelection() {
   const navigate = useNavigate()
-  const { setOrder, setLocalOrder, clearOrder } = useCartStore()
+  const { setOrder, setLocalOrder, clearOrder, populateLines } = useCartStore()
   const { tables, isLoaded, loadTables } = useTablesStore()
   const { status: syncStatus } = useSyncStore()
   const { theme } = useThemeStore()
@@ -71,11 +92,29 @@ export default function TableSelection() {
   )
 
   const handleSelectTable = async (table: DiningTable) => {
-    if (table.status === 'occupied' && table.current_order_id) {
-      // Clear any previous table's cart before resuming this order
-      clearOrder()
-      setOrder(table.current_order_id, 'dine_in', table.id, table.name)
-      navigate('/pos/billing')
+    if (table.status === 'occupied') {
+      setSelecting(table.id)
+      try {
+        const local = await ipc.order.findByTable(table.id)
+        if (local) {
+          clearOrder()
+          populateLines(mapToCartLines(local.lines), local.id)
+          setLocalOrder(local.id, 'dine_in', table.id, table.name)
+          navigate('/pos/billing')
+          return
+        }
+        if (table.current_order_id) {
+          clearOrder()
+          setOrder(table.current_order_id, 'dine_in', table.id, table.name)
+          navigate('/pos/billing')
+          return
+        }
+        toast.error(`Table ${table.name} is occupied — order not found`)
+      } catch {
+        toast.error(`Failed to resume table ${table.name}`)
+      } finally {
+        setSelecting(null)
+      }
       return
     }
 

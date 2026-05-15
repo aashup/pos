@@ -1,15 +1,20 @@
 # Zazzy POS — Project Root
 
-Restaurant POS desktop application. Electron + React client with Laravel cloud backend.
+Restaurant POS system. Electron desktop client + React Native mobile client, both backed by a single Laravel API.
 
 ## Directory Layout
 
 ```
 D:\erp\pos\
-├── electron-app/    # Electron 32 + React 19 + Vite + TypeScript
+├── electron-app/    # Electron 32 + React 19 + Vite + TypeScript (desktop POS)
+├── mobile-app/      # Expo SDK 54 + React Native (waitstaff mobile POS)
 ├── api/             # Laravel — own MySQL via Docker (api/docker-compose.yml)
 └── Makefile         # COMPOSE points to api/docker-compose.yml
 ```
+
+> Each sub-project has its own `CLAUDE.md` with full details:
+> - [`electron-app/CLAUDE.md`](electron-app/CLAUDE.md) — Electron desktop app
+> - [`mobile-app/CLAUDE.md`](mobile-app/CLAUDE.md) — React Native mobile app
 
 ## How to Run
 
@@ -89,8 +94,13 @@ All under `/api/v1/` (Laravel sanctum auth required).
 | `GET /media` | MediaController@index | `?entity_type=&entity_id=` — **both required** (use for single-entity fetch) |
 | `GET /media/sync` | MediaController@sync | `?entity_type=item&per_page=200` — bulk paginated, **no entity_id** (POS sync only) |
 | `DELETE /media/{id}` | MediaController@destroy | |
-| `GET/POST /restaurant/orders` | RestaurantOrderController | |
+| `GET/POST /restaurant/orders` | RestaurantOrderController | GET supports `?per_page`, `?page` |
 | `POST /restaurant/orders/{id}/lines` | RestaurantOrderController | |
 | `POST /restaurant/orders/{id}/kot` | RestaurantOrderController | |
 | `POST /restaurant/orders/{id}/checkout` | RestaurantOrderController | |
 | `POST /restaurant/orders/{id}/hold` | RestaurantOrderController | |
+| `POST /restaurant/orders/{id}/unhold` | RestaurantOrderController | |
+| `POST /restaurant/orders/{id}/cancel` | RestaurantOrderController | |
+| `GET /floor-plans` | FloorPlanController | |
+| `GET /dining-tables` | DiningTableController | `?is_active=1` |
+| `GET /godowns` | GodownController | |
