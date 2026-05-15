@@ -155,6 +155,7 @@ declare global {
         addLine(invoiceId: string, line: {
           id: string; item_id: string; item_name: string; quantity: number
           rate: number; discount_percent: number; gst_rate: number; notes?: string | null
+          item_variant_id?: string | null; modifiers_total?: number
         }): Promise<void>
         updateLineQty(lineId: string, qty: number): Promise<void>
         removeLine(lineId: string): Promise<void>
@@ -214,6 +215,19 @@ export const ipc = {
     search:    (query: string, groupId?: string) => window.electronAPI.items.search(query, groupId),
     getGroups: () => window.electronAPI.items.getGroups(),
     getAll:    () => window.electronAPI.items.getAll(),
+    getVariants: async (itemId: string): Promise<POSItemVariant[]> => {
+      const rows = await window.electronAPI.items.getVariants(itemId) as any[]
+      return rows.map((r) => ({ ...r, is_active: !!r.is_active }))
+    },
+    getModifierGroups: async (itemId: string): Promise<POSModifierGroup[]> => {
+      const rows = await window.electronAPI.items.getModifierGroups(itemId) as any[]
+      return rows.map((g) => ({
+        ...g,
+        is_required: !!g.is_required,
+        is_active: !!g.is_active,
+        modifiers: (g.modifiers ?? []).map((m: any) => ({ ...m, is_active: !!m.is_active })),
+      }))
+    },
   },
   units: {
     getAll: () => window.electronAPI.units.getAll(),
@@ -226,7 +240,7 @@ export const ipc = {
   },
   order: {
     create:         (data: { order_type: string; table_id?: string | null; pax?: number }) => window.electronAPI.order.create(data),
-    addLine:        (invoiceId: string, line: Parameters<Window['electronAPI']['order']['addLine']>[1]) => window.electronAPI.order.addLine(invoiceId, line),
+    addLine: (invoiceId: string, line: Parameters<Window['electronAPI']['order']['addLine']>[1]) => window.electronAPI.order.addLine(invoiceId, line),
     updateLineQty:  (lineId: string, qty: number) => window.electronAPI.order.updateLineQty(lineId, qty),
     removeLine:     (lineId: string) => window.electronAPI.order.removeLine(lineId),
     sendKot:        (localOrderId: string) => window.electronAPI.order.sendKot(localOrderId),

@@ -10,6 +10,8 @@ import type { Item, ItemGroup } from '../../types'
 export interface POSItem extends Item {
   selling_price: number
   image_url?: string | null
+  has_variants: number
+  has_modifiers: number
 }
 
 interface Props {
@@ -212,6 +214,20 @@ function ItemCard({ item, onAdd }: { item: POSItem; onAdd: () => void }) {
             </span>
           )}
         </div>
+        {(item.has_variants > 0 || item.has_modifiers > 0) && (
+          <div className="flex items-center gap-1 mt-1 flex-wrap">
+            {item.has_variants > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-medium leading-none">
+                {item.has_variants}V
+              </span>
+            )}
+            {item.has_modifiers > 0 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium leading-none">
+                +ADD
+              </span>
+            )}
+          </div>
+        )}
       </div>
     </button>
   )

@@ -1,6 +1,8 @@
-import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2 } from 'lucide-react'
+import { useState } from 'react'
+import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2, User, X } from 'lucide-react'
 import { useCartStore } from '../../store/cartStore'
 import { formatCurrency, cn } from '../../lib/utils'
+import CustomerModal from './CustomerModal'
 
 interface CartProps {
   onSendKot: () => void
@@ -13,8 +15,11 @@ interface CartProps {
 export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingOrder }: CartProps) {
   const {
     lines, totals, tableName, orderType,
+    customerName, setCustomer, clearCustomer,
     updateQty, removeItem, clearCart,
   } = useCartStore()
+
+  const [showCustomerModal, setShowCustomerModal] = useState(false)
 
   const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
   const hasSentLines = lines.some((l) => l.kotStatus !== 'pending')
@@ -33,18 +38,36 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
-        <div>
+      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
+        <div className="flex items-center justify-between">
           <p className="font-semibold text-gray-800 dark:text-gray-100">
             {orderType === 'dine_in' && tableName ? `Table ${tableName}` : orderType === 'takeaway' ? 'Takeaway' : 'Delivery'}
           </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500">{lines.length} item{lines.length !== 1 ? 's' : ''}</p>
+          {!isEmpty && (
+            <button onClick={clearCart} className="text-xs text-red-400 hover:text-red-600">
+              Clear
+            </button>
+          )}
         </div>
-        {!isEmpty && (
-          <button onClick={clearCart} className="text-xs text-red-400 hover:text-red-600">
-            Clear
+        <div className="flex items-center gap-1 mt-1">
+          <button
+            onClick={() => setShowCustomerModal(true)}
+            className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            <User className="w-3.5 h-3.5" />
+            {customerName ?? 'Add Customer'}
           </button>
-        )}
+          {customerName && (
+            <button
+              onClick={clearCustomer}
+              className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 ml-0.5"
+              title="Remove customer"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{lines.length} item{lines.length !== 1 ? 's' : ''}</p>
       </div>
 
       {/* Lines */}
@@ -165,6 +188,13 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
           </button>
         )}
       </div>
+
+      {showCustomerModal && (
+        <CustomerModal
+          onClose={() => setShowCustomerModal(false)}
+          onSelect={(id, name) => { setCustomer(id, name); setShowCustomerModal(false) }}
+        />
+      )}
     </div>
   )
 }

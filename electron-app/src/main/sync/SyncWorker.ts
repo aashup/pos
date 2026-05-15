@@ -131,6 +131,101 @@ async function run() {
     }
   } catch (e: unknown) { errors.push(`items: ${(e as Error).message}`) }
 
+  // Item variants (paginated)
+  try {
+    const stmt = db.prepare(
+      `INSERT OR REPLACE INTO item_variants
+         (id, item_id, name, price_override, sku, sort_order, is_active, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    )
+    let page = 1
+    while (true) {
+      const res = await client.get(`/item-variants?per_page=200&page=${page}`)
+      const payload = res.data
+      const rows: any[] = payload.data ?? payload ?? []
+      if (rows.length === 0) break
+      db.transaction((items: any[]) => {
+        for (const v of items) {
+          stmt.run(
+            v.id, v.item_id, v.name,
+            v.price_override != null ? Number(v.price_override) : null,
+            v.sku ?? null, v.sort_order ?? 0, v.is_active ? 1 : 0,
+          )
+          pulled++
+        }
+      })(rows)
+      if (!payload.next_page_url) break
+      page++
+    }
+  } catch (e: unknown) { errors.push(`item-variants: ${(e as Error).message}`) }
+
+  // Modifier groups
+  try {
+    const groupStmt = db.prepare(
+      `INSERT OR REPLACE INTO modifier_groups
+         (id, company_id, name, is_required, min_selections, max_selections, sort_order, is_active, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    )
+    const modStmt = db.prepare(
+      `INSERT OR REPLACE INTO modifiers
+         (id, modifier_group_id, name, price, sort_order, is_active, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+    )
+    let page = 1
+    while (true) {
+      const res = await client.get(`/modifier-groups?per_page=200&page=${page}`)
+      const payload = res.data
+      const rows: any[] = payload.data ?? payload ?? []
+      if (rows.length === 0) break
+      db.transaction((items: any[]) => {
+        for (const g of items) {
+          groupStmt.run(
+            g.id, g.company_id ?? null, g.name,
+            g.is_required ? 1 : 0, g.min_selections ?? 0, g.max_selections ?? 1,
+            g.sort_order ?? 0, g.is_active ? 1 : 0,
+          )
+          pulled++
+          // Sync embedded modifiers if API returns them
+          if (Array.isArray(g.modifiers)) {
+            for (const m of g.modifiers) {
+              modStmt.run(
+                m.id, g.id, m.name, Number(m.price ?? 0),
+                m.sort_order ?? 0, m.is_active ? 1 : 0,
+              )
+              pulled++
+            }
+          }
+        }
+      })(rows)
+      if (!payload.next_page_url) break
+      page++
+    }
+  } catch (e: unknown) { errors.push(`modifier-groups: ${(e as Error).message}`) }
+
+  // Item → modifier group links
+  try {
+    const stmt = db.prepare(
+      `INSERT OR REPLACE INTO item_modifier_groups
+         (id, item_id, modifier_group_id, sort_order)
+       VALUES (?, ?, ?, ?)`,
+    )
+    let page = 1
+    while (true) {
+      const res = await client.get(`/item-modifier-groups?per_page=200&page=${page}`)
+      const payload = res.data
+      const rows: any[] = payload.data ?? payload ?? []
+      if (rows.length === 0) break
+      db.transaction((items: any[]) => {
+        for (const link of items) {
+          stmt.run(link.id, link.item_id, link.modifier_group_id, link.sort_order ?? 0)
+          pulled++
+        }
+      })(rows)
+      if (!payload.next_page_url) break
+      page++
+    }
+  } catch (e: unknown) { errors.push(`item-modifier-groups: ${(e as Error).message}`) }
+
   // Item media (paginated) — uses /media/sync which allows bulk fetch by entity_type
   try {
     const stmt = db.prepare(

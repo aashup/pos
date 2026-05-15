@@ -123,9 +123,11 @@ settings:get (key)        → TokenStore.getSetting()
 settings:set (key, val)   → TokenStore.setSetting()
 settings:delete (key)     → TokenStore.deleteSetting()
 
-items:search (q, groupId) → ItemRepository.search()    (SQLite FTS, LIMIT 80)
-items:groups              → ItemRepository.getGroups()
-items:get-all             → ItemRepository.getAllForPOS()  (LIMIT 500, used by POS grid)
+items:search (q, groupId)    → ItemRepository.search()                (SQLite FTS, LIMIT 80)
+items:groups                 → ItemRepository.getGroups()
+items:get-all                → ItemRepository.getAllForPOS()           (LIMIT 500, used by POS grid; includes has_variants + has_modifiers counts)
+items:get-variants (itemId)  → ItemRepository.getVariants()           (active variants for item)
+items:get-modifier-groups (itemId) → ItemRepository.getModifierGroupsForItem()  (groups + modifiers, for VariantModifierModal)
 
 units:get-all             → UnitRepository.getAll()     (active units only)
 
@@ -409,6 +411,12 @@ Esc   → close modal/drawer
 
 ---
 
+## Touch Screen Optimization
+
+This POS runs on touch-screen hardware. All interactive elements must be **minimum 56 px tall** (`style={{ minHeight: 56 }}`). No hover-only interaction states — every action must be tappable. Grid layouts are preferred over dropdowns or lists for option selection.
+
+---
+
 ## POS Item Grid (`src/renderer/src/components/pos/ItemGrid.tsx`)
 
 - Loads **all active items (max 500)** from SQLite once on mount via `items:get-all` IPC
@@ -417,6 +425,18 @@ Esc   → close modal/drawer
 - Category group filter: `item.item_group_id === selectedGroup`
 - Text filter: `item.name` + `item.sku` case-insensitive includes
 - Each card shows: name, price (₹), unit, GST rate
+- Cards for items with variants show a purple **`NV`** badge (N = variant count)
+- Cards for items with modifier groups show a blue **`+ADD`** badge
+
+## Variant & Modifier Selection (`src/renderer/src/components/pos/VariantModifierModal.tsx`)
+
+- Opens automatically when a card with `has_variants > 0` or `has_modifiers > 0` is tapped
+- **Variants are required** — "Add to Cart" is disabled until a variant is selected
+- **Modifiers are optional** — grouped by modifier group; required groups show a "Required" badge
+- `max_selections === 1` → radio behavior (tap replaces previous); `> 1` → multi-select up to max
+- Price preview updates live as the user selects options
+- Data loaded via two IPC channels: `items:get-variants` and `items:get-modifier-groups` (SQLite, offline-first)
+- Items with no variants and no modifier groups bypass the modal entirely (direct cart add)
 
 ---
 

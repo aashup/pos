@@ -14,7 +14,10 @@ import Cart from '../../components/pos/Cart'
 import PaymentModal from '../../components/pos/PaymentModal'
 import PosHeader from '../../components/pos/PosHeader'
 import NavigationDrawer from '../../components/pos/NavigationDrawer'
-import type { Item } from '../../types'
+import VariantModifierModal from '../../components/pos/VariantModifierModal'
+import type { POSItem } from '../../components/pos/ItemGrid'
+import type { POSItemVariant } from '../../bridge/ipc'
+import type { Item, SelectedModifier, ItemVariant } from '../../types'
 
 export default function BillingScreen() {
   const navigate = useNavigate()
@@ -27,6 +30,7 @@ export default function BillingScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [updateReady, setUpdateReady] = useState(false)
   const [holdingOrder, setHoldingOrder] = useState(false)
+  const [variantModalItem, setVariantModalItem] = useState<POSItem | null>(null)
 
   // ── Resume existing order ────────────────────────────────────────────────────
   // Runs once per mount. If cart is already populated (same session) it skips.
@@ -121,7 +125,13 @@ export default function BillingScreen() {
    * Add item to cart and persist to SQLite (offline-first).
    * For occupied/resumed dine-in (orderId = server UUID), SQLite write is skipped.
    */
-  const handleAddItem = useCallback((item: Item & { selling_price: number }) => {
+  const handleAddItem = useCallback((item: POSItem) => {
+    // Items with variants or modifier groups require the selection modal
+    if (item.has_variants > 0 || item.has_modifiers > 0) {
+      setVariantModalItem(item)
+      return
+    }
+
     const state = useCartStore.getState()
     const { localOrderId: lid, lines: currentLines } = state
 
@@ -146,11 +156,45 @@ export default function BillingScreen() {
           discount_percent: 0,
           gst_rate: (item.cgst ?? 0) + (item.sgst ?? 0) + (item.igst ?? 0),
           notes: null,
+          item_variant_id: null,
+          modifiers_total: 0,
         }).catch(() => {})
       }
       state.addItem({ ...item, selling_price: item.selling_price ?? 0 }, lineId)
     }
   }, [])
+
+  const handleVariantModalConfirm = useCallback((
+    variant: POSItemVariant | null,
+    modifiers: SelectedModifier[],
+  ) => {
+    if (!variantModalItem) return
+    const item = variantModalItem
+    setVariantModalItem(null)
+
+    const state = useCartStore.getState()
+    const { localOrderId: lid } = state
+    const lineId = uuidv4()
+    const rate = variant?.price_override ?? item.selling_price ?? 0
+    const modifiersTotal = modifiers.reduce((s, m) => s + m.price, 0)
+
+    if (lid) {
+      ipc.order.addLine(lid, {
+        id: lineId,
+        item_id: item.id,
+        item_name: item.name,
+        quantity: 1,
+        rate,
+        discount_percent: 0,
+        gst_rate: (item.cgst ?? 0) + (item.sgst ?? 0) + (item.igst ?? 0),
+        notes: null,
+        item_variant_id: variant?.id ?? null,
+        modifiers_total: modifiersTotal,
+      }).catch(() => {})
+    }
+
+    state.addVariantItem(item as Item, variant as ItemVariant | null, modifiers)
+  }, [variantModalItem])
 
   const handleSendKot = useCallback(async () => {
     const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
@@ -231,7 +275,7 @@ export default function BillingScreen() {
   useEffect(() => {
     const onSendKot = () => { if (orderType === 'dine_in') handleSendKot() }
     const onPayment  = () => { if (lines.length > 0) setShowPayment(true) }
-    const onEscape   = () => { setDrawerOpen(false); setShowPayment(false) }
+    const onEscape   = () => { setDrawerOpen(false); setShowPayment(false); setVariantModalItem(null) }
 
     window.addEventListener('shortcut:send-kot', onSendKot)
     window.addEventListener('shortcut:payment',  onPayment)
@@ -295,6 +339,15 @@ export default function BillingScreen() {
 
       {/* Side drawer */}
       <NavigationDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isDark={isDark} />
+
+      {/* Variant / Modifier selection modal */}
+      {variantModalItem && (
+        <VariantModifierModal
+          item={variantModalItem}
+          onConfirm={handleVariantModalConfirm}
+          onClose={() => setVariantModalItem(null)}
+        />
+      )}
 
       {/* Payment modal */}
       {showPayment && (

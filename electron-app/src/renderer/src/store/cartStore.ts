@@ -20,6 +20,8 @@ interface CartState {
   tableId: string | null
   tableName: string | null
   pax: number
+  customerId: string | null
+  customerName: string | null
   lines: CartLine[]
   isInterState: boolean
   discountPct: number
@@ -34,6 +36,8 @@ interface CartState {
   clearTable: () => void
   setPax: (pax: number) => void
   setDiscount: (pct: number) => void
+  setCustomer: (id: string, name: string) => void
+  clearCustomer: () => void
 
   // Cart operations
   addItem: (item: { id: string; name: string; selling_price: number; unit: string; cgst: number; sgst: number; igst: number }, lineId?: string) => void
@@ -89,6 +93,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   tableId: null,
   tableName: null,
   pax: 1,
+  customerId: null,
+  customerName: null,
   lines: [],
   isInterState: false,
   discountPct: 0,
@@ -103,7 +109,7 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({ localOrderId, orderId: null, orderType, tableId: tableId ?? null, tableName: tableName ?? null }),
 
   clearOrder: () =>
-    set({ orderId: null, localOrderId: null, orderType: 'takeaway', tableId: null, tableName: null, pax: 1, lines: [], discountPct: 0, totals: ZERO_TOTALS }),
+    set({ orderId: null, localOrderId: null, orderType: 'takeaway', tableId: null, tableName: null, pax: 1, customerId: null, customerName: null, lines: [], discountPct: 0, totals: ZERO_TOTALS }),
 
   setOrderType: (type) => set({ orderType: type }),
 
@@ -117,6 +123,10 @@ export const useCartStore = create<CartState>((set, get) => ({
     const { lines, isInterState } = get()
     set({ discountPct: pct, totals: computeTotals(lines, isInterState, pct) })
   },
+
+  setCustomer: (id, name) => set({ customerId: id, customerName: name }),
+
+  clearCustomer: () => set({ customerId: null, customerName: null }),
 
   addItem: (item, lineId) => {
     const { lines, isInterState, discountPct } = get()
