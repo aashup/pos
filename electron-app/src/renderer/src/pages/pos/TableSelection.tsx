@@ -11,6 +11,7 @@ import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import PosHeader from '../../components/pos/PosHeader'
+import NavigationDrawer from '../../components/pos/NavigationDrawer'
 import type { FloorPlan, DiningTable, TableStatus } from '../../types'
 import type { LocalOrderLine } from '../../bridge/ipc'
 
@@ -64,6 +65,7 @@ export default function TableSelection() {
   const [viewMode, setViewMode] = useState<'map' | 'grid'>(
     () => (localStorage.getItem('tableViewMode') as 'map' | 'grid') ?? 'grid',
   )
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   const { data: floors = [], isLoading, refetch } = useQuery<FloorPlan[]>({
     queryKey: ['floor-plans-local'],
@@ -157,7 +159,8 @@ export default function TableSelection() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-100')}>
-      <PosHeader orderType="dine_in" onOrderTypeChange={handleOrderTypeChange} />
+      <PosHeader orderType="dine_in" onOrderTypeChange={handleOrderTypeChange} onMenuOpen={() => setDrawerOpen(true)} />
+      <NavigationDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isDark={isDark} />
 
       {/* Floor plan tabs */}
       {floors.length > 1 && (
