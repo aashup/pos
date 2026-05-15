@@ -13,6 +13,42 @@ export interface POSItem {
   unit: string
   is_active: number
   image_url: string | null
+  has_variants: number
+  has_modifiers: number
+}
+
+export interface ItemVariantRow {
+  id: string
+  item_id: string
+  name: string
+  price_override: number | null
+  sku: string | null
+  sort_order: number
+  is_active: number
+}
+
+export interface ModifierRow {
+  id: string
+  modifier_group_id: string
+  name: string
+  price: number
+  sort_order: number
+  is_active: number
+}
+
+export interface ModifierGroupRow {
+  id: string
+  company_id: string
+  name: string
+  is_required: number
+  min_selections: number
+  max_selections: number
+  sort_order: number
+  is_active: number
+}
+
+export interface ModifierGroupWithModifiers extends ModifierGroupRow {
+  modifiers: ModifierRow[]
 }
 
 export interface POSItemGroup {
@@ -64,13 +100,54 @@ export const ItemRepository = {
            (SELECT url FROM media
             WHERE entity_type = 'item' AND entity_id = i.id
             ORDER BY is_primary DESC, sort_order ASC
-            LIMIT 1) AS image_url
+            LIMIT 1) AS image_url,
+           (SELECT COUNT(*) FROM item_variants
+            WHERE item_id = i.id AND is_active = 1) AS has_variants,
+           (SELECT COUNT(*) FROM item_modifier_groups
+            WHERE item_id = i.id) AS has_modifiers
          FROM items i
          WHERE i.is_active = 1
          ORDER BY i.name
          LIMIT 500`,
       )
       .all() as POSItem[]
+  },
+
+  getVariants(itemId: string): ItemVariantRow[] {
+    const db = getDb()
+    return db
+      .prepare(
+        `SELECT id, item_id, name, price_override, sku, sort_order, is_active
+         FROM item_variants
+         WHERE item_id = ? AND is_active = 1
+         ORDER BY sort_order ASC, name ASC`,
+      )
+      .all(itemId) as ItemVariantRow[]
+  },
+
+  getModifierGroupsForItem(itemId: string): ModifierGroupWithModifiers[] {
+    const db = getDb()
+    const groups = db
+      .prepare(
+        `SELECT mg.*
+         FROM modifier_groups mg
+         INNER JOIN item_modifier_groups img ON img.modifier_group_id = mg.id
+         WHERE img.item_id = ? AND mg.is_active = 1
+         ORDER BY img.sort_order ASC, mg.sort_order ASC`,
+      )
+      .all(itemId) as ModifierGroupRow[]
+
+    const modStmt = db.prepare(
+      `SELECT id, modifier_group_id, name, price, sort_order, is_active
+       FROM modifiers
+       WHERE modifier_group_id = ? AND is_active = 1
+       ORDER BY sort_order ASC, name ASC`,
+    )
+
+    return groups.map((g) => ({
+      ...g,
+      modifiers: modStmt.all(g.id) as ModifierRow[],
+    }))
   },
 
   getGroups(companyId?: string): POSItemGroup[] {

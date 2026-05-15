@@ -15,9 +15,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   items: {
-    search:    (query: string, groupId?: string): Promise<unknown[]> => ipcRenderer.invoke('items:search', query, groupId),
-    getGroups: (): Promise<unknown[]> => ipcRenderer.invoke('items:groups'),
-    getAll:    (): Promise<unknown[]> => ipcRenderer.invoke('items:get-all'),
+    search:            (query: string, groupId?: string): Promise<unknown[]> => ipcRenderer.invoke('items:search', query, groupId),
+    getGroups:         (): Promise<unknown[]> => ipcRenderer.invoke('items:groups'),
+    getAll:            (): Promise<unknown[]> => ipcRenderer.invoke('items:get-all'),
+    getVariants:       (itemId: string): Promise<unknown[]> => ipcRenderer.invoke('items:get-variants', itemId),
+    getModifierGroups: (itemId: string): Promise<unknown[]> => ipcRenderer.invoke('items:get-modifier-groups', itemId),
   },
 
   units: {
@@ -37,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addLine: (invoiceId: string, line: {
       id: string; item_id: string; item_name: string; quantity: number
       rate: number; discount_percent: number; gst_rate: number; notes?: string | null
+      item_variant_id?: string | null; modifiers_total?: number
     }): Promise<void> => ipcRenderer.invoke('order:add-line', invoiceId, line),
     updateLineQty: (lineId: string, qty: number): Promise<void> =>
       ipcRenderer.invoke('order:update-line-qty', lineId, qty),

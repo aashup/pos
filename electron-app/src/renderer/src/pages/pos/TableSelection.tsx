@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Users, RefreshCw, LayoutGrid, Map } from 'lucide-react'
+import { Users, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { useCartStore } from '../../store/cartStore'
@@ -10,7 +10,7 @@ import { useSyncStore } from '../../store/syncStore'
 import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
-import Header from '../../components/layout/Header'
+import PosHeader from '../../components/pos/PosHeader'
 import type { FloorPlan, DiningTable, TableStatus } from '../../types'
 import type { LocalOrderLine } from '../../bridge/ipc'
 
@@ -140,19 +140,24 @@ export default function TableSelection() {
     }
   }
 
+  const handleOrderTypeChange = async (type: 'takeaway' | 'dine_in' | 'delivery') => {
+    if (type === 'dine_in') return
+    clearOrder()
+    try {
+      const localId = await ipc.order.create({ order_type: type })
+      setLocalOrder(localId, type)
+      navigate('/pos/billing')
+    } catch {
+      toast.error('Failed to create order')
+    }
+  }
+
   const loading = isLoading || !isLoaded
   const statusStyle = STATUS_STYLE(isDark)
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-100')}>
-      <Header
-        title="Table Map"
-        onBack={() => navigate('/pos/billing')}
-        actions={[
-          { icon: viewMode === 'map' ? LayoutGrid : Map, label: viewMode === 'map' ? 'Grid' : 'Map', onClick: () => { const next = viewMode === 'map' ? 'grid' : 'map'; setViewMode(next); localStorage.setItem('tableViewMode', next) }, className: 'text-xs' },
-          { icon: RefreshCw, label: 'Refresh', onClick: () => { refetch(); loadTables() }, className: 'text-xs' },
-        ]}
-      />
+      <PosHeader orderType="dine_in" onOrderTypeChange={handleOrderTypeChange} />
 
       {/* Floor plan tabs */}
       {floors.length > 1 && (

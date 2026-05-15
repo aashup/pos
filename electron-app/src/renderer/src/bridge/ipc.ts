@@ -1,3 +1,34 @@
+export interface POSItemVariant {
+  id: string
+  item_id: string
+  name: string
+  price_override: number | null
+  sku: string | null
+  sort_order: number
+  is_active: boolean
+}
+
+export interface POSModifier {
+  id: string
+  modifier_group_id: string
+  name: string
+  price: number
+  sort_order: number
+  is_active: boolean
+}
+
+export interface POSModifierGroup {
+  id: string
+  company_id: string
+  name: string
+  is_required: boolean
+  min_selections: number
+  max_selections: number
+  sort_order: number
+  is_active: boolean
+  modifiers: POSModifier[]
+}
+
 export interface CheckoutData {
   payment_mode: string
   amount_paid: number
@@ -108,6 +139,8 @@ declare global {
         search(query: string, groupId?: string): Promise<unknown[]>
         getGroups(): Promise<unknown[]>
         getAll(): Promise<unknown[]>
+        getVariants(itemId: string): Promise<unknown[]>
+        getModifierGroups(itemId: string): Promise<unknown[]>
       }
       units: {
         getAll(): Promise<unknown[]>

@@ -2,16 +2,13 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { v4 as uuidv4 } from 'uuid'
 import { useNavigate } from 'react-router-dom'
 import {
-  RotateCw, LogOut, Menu, X,
+  X,
   TableIcon, BarChart2, ChefHat, Info, Printer, FileText,
   Download, ClipboardList, PauseCircle, Package, Settings,
-  Sun, Moon,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useAuthStore } from '../../store/authStore'
 import { useCartStore } from '../../store/cartStore'
 import { useTablesStore } from '../../store/tablesStore'
-import { useSyncStore } from '../../store/syncStore'
 import { useThemeStore } from '../../store/themeStore'
 import { ordersApi } from '../../api/orders'
 import { ipc } from '../../bridge/ipc'
@@ -19,19 +16,17 @@ import { formatCurrency, cn } from '../../lib/utils'
 import ItemGrid from '../../components/pos/ItemGrid'
 import Cart from '../../components/pos/Cart'
 import PaymentModal from '../../components/pos/PaymentModal'
+import PosHeader from '../../components/pos/PosHeader'
 import type { Item } from '../../types'
 
 export default function BillingScreen() {
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
   const { orderId, localOrderId, orderType, tableId, totals, lines, setLocalOrder, setOrder, clearOrder, populateLines } = useCartStore()
   const { updateTableStatus } = useTablesStore()
-  const { status: syncStatus } = useSyncStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const [sendingKot, setSendingKot] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
-  const [syncing, setSyncing] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [updateReady, setUpdateReady] = useState(false)
   const [holdingOrder, setHoldingOrder] = useState(false)
@@ -228,23 +223,6 @@ export default function BillingScreen() {
     }
   }, [orderId, localOrderId, clearOrder])
 
-  const handleSyncNow = async () => {
-    setSyncing(true)
-    try {
-      const result = await ipc.sync.trigger() as { errors?: string[]; pulled?: number; pushed?: number }
-      const errors = result?.errors ?? []
-      if (errors.length > 0) {
-        toast.error(`Sync error: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`, { duration: 6000 })
-      } else {
-        toast.success(`Synced${result?.pulled ? ` — ${result.pulled} records` : ''}`)
-      }
-    } catch (e: unknown) {
-      toast.error(`Sync failed: ${(e as Error).message}`)
-    } finally {
-      setSyncing(false)
-    }
-  }
-
   // Auto-updater notifications
   useEffect(() => {
     if (typeof window.electronAPI === 'undefined') return
@@ -270,64 +248,11 @@ export default function BillingScreen() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      {/* Top bar */}
-      <header className={cn('h-12 flex items-center justify-between px-4 shrink-0', isDark ? 'bg-gray-900 text-white' : 'bg-white text-gray-900 border-b border-gray-200')}>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}
-            title="Menu"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-          <span className="font-bold text-orange-400 text-sm">Zazzy POS</span>
-          <div className="flex gap-1">
-            {(['takeaway', 'dine_in', 'delivery'] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => handleOrderTypeChange(t)}
-                className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
-                  orderType === t
-                    ? 'bg-orange-500 text-white'
-                    : isDark ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
-                }`}
-              >
-                {t === 'dine_in' ? 'Dine In' : t === 'takeaway' ? 'Takeaway' : 'Delivery'}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleTheme}
-            className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}
-            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          >
-            {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-          </button>
-          <button
-            onClick={handleSyncNow}
-            disabled={syncing}
-            className={`flex items-center gap-1.5 text-xs ${
-              syncStatus === 'error'
-                ? 'text-red-500 hover:text-red-400'
-                : isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'
-            }`}
-            title={syncStatus === 'error' ? 'Sync had errors — click to retry (F5)' : 'F5'}
-          >
-            <RotateCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-            {syncStatus === 'syncing' ? 'Syncing…' : syncStatus === 'error' ? 'Sync error' : 'Sync'}
-            {syncStatus === 'error' && (
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-            )}
-          </button>
-          <span className={isDark ? 'text-gray-400 text-xs' : 'text-gray-600 text-xs'}>{user?.name}</span>
-          <button onClick={logout} className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'} title="Logout">
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
+      <PosHeader
+        orderType={orderType}
+        onOrderTypeChange={handleOrderTypeChange}
+        onMenuOpen={() => setDrawerOpen(true)}
+      />
 
       {/* Main 2-column layout */}
       <div className="flex-1 flex overflow-hidden">

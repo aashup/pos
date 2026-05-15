@@ -27,6 +27,12 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle('items:groups', () => ItemRepository.getGroups())
   ipcMain.handle('items:get-all', () => ItemRepository.getAllForPOS())
+  ipcMain.handle('items:get-variants', (_, itemId: string) =>
+    ItemRepository.getVariants(itemId),
+  )
+  ipcMain.handle('items:get-modifier-groups', (_, itemId: string) =>
+    ItemRepository.getModifierGroupsForItem(itemId),
+  )
 
   // ── Units ─────────────────────────────────────────────────────────────────
   ipcMain.handle('units:get-all', () => UnitRepository.getAll())
@@ -47,6 +53,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('order:add-line', (_, invoiceId: string, line: {
     id: string; item_id: string; item_name: string; quantity: number
     rate: number; discount_percent: number; gst_rate: number; notes?: string | null
+    item_variant_id?: string | null; modifiers_total?: number
   }) => OrderRepository.addLine(invoiceId, line))
 
   ipcMain.handle('order:update-line-qty', (_, lineId: string, qty: number) =>

@@ -113,21 +113,25 @@ export const OrderRepository = {
     discount_percent: number
     gst_rate: number
     notes?: string | null
+    item_variant_id?: string | null
+    modifiers_total?: number
   }): void {
     const db = getDb()
     const discountPct = line.discount_percent ?? 0
-    const taxable = line.quantity * line.rate * (1 - discountPct / 100)
+    const modifiersTotal = line.modifiers_total ?? 0
+    const effectiveRate = line.rate + modifiersTotal
+    const taxable = line.quantity * effectiveRate * (1 - discountPct / 100)
     const gstAmt = taxable * (line.gst_rate / 100)
     const half = gstAmt / 2
     db.prepare(`
       INSERT OR REPLACE INTO sales_invoice_lines
-        (id, sales_invoice_id, item_id, item_name, quantity, rate,
-         discount_percent, gst_rate, cgst, sgst, igst,
+        (id, sales_invoice_id, item_id, item_variant_id, item_name, quantity, rate,
+         discount_percent, modifiers_total, gst_rate, cgst, sgst, igst,
          taxable_amount, line_total, kot_status, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending', 'pending')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending', 'pending')
     `).run(
-      line.id, invoiceId, line.item_id, line.item_name,
-      line.quantity, line.rate, discountPct, line.gst_rate,
+      line.id, invoiceId, line.item_id, line.item_variant_id ?? null, line.item_name,
+      line.quantity, line.rate, discountPct, modifiersTotal, line.gst_rate,
       half, half, taxable, taxable + gstAmt,
     )
   },
