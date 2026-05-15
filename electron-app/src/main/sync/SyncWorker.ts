@@ -5,6 +5,7 @@
  * Posts back: { pushed, pulled, errors } when done.
  */
 import { workerData, parentPort } from 'worker_threads'
+import { randomUUID } from 'crypto'
 import Database from 'better-sqlite3'
 import axios from 'axios'
 
@@ -71,6 +72,35 @@ async function run() {
     }
   } catch (e: unknown) {
     errors.push(`push: ${(e as Error).message}`)
+  }
+
+  // ── PUSH: pending local customers → server ────────────────────────────────
+  try {
+    const pending = db
+      .prepare(`SELECT id, name, phone, type FROM pos_customers WHERE sync_status = 'pending' LIMIT 50`)
+      .all() as { id: string; name: string; phone: string | null; type: string }[]
+
+    for (const c of pending) {
+      try {
+        const res = await client.post('/parties', {
+          type: c.type ?? 'customer',
+          name: c.name,
+          phone: c.phone ?? undefined,
+        })
+        const serverId: string | undefined = res.data?.data?.id
+        if (serverId) {
+          db.prepare(
+            `UPDATE pos_customers SET server_id = ?, sync_status = 'synced' WHERE id = ?`,
+          ).run(serverId, c.id)
+        }
+        pushed++
+      } catch (e: unknown) {
+        errors.push(`customer ${c.id}: ${(e as Error).message}`)
+        db.prepare(`UPDATE pos_customers SET sync_status = 'failed' WHERE id = ?`).run(c.id)
+      }
+    }
+  } catch (e: unknown) {
+    errors.push(`push-customers: ${(e as Error).message}`)
   }
 
   // ── PULL: server → local SQLite ────────────────────────────────────────────
@@ -293,6 +323,40 @@ async function run() {
       for (const g of items) { stmt.run(g.id, g.company_id, g.name, g.is_default ? 1 : 0); pulled++ }
     })(rows)
   } catch (e: unknown) { errors.push(`godowns: ${(e as Error).message}`) }
+
+  // Parties (paginated) — all types pulled; search filters to customer+both at query time
+  try {
+    const stmt = db.prepare(
+      `INSERT INTO pos_customers (id, server_id, name, phone, type, sync_status, created_at)
+       VALUES (?, ?, ?, ?, ?, 'synced', datetime('now'))
+       ON CONFLICT(server_id) DO UPDATE SET
+         name        = excluded.name,
+         phone       = excluded.phone,
+         type        = excluded.type,
+         sync_status = 'synced'`,
+    )
+    let page = 1
+    while (true) {
+      const res = await client.get(`/parties?per_page=200&page=${page}`)
+      const payload = res.data
+      const rows: any[] = payload.data ?? []
+      if (rows.length === 0) break
+      db.transaction((items: any[]) => {
+        for (const p of items) {
+          stmt.run(
+            randomUUID(),
+            p.id,
+            p.name,
+            p.phone ?? null,
+            p.type ?? 'customer',
+          )
+          pulled++
+        }
+      })(rows)
+      if (!payload.next_page_url && !payload.links?.next) break
+      page++
+    }
+  } catch (e: unknown) { errors.push(`parties: ${(e as Error).message}`) }
 
   // Orders (paginated) — skip records where local sync_status='pending' to avoid overwriting unsent changes
   try {

@@ -67,6 +67,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('order:checkout', id, data),
   },
 
+  customer: {
+    search: (query: string): Promise<unknown[]> => ipcRenderer.invoke('customer:search', query),
+    create: (name: string, phone?: string): Promise<unknown> => ipcRenderer.invoke('customer:create', name, phone),
+  },
+
   sync: {
     trigger:      (): Promise<unknown> => ipcRenderer.invoke('sync:trigger'),
     getStatus:    (): Promise<unknown> => ipcRenderer.invoke('sync:status'),

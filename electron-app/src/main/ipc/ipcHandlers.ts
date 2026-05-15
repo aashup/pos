@@ -6,6 +6,7 @@ import { TableRepository } from '../db/repositories/TableRepository'
 import { UnitRepository } from '../db/repositories/UnitRepository'
 import { OrderRepository, type CheckoutData } from '../db/repositories/OrderRepository'
 import { KotRepository } from '../db/repositories/KotRepository'
+import { CustomerRepository } from '../db/repositories/CustomerRepository'
 import { runSync, getSyncStatus } from '../sync/SyncEngine'
 import { printReceipt, printKOT, type ReceiptData, type KOTData } from '../print/ThermalPrinter'
 
@@ -349,6 +350,41 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('kots:upsert-from-server', (_, kot: unknown) =>
     KotRepository.upsertFromServer(kot as Parameters<typeof KotRepository.upsertFromServer>[0]),
   )
+
+  // ── Customers (offline-first, local SQLite) ───────────────────────────────
+  ipcMain.handle('customer:search', (_, query: string) =>
+    CustomerRepository.search(query),
+  )
+
+  ipcMain.handle('customer:create', (_, name: string, phone?: string) => {
+    const customer = CustomerRepository.create(name, phone)
+
+    // Fire-and-forget push to server — stays 'pending' if offline, SyncWorker retries
+    const token = TokenStore.getToken()
+    const serverUrl = TokenStore.getSetting('serverUrl')
+    if (token && serverUrl) {
+      setImmediate(async () => {
+        try {
+          const client = axios.create({
+            baseURL: `${serverUrl}/api/v1`,
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            timeout: 10000,
+          })
+          const res = await client.post('/parties', {
+            type: 'customer',
+            name: customer.name,
+            phone: customer.phone ?? undefined,
+          })
+          const serverId: string | undefined = res.data?.data?.id
+          if (serverId) CustomerRepository.markSynced(customer.id, serverId)
+        } catch {
+          // Stays sync_status='pending' — SyncWorker PUSH will retry on next cycle
+        }
+      })
+    }
+
+    return customer
+  })
 
   // ── Sync ──────────────────────────────────────────────────────────────────
   ipcMain.handle('sync:trigger', () => runSync())

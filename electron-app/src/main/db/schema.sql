@@ -253,6 +253,21 @@ CREATE TABLE IF NOT EXISTS kot_lines (
   status           TEXT DEFAULT 'pending'
 );
 
+-- ── Local customers (offline-first, no server sync required) ─────────────────
+
+CREATE TABLE IF NOT EXISTS pos_customers (
+  id          TEXT PRIMARY KEY,
+  server_id   TEXT UNIQUE,
+  name        TEXT NOT NULL,
+  phone       TEXT,
+  type        TEXT DEFAULT 'customer',
+  sync_status TEXT DEFAULT 'pending',
+  created_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_customers_name  ON pos_customers(name);
+CREATE INDEX IF NOT EXISTS idx_customers_phone ON pos_customers(phone);
+
 -- ── Local tracking ─────────────────────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS sync_queue (

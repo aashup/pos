@@ -1,3 +1,13 @@
+export interface LocalCustomer {
+  id: string
+  server_id: string | null
+  name: string
+  phone: string | null
+  type: string
+  sync_status: string
+  created_at: string
+}
+
 export interface POSItemVariant {
   id: string
   item_id: string
@@ -170,6 +180,10 @@ declare global {
         cancel(id: string): Promise<void>
         checkout(id: string, data: CheckoutData): Promise<{ success: boolean }>
       }
+      customer: {
+        search(query: string): Promise<LocalCustomer[]>
+        create(name: string, phone?: string): Promise<LocalCustomer>
+      }
       sync: {
         trigger(): Promise<unknown>
         getStatus(): Promise<unknown>
@@ -231,6 +245,15 @@ export const ipc = {
   },
   units: {
     getAll: () => window.electronAPI.units.getAll(),
+  },
+  customer: {
+    search: async (query: string): Promise<LocalCustomer[]> => {
+      const rows = await window.electronAPI.customer.search(query) as LocalCustomer[]
+      return rows
+    },
+    create: async (name: string, phone?: string): Promise<LocalCustomer> => {
+      return window.electronAPI.customer.create(name, phone) as Promise<LocalCustomer>
+    },
   },
   tables: {
     getAll:        () => window.electronAPI.tables.getAll(),

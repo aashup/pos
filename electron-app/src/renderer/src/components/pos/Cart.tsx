@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2, User, X } from 'lucide-react'
 import { useCartStore } from '../../store/cartStore'
 import { formatCurrency, cn } from '../../lib/utils'
-import CustomerModal from './CustomerModal'
+import CustomerDropdown from './CustomerDropdown'
 
 interface CartProps {
   onSendKot: () => void
@@ -37,37 +37,58 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
 
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-        <div className="flex items-center justify-between">
-          <p className="font-semibold text-gray-800 dark:text-gray-100">
+      {/* Header — touch-friendly grid row */}
+      <div className="grid grid-cols-3 border-b border-gray-200 dark:border-gray-700">
+        {/* Table / order type */}
+        <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-gray-200 dark:border-gray-700">
+          <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 7h18M5 7v10M19 7v10M8 17h8" />
+          </svg>
+          <span className="text-xs font-semibold text-gray-700 dark:text-gray-200 truncate max-w-full px-1 text-center leading-tight">
             {orderType === 'dine_in' && tableName ? `Table ${tableName}` : orderType === 'takeaway' ? 'Takeaway' : 'Delivery'}
-          </p>
-          {!isEmpty && (
-            <button onClick={clearCart} className="text-xs text-red-400 hover:text-red-600">
-              Clear
-            </button>
-          )}
+          </span>
         </div>
-        <div className="flex items-center gap-1 mt-1">
+
+        {/* Add / view customer */}
+        <div className="relative border-r border-gray-200 dark:border-gray-700">
           <button
-            onClick={() => setShowCustomerModal(true)}
-            className="flex items-center gap-1.5 text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+            onClick={() => setShowCustomerModal((v) => !v)}
+            className="w-full h-full flex flex-col items-center justify-center gap-1 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 active:bg-blue-100 transition-colors"
           >
-            <User className="w-3.5 h-3.5" />
-            {customerName ?? 'Add Customer'}
+            <User className={cn('w-7 h-7', customerName ? 'text-blue-500' : 'text-gray-400 dark:text-gray-500')} />
+            <span className={cn('text-xs font-medium truncate max-w-full px-1 text-center leading-tight', customerName ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500')}>
+              {customerName ?? 'Customer'}
+            </span>
           </button>
           {customerName && (
             <button
               onClick={clearCustomer}
-              className="text-gray-400 hover:text-red-500 dark:hover:text-red-400 ml-0.5"
-              title="Remove customer"
+              className="absolute top-1 right-1 text-gray-300 hover:text-red-400"
             >
               <X className="w-3 h-3" />
             </button>
           )}
+          {showCustomerModal && (
+            <CustomerDropdown
+              onClose={() => setShowCustomerModal(false)}
+              onSelect={(id, name) => { setCustomer(id, name); setShowCustomerModal(false) }}
+            />
+          )}
         </div>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">{lines.length} item{lines.length !== 1 ? 's' : ''}</p>
+
+        {/* Item count + clear */}
+        <div className="flex flex-col items-center justify-center gap-1 py-3 relative">
+          <span className="text-2xl font-bold text-gray-700 dark:text-gray-200">{lines.length}</span>
+          <span className="text-xs text-gray-400 dark:text-gray-500">item{lines.length !== 1 ? 's' : ''}</span>
+          {!isEmpty && (
+            <button
+              onClick={clearCart}
+              className="absolute top-1 right-2 text-xs text-red-400 hover:text-red-600"
+            >
+              Clear
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Lines */}
@@ -189,12 +210,6 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
         )}
       </div>
 
-      {showCustomerModal && (
-        <CustomerModal
-          onClose={() => setShowCustomerModal(false)}
-          onSelect={(id, name) => { setCustomer(id, name); setShowCustomerModal(false) }}
-        />
-      )}
     </div>
   )
 }

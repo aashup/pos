@@ -28,4 +28,10 @@ export function initDatabase(): void {
   db.pragma('busy_timeout = 5000')  // wait up to 5s instead of throwing immediately
 
   db.exec(schema)
+
+  // Column migrations — safe for existing databases
+  const cols = db.prepare('PRAGMA table_info(pos_customers)').all() as { name: string }[]
+  if (!cols.find((c) => c.name === 'type')) {
+    db.exec("ALTER TABLE pos_customers ADD COLUMN type TEXT DEFAULT 'customer'")
+  }
 }
