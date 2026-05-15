@@ -61,6 +61,10 @@ export function registerIpcHandlers(): void {
     OrderRepository.updateLineNotes(lineId, notes),
   )
 
+  ipcMain.handle('order:update-notes', (_, id: string, notes: string | null) =>
+    OrderRepository.updateNotes(id, notes),
+  )
+
   ipcMain.handle('order:update-line-qty', (_, lineId: string, qty: number) =>
     OrderRepository.updateLineQty(lineId, qty),
   )
@@ -303,7 +307,10 @@ export function registerIpcHandlers(): void {
     // 1. Write to SQLite immediately (works offline)
     KotRepository.updateStatus(id, status)
 
-    // 2. Background push to server — fire-and-forget, stays pending on failure
+    // 2. Notify all windows (main window needs to refresh KOT badges on table cards)
+    webContents.getAllWebContents().forEach((wc) => wc.send('kots:status-changed', { id, status }))
+
+    // 3. Background push to server — fire-and-forget, stays pending on failure
     const token = TokenStore.getToken()
     const serverUrl = TokenStore.getSetting('serverUrl')
     if (token && serverUrl) {

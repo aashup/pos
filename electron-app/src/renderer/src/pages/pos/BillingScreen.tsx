@@ -23,6 +23,7 @@ import type { Item, SelectedModifier, ItemVariant } from '../../types'
 export default function BillingScreen() {
   const navigate = useNavigate()
   const { orderId, localOrderId, orderType, tableId, totals, lines, setLocalOrder, setOrder, clearOrder, populateLines } = useCartStore()
+  const { setKotNumber, setOrderNotes } = useCartStore()
   const { updateTableStatus } = useTablesStore()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
@@ -69,6 +70,7 @@ export default function BillingScreen() {
             selectedModifiers: [],
           }))
           populateLines(cartLines, local.id)
+          if (local.notes) setOrderNotes(local.notes)
           return
         }
       }
@@ -214,6 +216,7 @@ export default function BillingScreen() {
         }
         toast.success(`KOT ${result.kotNumber ?? ''} sent to kitchen`)
         useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
+        if (result.kotNumber) setKotNumber(result.kotNumber)
         if (tableId) updateTableStatus(tableId, 'occupied', localOrderId)
         const os = useOrdersStore.getState()
         const curr = os.orders.find((o) => o.id === localOrderId)

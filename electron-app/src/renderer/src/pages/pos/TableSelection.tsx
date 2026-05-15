@@ -99,6 +99,11 @@ export default function TableSelection() {
     prevSyncStatus.current = syncStatus
   }, [syncStatus])
 
+  // Refresh KOT badges when kitchen window changes a KOT status
+  useEffect(() => {
+    return ipc.kots.onStatusChange(() => loadOrders())
+  }, [])
+
   const activeFloorId = activeFloor ?? floors[0]?.id ?? null
   const visibleTables = tables.filter(
     (t) => t.is_active && (!activeFloorId || t.floor_plan_id === activeFloorId),
@@ -211,7 +216,17 @@ export default function TableSelection() {
             {cfg.label}
           </span>
         ))}
-        <span className={cn('ml-auto', isDark ? 'text-gray-500' : 'text-gray-400')}>{visibleTables.length} tables</span>
+        <span className={cn('ml-auto flex items-center gap-3', isDark ? 'text-gray-500' : 'text-gray-400')}>
+          {visibleTables.length} tables
+          <button
+            onClick={() => { loadTables(); loadOrders(); refetch() }}
+            disabled={loading}
+            className={cn('flex items-center gap-1 hover:text-orange-500 transition-colors', loading ? 'opacity-40 cursor-not-allowed' : '')}
+            title="Refresh"
+          >
+            <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
+          </button>
+        </span>
       </div>
 
       {/* Content */}

@@ -146,6 +146,10 @@ export const OrderRepository = {
     getDb().prepare('UPDATE sales_invoice_lines SET notes = ? WHERE id = ?').run(notes, lineId)
   },
 
+  updateNotes(id: string, notes: string | null): void {
+    getDb().prepare('UPDATE sales_invoices SET notes = ? WHERE id = ?').run(notes, id)
+  },
+
   updateLineQty(lineId: string, qty: number): void {
     const db = getDb()
     const row = db.prepare('SELECT * FROM sales_invoice_lines WHERE id = ?').get(lineId) as Record<string, number> | undefined

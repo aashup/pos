@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2, User, X, MessageSquare } from 'lucide-react'
+import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2, User, X, MessageSquare, FileText } from 'lucide-react'
 import { useCartStore } from '../../store/cartStore'
 import { ipc } from '../../bridge/ipc'
 import { formatCurrency, cn } from '../../lib/utils'
@@ -15,18 +15,32 @@ interface CartProps {
 
 export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingOrder }: CartProps) {
   const {
-    lines, totals, tableName, orderType,
+    lines, totals, tableName, orderType, localOrderId,
+    orderNotes, setOrderNotes,
     customerName, setCustomer, clearCustomer,
     updateQty, removeItem, clearCart, setLineNotes,
   } = useCartStore()
 
   const [showCustomerModal, setShowCustomerModal] = useState(false)
   const [openNoteId, setOpenNoteId] = useState<string | null>(null)
+  const [editingOrderNote, setEditingOrderNote] = useState(false)
+  const [draftNote, setDraftNote] = useState('')
   const noteInputRef = useRef<HTMLTextAreaElement>(null)
+  const orderNoteRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (openNoteId) noteInputRef.current?.focus()
   }, [openNoteId])
+
+  useEffect(() => {
+    if (editingOrderNote) { setDraftNote(orderNotes); orderNoteRef.current?.focus() }
+  }, [editingOrderNote])
+
+  const saveOrderNote = () => {
+    setOrderNotes(draftNote)
+    if (localOrderId) ipc.order.updateNotes(localOrderId, draftNote.trim() || null).catch(() => {})
+    setEditingOrderNote(false)
+  }
 
   const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
   const hasSentLines = lines.some((l) => l.kotStatus !== 'pending')
@@ -97,6 +111,41 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
           )}
         </div>
       </div>
+
+      {/* Order notes row */}
+      {editingOrderNote ? (
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800">
+          <FileText className="w-3.5 h-3.5 text-orange-400 shrink-0" />
+          <input
+            ref={orderNoteRef}
+            type="text"
+            value={draftNote}
+            onChange={(e) => setDraftNote(e.target.value)}
+            onBlur={saveOrderNote}
+            onKeyDown={(e) => { if (e.key === 'Enter') saveOrderNote(); if (e.key === 'Escape') setEditingOrderNote(false) }}
+            placeholder="Add order note…"
+            className="flex-1 text-xs bg-transparent outline-none text-gray-800 dark:text-gray-200 placeholder-gray-400"
+          />
+        </div>
+      ) : (
+        <button
+          onClick={() => setEditingOrderNote(true)}
+          className="w-full flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-800 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+        >
+          <FileText className={cn('w-3.5 h-3.5 shrink-0', orderNotes ? 'text-orange-400' : 'text-gray-300 dark:text-gray-600')} />
+          <span className={cn('text-xs truncate', orderNotes ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400 dark:text-gray-600')}>
+            {orderNotes || 'Add note…'}
+          </span>
+          {orderNotes && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setOrderNotes(''); if (localOrderId) ipc.order.updateNotes(localOrderId, null).catch(() => {}) }}
+              className="ml-auto text-gray-300 hover:text-red-400 shrink-0"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </button>
+      )}
 
       {/* Lines */}
       <div className="flex-1 overflow-y-auto">

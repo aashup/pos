@@ -22,6 +22,8 @@ interface CartState {
   pax: number
   customerId: string | null
   customerName: string | null
+  kotNumber: string | null      // last sent KOT number for this order
+  orderNotes: string            // order-level notes
   lines: CartLine[]
   isInterState: boolean
   discountPct: number
@@ -38,6 +40,8 @@ interface CartState {
   setDiscount: (pct: number) => void
   setCustomer: (id: string, name: string) => void
   clearCustomer: () => void
+  setKotNumber: (n: string | null) => void
+  setOrderNotes: (notes: string) => void
 
   // Cart operations
   addItem: (item: { id: string; name: string; selling_price: number; unit: string; cgst: number; sgst: number; igst: number }, lineId?: string) => void
@@ -95,6 +99,8 @@ export const useCartStore = create<CartState>((set, get) => ({
   pax: 1,
   customerId: null,
   customerName: null,
+  kotNumber: null,
+  orderNotes: '',
   lines: [],
   isInterState: false,
   discountPct: 0,
@@ -109,7 +115,10 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({ localOrderId, orderId: null, orderType, tableId: tableId ?? null, tableName: tableName ?? null }),
 
   clearOrder: () =>
-    set({ orderId: null, localOrderId: null, orderType: 'takeaway', tableId: null, tableName: null, pax: 1, customerId: null, customerName: null, lines: [], discountPct: 0, totals: ZERO_TOTALS }),
+    set({ orderId: null, localOrderId: null, orderType: 'takeaway', tableId: null, tableName: null, pax: 1, customerId: null, customerName: null, kotNumber: null, orderNotes: '', lines: [], discountPct: 0, totals: ZERO_TOTALS }),
+
+  setKotNumber: (n) => set({ kotNumber: n }),
+  setOrderNotes: (notes) => set({ orderNotes: notes }),
 
   setOrderType: (type) => set({ orderType: type }),
 

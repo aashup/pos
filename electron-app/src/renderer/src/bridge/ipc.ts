@@ -269,6 +269,7 @@ export const ipc = {
     create:         (data: { order_type: string; table_id?: string | null; pax?: number }) => window.electronAPI.order.create(data),
     addLine: (invoiceId: string, line: Parameters<Window['electronAPI']['order']['addLine']>[1]) => window.electronAPI.order.addLine(invoiceId, line),
     updateLineNotes: (lineId: string, notes: string | null) => window.electronAPI.order.updateLineNotes(lineId, notes),
+    updateNotes: (id: string, notes: string | null) => window.electronAPI.order.updateNotes(id, notes),
     updateLineQty:  (lineId: string, qty: number) => window.electronAPI.order.updateLineQty(lineId, qty),
     removeLine:     (lineId: string) => window.electronAPI.order.removeLine(lineId),
     sendKot:        (localOrderId: string) => window.electronAPI.order.sendKot(localOrderId),
@@ -297,6 +298,8 @@ export const ipc = {
     updateStatus:     (id: string, status: string) => window.electronAPI.kots.updateStatus(id, status),
     updateLineStatus: (kotId: string, lineId: string, status: string) => window.electronAPI.kots.updateLineStatus(kotId, lineId, status),
     upsertFromServer: (kot: unknown) => window.electronAPI.kots.upsertFromServer(kot),
+    onStatusChange:   (cb: (data: { id: string; status: string }) => void) =>
+      window.electronAPI.kots.onStatusChange(cb as (data: unknown) => void),
   },
   window: {
     openKitchen:  () => window.electronAPI.window.openKitchen(),

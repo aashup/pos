@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }): Promise<void> => ipcRenderer.invoke('order:add-line', invoiceId, line),
     updateLineNotes: (lineId: string, notes: string | null): Promise<void> =>
       ipcRenderer.invoke('order:update-line-notes', lineId, notes),
+    updateNotes: (id: string, notes: string | null): Promise<void> =>
+      ipcRenderer.invoke('order:update-notes', id, notes),
     updateLineQty: (lineId: string, qty: number): Promise<void> =>
       ipcRenderer.invoke('order:update-line-qty', lineId, qty),
     removeLine: (lineId: string): Promise<void> =>
@@ -94,6 +96,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     updateStatus:     (id: string, status: string): Promise<void> => ipcRenderer.invoke('kots:update-status', id, status),
     updateLineStatus: (kotId: string, lineId: string, status: string): Promise<void> => ipcRenderer.invoke('kots:update-line-status', kotId, lineId, status),
     upsertFromServer: (kot: unknown): Promise<void> => ipcRenderer.invoke('kots:upsert-from-server', kot),
+    onStatusChange: (callback: (data: unknown) => void) => {
+      const handler = (_: unknown, data: unknown) => callback(data)
+      ipcRenderer.on('kots:status-changed', handler)
+      return () => ipcRenderer.removeListener('kots:status-changed', handler)
+    },
   },
 
   window: {

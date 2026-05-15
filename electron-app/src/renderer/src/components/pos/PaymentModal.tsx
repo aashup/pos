@@ -45,11 +45,12 @@ const MODE_LABELS: Record<PayMode, string> = {
 
 export default function PaymentModal({ orderId, localOrderId, orderType, lines, totals, onClose, onSuccess }: Props) {
   const { theme } = useThemeStore()
+  const { orderNotes } = useCartStore()
   const isDark = theme === 'dark'
   const [payMode, setPayMode] = useState<PayMode>('cash')
   const [tendered, setTendered] = useState('')
   const [discountAmt, setDiscountAmt] = useState('')
-  const [notes, setNotes] = useState('')
+  const [notes, setNotes] = useState(orderNotes)
   const [loading, setLoading] = useState(false)
   const [showDiscount, setShowDiscount] = useState(false)
   const [isSplit, setIsSplit] = useState(false)

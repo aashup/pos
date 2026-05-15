@@ -185,7 +185,7 @@ function KOTCard({ kot, now, onAdvance, onLineToggle, advancing, isDark }: KOTCa
       <div className={cn('flex items-center justify-between px-3 py-2 border-b', isDark ? 'border-gray-700' : 'border-gray-100')}>
         <div>
           <span className={cn('font-bold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>
-            KOT #{kot.kot_number}
+            #{kot.kot_number}
           </span>
           {kot.notes && <p className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>{kot.notes}</p>}
         </div>
