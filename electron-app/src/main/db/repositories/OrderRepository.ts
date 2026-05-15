@@ -55,6 +55,9 @@ export interface LocalOrderSummary {
   sync_status: string
   created_at: string
   line_count: number
+  computed_total: number
+  pending_line_count: number
+  latest_kot_status: string | null
 }
 
 export interface LocalOrderFull extends LocalOrderSummary {
@@ -313,7 +316,10 @@ export const OrderRepository = {
              si.cgst_total, si.sgst_total, si.pos_payment_mode,
              si.kot_count, si.notes, si.invoice_number, si.sync_status,
              si.created_at,
-             COUNT(sil.id) AS line_count
+             COUNT(sil.id) AS line_count,
+             COALESCE(SUM(sil.line_total), 0) AS computed_total,
+             SUM(CASE WHEN sil.kot_status = 'pending' THEN 1 ELSE 0 END) AS pending_line_count,
+             (SELECT k.status FROM kots k WHERE k.sales_invoice_id = si.id ORDER BY k.created_at DESC LIMIT 1) AS latest_kot_status
       FROM sales_invoices si
       LEFT JOIN dining_tables dt ON si.table_id = dt.id
       LEFT JOIN sales_invoice_lines sil ON sil.sales_invoice_id = si.id

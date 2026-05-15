@@ -75,6 +75,9 @@ export interface LocalOrderSummary {
   sync_status: string
   created_at: string
   line_count: number
+  computed_total: number
+  pending_line_count: number
+  latest_kot_status: string | null
 }
 
 export interface LocalOrderFull extends LocalOrderSummary {

@@ -77,9 +77,13 @@ class ItemController extends Controller
             'alternate_units.*.selling_price' => 'nullable|numeric|min:0',
             'alternate_units.*.is_default_purchase' => 'boolean',
             'alternate_units.*.is_default_sale' => 'boolean',
+            'modifier_group_ids' => 'nullable|array',
+            'modifier_group_ids.*' => 'uuid|exists:modifier_groups,id',
         ]);
 
         $item = Item::create($validated);
+
+        $item->modifierGroups()->sync($validated['modifier_group_ids'] ?? []);
 
         foreach ($validated['alternate_units'] ?? [] as $au) {
             if ($au['unit'] === $validated['unit']) {
@@ -94,14 +98,14 @@ class ItemController extends Controller
             ]);
         }
 
-        return response()->json(['data' => $item->load('alternateUnits')], 201);
+        return response()->json(['data' => $item->load('alternateUnits', 'modifierGroups')], 201);
     }
 
     public function show(Item $item): JsonResponse
     {
         $this->authorize('view', $item);
 
-        return response()->json(['data' => $item->load('batches', 'alternateUnits')]);
+        return response()->json(['data' => $item->load('batches', 'alternateUnits', 'modifierGroups')]);
     }
 
     public function update(Request $request, Item $item): JsonResponse
@@ -134,9 +138,15 @@ class ItemController extends Controller
             'alternate_units.*.selling_price' => 'nullable|numeric|min:0',
             'alternate_units.*.is_default_purchase' => 'boolean',
             'alternate_units.*.is_default_sale' => 'boolean',
+            'modifier_group_ids' => 'nullable|array',
+            'modifier_group_ids.*' => 'uuid|exists:modifier_groups,id',
         ]);
 
         $item->update($validated);
+
+        if ($request->has('modifier_group_ids')) {
+            $item->modifierGroups()->sync($validated['modifier_group_ids'] ?? []);
+        }
 
         if ($request->has('alternate_units')) {
             $baseUnit = $item->unit;
@@ -164,7 +174,7 @@ class ItemController extends Controller
             }
         }
 
-        return response()->json(['data' => $item->load('alternateUnits')]);
+        return response()->json(['data' => $item->load('alternateUnits', 'modifierGroups')]);
     }
 
     public function destroy(Item $item): JsonResponse

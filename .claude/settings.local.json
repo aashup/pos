@@ -12,7 +12,9 @@
       "Bash(Sort-Object FullName)",
       "Bash(npx tsc *)",
       "Bash(make pos-fresh *)",
-      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\main\\\\db\\\\repositories\\\\\" -File | Select-Object Name)"
+      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\main\\\\db\\\\repositories\\\\\" -File | Select-Object Name)",
+      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\renderer\\\\src\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)"
     ]
   }
 }

@@ -45,6 +45,7 @@ use App\Http\Controllers\Api\V1\ComboController;
 use App\Http\Controllers\Api\V1\ItemVariantController;
 use App\Http\Controllers\Api\V1\MediaController;
 use App\Http\Controllers\Api\V1\ModifierGroupController;
+use App\Http\Controllers\Api\V1\ItemModifierGroupController;
 use App\Http\Controllers\Api\V1\VoucherController;
 use Illuminate\Support\Facades\Route;
 
@@ -212,6 +213,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Restaurant — Variants, Modifiers, Combos, Media
     Route::apiResource('item-variants', ItemVariantController::class);
+    Route::get('item-modifier-groups', [ItemModifierGroupController::class, 'index']);
     Route::apiResource('modifier-groups', ModifierGroupController::class);
     Route::post('modifier-groups/{modifierGroup}/modifiers', [ModifierGroupController::class, 'storeModifier']);
     Route::patch('modifier-groups/{modifierGroup}/modifiers/{modifier}', [ModifierGroupController::class, 'updateModifier']);

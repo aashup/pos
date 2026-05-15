@@ -7,10 +7,11 @@ import { itemsApi } from '../../api/items'
 import { itemVariantsApi } from '../../api/itemVariants'
 import { modifierGroupsApi } from '../../api/modifierGroups'
 import { mediaApi } from '../../api/media'
-import { unitsApi, type Unit } from '../../api/units'
+import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import type { Item, ModifierGroup, MediaItem } from '../../types'
+import { SlideSelect } from '../../components/ui/SlideSelect'
 
 type VariantRow = { id?: string; name: string; price: string }
 
@@ -74,38 +75,27 @@ export default function ItemDetail() {
     enabled: !isNew && !!id,
   })
 
-  const { data: units = [] } = useQuery<Unit[]>({
+  const { data: units = [] } = useQuery({
     queryKey: ['units'],
-    queryFn: async () => {
-      const res = await unitsApi.list()
-      return res.data?.data ?? []
-    },
+    queryFn: () => ipc.units.getAll() as Promise<{ id: string; value: string; label: string }[]>,
+    staleTime: 5 * 60 * 1000,
+  })
+
+  const { data: itemGroups = [] } = useQuery({
+    queryKey: ['item-groups'],
+    queryFn: () => ipc.items.getGroups() as Promise<{ id: string; name: string }[]>,
     staleTime: 5 * 60 * 1000,
   })
 
   // ── Mutations ───────────────────────────────────────────────────────────────
   const saveMutation = useMutation({
     mutationFn: async () => {
+      const payload = { ...formData, modifier_group_ids: selectedModifierGroups }
       if (isNew) {
-        return await itemsApi.create(formData as any)
-      } else {
-        return await itemsApi.update(id!, formData)
+        return await itemsApi.create(payload as any)
       }
-    },
-    onSuccess: (res) => {
-      toast.success(isNew ? 'Item created' : 'Item updated')
-      if (isNew) navigate(`/inventory/items/${res.data.data.id}`)
-      qc.invalidateQueries({ queryKey: ['items'] })
-    },
-    onError: () => toast.error('Failed to save item'),
-  })
 
-  // Bulk save: create new rows, update existing, delete removed — all in parallel
-  const saveVariantsMutation = useMutation({
-    mutationFn: async () => {
-      if (!id || isNew) return
-
-      const ops: Promise<unknown>[] = []
+      const ops: Promise<unknown>[] = [itemsApi.update(id!, payload)]
 
       // Rows with no id → create
       for (const row of variantRows) {
@@ -142,13 +132,15 @@ export default function ItemDetail() {
         }
       }
 
-      await Promise.all(ops)
+      return Promise.all(ops)
     },
-    onSuccess: () => {
-      toast.success('Variants saved')
+    onSuccess: (res) => {
+      toast.success(isNew ? 'Item created' : 'Item saved')
+      if (isNew) navigate(`/inventory/items/${(res as any).data.data.id}`)
+      qc.invalidateQueries({ queryKey: ['items'] })
       qc.invalidateQueries({ queryKey: ['variants', id] })
     },
-    onError: () => toast.error('Failed to save variants'),
+    onError: () => toast.error('Failed to save item'),
   })
 
   const uploadMutation = useMutation({
@@ -253,23 +245,31 @@ export default function ItemDetail() {
             </div>
 
             <div>
-              <label className={labelCls}>Unit *</label>
-              <select
+              <SlideSelect
+                name="unit"
+                label="Unit *"
+                placeholder="— Select unit —"
+                panelTitle="Select Unit"
+                options={
+                  units.length > 0
+                    ? units.map((u) => ({ value: u.value, label: `${u.value} — ${u.label}` }))
+                    : ['PCS', 'KG', 'L', 'BOX', 'STRIP'].map((v) => ({ value: v, label: v }))
+                }
                 value={formData.unit || ''}
-                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                className={inputCls}
-              >
-                <option value="">— Select unit —</option>
-                {units.length > 0
-                  ? units.map((u) => (
-                      <option key={u.id} value={u.value}>
-                        {u.value} — {u.label}
-                      </option>
-                    ))
-                  : ['PCS', 'KG', 'L', 'BOX', 'STRIP'].map((v) => (
-                      <option key={v} value={v}>{v}</option>
-                    ))}
-              </select>
+                onChange={(val) => setFormData({ ...formData, unit: val })}
+              />
+            </div>
+
+            <div>
+              <SlideSelect
+                name="item_group_id"
+                label="Item Group"
+                placeholder="— Select group —"
+                panelTitle="Select Item Group"
+                options={itemGroups.map((g: any) => ({ value: g.id, label: g.name }))}
+                value={formData.item_group_id || ''}
+                onChange={(val) => setFormData({ ...formData, item_group_id: val || null })}
+              />
             </div>
 
             <div>
@@ -382,20 +382,12 @@ export default function ItemDetail() {
                 </table>
 
                 {/* Actions */}
-                <div className="flex items-center justify-between pt-1">
+                <div className="pt-1">
                   <button
                     onClick={addVariantRow}
                     className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-400"
                   >
                     <Plus className="w-3 h-3" /> Add Row
-                  </button>
-                  <button
-                    onClick={() => saveVariantsMutation.mutate()}
-                    disabled={saveVariantsMutation.isPending}
-                    className="flex items-center gap-1.5 text-xs bg-orange-500 hover:bg-orange-600 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"
-                  >
-                    {saveVariantsMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />}
-                    Save Variants
                   </button>
                 </div>
               </>

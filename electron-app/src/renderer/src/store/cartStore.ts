@@ -243,7 +243,7 @@ export const useCartStore = create<CartState>((set, get) => ({
       ),
     })),
 
-  clearCart: () => set({ lines: [], discountPct: 0, totals: ZERO_TOTALS }),
+  clearCart: () => set({ lines: [], discountPct: 0, totals: ZERO_TOTALS, customerId: null, customerName: null }),
 
   populateLines: (incoming, localId, markAsServerNative) => {
     const lines = markAsServerNative

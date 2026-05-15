@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Users, RefreshCw } from 'lucide-react'
@@ -13,7 +13,7 @@ import { cn } from '../../lib/utils'
 import PosHeader from '../../components/pos/PosHeader'
 import NavigationDrawer from '../../components/pos/NavigationDrawer'
 import type { FloorPlan, DiningTable, TableStatus } from '../../types'
-import type { LocalOrderLine } from '../../bridge/ipc'
+import type { LocalOrderLine, LocalOrderSummary } from '../../bridge/ipc'
 
 // Canvas dimensions — tables use a 0–100 coordinate space
 const CANVAS_W = 900
@@ -73,6 +73,18 @@ export default function TableSelection() {
     staleTime: 90_000,
   })
 
+  const { data: draftOrders = [], refetch: refetchDraftOrders } = useQuery<LocalOrderSummary[]>({
+    queryKey: ['draft-orders'],
+    queryFn: async () => (await ipc.order.list({ status: 'draft' })) as LocalOrderSummary[],
+    staleTime: 30_000,
+  })
+
+  const orderByTable = useMemo(() => {
+    const m = new Map<string, LocalOrderSummary>()
+    for (const o of draftOrders) if (o.table_id) m.set(o.table_id, o)
+    return m
+  }, [draftOrders])
+
   // Load tables from SQLite on mount (offline-first, instant — no network round-trip)
   useEffect(() => {
     loadTables()
@@ -84,6 +96,7 @@ export default function TableSelection() {
     if (prevSyncStatus.current === 'syncing' && syncStatus === 'idle') {
       loadTables()
       refetch()
+      refetchDraftOrders()
     }
     prevSyncStatus.current = syncStatus
   }, [syncStatus])
@@ -210,6 +223,7 @@ export default function TableSelection() {
             onSelect={handleSelectTable}
             isDark={isDark}
             statusStyle={statusStyle}
+            orderByTable={orderByTable}
           />
         ) : (
           <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3">
@@ -223,6 +237,7 @@ export default function TableSelection() {
                 loading={selecting === table.id}
                 isDark={isDark}
                 statusStyle={statusStyle}
+                orderSummary={orderByTable.get(table.id)}
               />
             ))}
           </div>
@@ -242,9 +257,10 @@ interface TableMapProps {
   onSelect: (t: DiningTable) => void
   isDark: boolean
   statusStyle: Record<TableStatus, { bg: string; border: string; dot: string; label: string }>
+  orderByTable: Map<string, LocalOrderSummary>
 }
 
-function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect, isDark, statusStyle }: TableMapProps) {
+function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect, isDark, statusStyle, orderByTable }: TableMapProps) {
   // Find the actual coordinate range so we can scale properly
   const xs = tables.map((t) => t.pos_x)
   const ys = tables.map((t) => t.pos_y)
@@ -291,6 +307,7 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect, isDark, st
           const isLoading = selecting === table.id
           const cfg = statusStyle[table.status]
           const pax = paxMap[table.id] ?? 1
+          const orderSummary = orderByTable.get(table.id)
 
           return (
             <div
@@ -322,6 +339,13 @@ function TableMap({ tables, selecting, paxMap, onPaxChange, onSelect, isDark, st
                     <Users style={{ width: 9, height: 9 }} />
                     {table.capacity}
                   </span>
+                  {table.status === 'occupied' && orderSummary && orderSummary.computed_total > 0 && (
+                    <span className="font-semibold text-gray-700 mt-0.5" style={{ fontSize: 9 }}>
+                      {orderSummary.computed_total >= 1000
+                        ? `₹${(orderSummary.computed_total / 1000).toFixed(1)}K`
+                        : `₹${Math.round(orderSummary.computed_total)}`}
+                    </span>
+                  )}
                   {/* Status dot */}
                   <span
                     className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full"
@@ -366,20 +390,38 @@ interface TableCardProps {
   loading: boolean
   isDark: boolean
   statusStyle: Record<TableStatus, { bg: string; border: string; dot: string; label: string }>
+  orderSummary?: LocalOrderSummary
 }
 
-function TableCard({ table, pax, onPaxChange, onSelect, loading, isDark, statusStyle }: TableCardProps) {
+function kotBadge(o: LocalOrderSummary): { label: string; color: string } | null {
+  const pending = o.pending_line_count ?? 0
+  const kotStatus = o.latest_kot_status
+  if (o.line_count === 0) return null
+  if (o.kot_count === 0 && pending > 0) return { label: 'Pending KOT', color: '#d97706' }
+  if (kotStatus === 'ready') return { label: 'Ready', color: '#16a34a' }
+  if (kotStatus === 'in_progress') return { label: 'Cooking', color: '#ea580c' }
+  if (kotStatus === 'new') return { label: 'In Kitchen', color: '#2563eb' }
+  if (kotStatus === 'served' && pending === 0) return { label: 'Served', color: '#6b7280' }
+  return null
+}
+
+function TableCard({ table, pax, onPaxChange, onSelect, loading, isDark, statusStyle, orderSummary }: TableCardProps) {
   const cfg = statusStyle[table.status]
   const isOccupied = table.status === 'occupied'
   const isVacant = table.status === 'vacant'
   const isClickable = isVacant || isOccupied
+  const badge = isOccupied && orderSummary ? kotBadge(orderSummary) : null
+  const pendingExtra = isOccupied && orderSummary && orderSummary.kot_count > 0 && orderSummary.pending_line_count > 0
 
   return (
-    <button
-      onClick={isClickable ? onSelect : undefined}
-      disabled={!isClickable || loading}
+    <div
+      role="button"
+      tabIndex={isClickable && !loading ? 0 : -1}
+      aria-disabled={!isClickable || loading}
+      onClick={isClickable && !loading ? onSelect : undefined}
+      onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && isClickable && !loading) onSelect() }}
       className={cn(
-        'relative rounded-2xl border-2 p-4 text-left transition-all',
+        'relative rounded-2xl border-2 p-4 text-left transition-all select-none',
         isClickable ? 'hover:shadow-md cursor-pointer active:scale-95' : 'opacity-60 cursor-not-allowed',
         loading && 'opacity-70',
       )}
@@ -391,6 +433,36 @@ function TableCard({ table, pax, onPaxChange, onSelect, loading, isDark, statusS
         <Users className="w-3 h-3" />{table.capacity} seats
       </p>
       <p className={cn('text-xs font-medium mt-2', isDark ? 'text-gray-300' : 'text-gray-600')}>{cfg.label}</p>
+
+      {isOccupied && orderSummary && (
+        <div className="mt-2 flex items-center justify-between gap-1 flex-wrap">
+          {orderSummary.computed_total > 0 ? (
+            <span className={cn('text-sm font-bold', isDark ? 'text-gray-100' : 'text-gray-800')}>
+              ₹{Math.round(orderSummary.computed_total).toLocaleString('en-IN')}
+            </span>
+          ) : (
+            <span className={cn('text-xs', isDark ? 'text-gray-500' : 'text-gray-400')}>No items</span>
+          )}
+          <div className="flex items-center gap-1">
+            {badge && (
+              <span
+                className="text-white rounded-full px-1.5 py-0.5 font-medium"
+                style={{ fontSize: 9, background: badge.color }}
+              >
+                {badge.label}
+              </span>
+            )}
+            {pendingExtra && (
+              <span
+                className="rounded-full px-1.5 py-0.5 font-medium text-white"
+                style={{ fontSize: 9, background: '#d97706' }}
+              >
+                +{orderSummary.pending_line_count} more
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {isVacant && (
         <div className="mt-3 flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -406,6 +478,6 @@ function TableCard({ table, pax, onPaxChange, onSelect, loading, isDark, statusS
           <RefreshCw className="w-4 h-4 animate-spin" />
         </div>
       )}
-    </button>
+    </div>
   )
 }

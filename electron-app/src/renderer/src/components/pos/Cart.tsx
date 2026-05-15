@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2, User, X } from 'lucide-react'
 import { useCartStore } from '../../store/cartStore'
 import { formatCurrency, cn } from '../../lib/utils'
-import CustomerDropdown from './CustomerDropdown'
+import CustomerModal from './CustomerModal'
 
 interface CartProps {
   onSendKot: () => void
@@ -69,7 +69,7 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
             </button>
           )}
           {showCustomerModal && (
-            <CustomerDropdown
+            <CustomerModal
               onClose={() => setShowCustomerModal(false)}
               onSelect={(id, name) => { setCustomer(id, name); setShowCustomerModal(false) }}
             />
