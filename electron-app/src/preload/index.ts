@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       rate: number; discount_percent: number; gst_rate: number; notes?: string | null
       item_variant_id?: string | null; modifiers_total?: number
     }): Promise<void> => ipcRenderer.invoke('order:add-line', invoiceId, line),
+    updateLineNotes: (lineId: string, notes: string | null): Promise<void> =>
+      ipcRenderer.invoke('order:update-line-notes', lineId, notes),
     updateLineQty: (lineId: string, qty: number): Promise<void> =>
       ipcRenderer.invoke('order:update-line-qty', lineId, qty),
     removeLine: (lineId: string): Promise<void> =>

@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Search, RefreshCw } from 'lucide-react'
 import { ipc } from '../../bridge/ipc'
 import { useSyncStore } from '../../store/syncStore'
 import { useThemeStore } from '../../store/themeStore'
+import { useOrdersStore } from '../../store/ordersStore'
 import { formatCurrency } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import Header from '../../components/layout/Header'
@@ -30,31 +31,41 @@ export default function OrderList() {
   const [tab, setTab]       = useState('draft')
   const [search, setSearch] = useState('')
 
-  const filters =
-    tab === 'all'       ? undefined :
-    tab === 'confirmed' ? { status: 'confirmed', today: true } :
-                          { status: 'draft' }
+  // Active tab — Zustand (no polling)
+  const { orders: draftOrders, isLoaded: ordersLoaded, loadOrders } = useOrdersStore()
+  useEffect(() => { if (!ordersLoaded) loadOrders() }, [ordersLoaded])
 
-  const { data, isLoading, refetch } = useQuery({
+  // Paid Today / All tabs — still query SQLite
+  const filters = tab === 'all' ? undefined : tab === 'confirmed' ? { status: 'confirmed', today: true } : undefined
+  const { data: queryData, isLoading: queryLoading, refetch } = useQuery({
     queryKey: ['orders-list', tab],
     queryFn: () => ipc.order.list(filters as any),
+    enabled: tab !== 'draft',
     staleTime: 10_000,
   })
 
-  // Re-read after every sync cycle
+  // On sync complete: reload ordersStore for active tab, refetch for others
   const prevSync = useRef(syncStatus)
   useEffect(() => {
-    if (prevSync.current === 'syncing' && syncStatus === 'idle') refetch()
+    if (prevSync.current === 'syncing' && syncStatus === 'idle') {
+      loadOrders()
+      if (tab !== 'draft') refetch()
+    }
     prevSync.current = syncStatus
-  }, [syncStatus])
+  }, [syncStatus, tab])
 
-  const orders = (data ?? []).filter((o: LocalOrderSummary) => {
-    if (!search) return true
-    return (
-      (o.invoice_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      o.id.toLowerCase().includes(search.toLowerCase())
-    )
-  })
+  const rawOrders: LocalOrderSummary[] = tab === 'draft' ? draftOrders : (queryData ?? []) as LocalOrderSummary[]
+  const isLoading = tab === 'draft' ? !ordersLoaded : queryLoading
+
+  const orders = useMemo(() =>
+    rawOrders.filter((o) => {
+      if (!search) return true
+      return (
+        (o.invoice_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
+        o.id.toLowerCase().includes(search.toLowerCase())
+      )
+    }),
+  [rawOrders, search])
 
   const statusColors = getStatusColors(isDark)
 
@@ -63,7 +74,7 @@ export default function OrderList() {
       <Header
         title="Orders"
         onBack={() => navigate('/pos/tables')}
-        actions={[{ icon: RefreshCw, label: '', onClick: () => refetch() }]}
+        actions={[{ icon: RefreshCw, label: '', onClick: () => tab === 'draft' ? loadOrders() : refetch() }]}
       />
 
       {/* Tabs */}
@@ -103,7 +114,7 @@ export default function OrderList() {
         ) : orders.length === 0 ? (
           <div className={cn('flex items-center justify-center h-40 text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>No orders found</div>
         ) : (
-          orders.map((order: LocalOrderSummary) => (
+          orders.map((order) => (
             <button
               key={order.id}
               onClick={() => navigate(`/pos/orders/${order.id}`)}

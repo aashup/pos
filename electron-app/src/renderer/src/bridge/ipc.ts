@@ -170,6 +170,7 @@ declare global {
           rate: number; discount_percent: number; gst_rate: number; notes?: string | null
           item_variant_id?: string | null; modifiers_total?: number
         }): Promise<void>
+        updateLineNotes(lineId: string, notes: string | null): Promise<void>
         updateLineQty(lineId: string, qty: number): Promise<void>
         removeLine(lineId: string): Promise<void>
         sendKot(localOrderId: string): Promise<{ success: boolean; kotNumber?: string; lines?: unknown[]; error?: string }>
@@ -267,6 +268,7 @@ export const ipc = {
   order: {
     create:         (data: { order_type: string; table_id?: string | null; pax?: number }) => window.electronAPI.order.create(data),
     addLine: (invoiceId: string, line: Parameters<Window['electronAPI']['order']['addLine']>[1]) => window.electronAPI.order.addLine(invoiceId, line),
+    updateLineNotes: (lineId: string, notes: string | null) => window.electronAPI.order.updateLineNotes(lineId, notes),
     updateLineQty:  (lineId: string, qty: number) => window.electronAPI.order.updateLineQty(lineId, qty),
     removeLine:     (lineId: string) => window.electronAPI.order.removeLine(lineId),
     sendKot:        (localOrderId: string) => window.electronAPI.order.sendKot(localOrderId),

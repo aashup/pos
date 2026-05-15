@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { CheckCircle, Clock, ChefHat, Loader2, WifiOff } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { kotsApi } from '../../api/kots'   // used for background API sync only
+import { kotsApi } from '../../api/kots'
 import { ipc, type LocalKot } from '../../bridge/ipc'
+import { useKotsStore } from '../../store/kotsStore'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import type { KOTLine } from '../../types'
@@ -17,12 +18,16 @@ const getColumns = (isDark: boolean): { key: KotStatus; label: string; bg: strin
 ]
 
 export default function KitchenDisplay() {
-  const qc = useQueryClient()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const [now, setNow] = useState(() => Date.now())
   const [isOnline, setIsOnline] = useState(true)
   const syncingRef = useRef(false)
+
+  const { kots, isLoaded, loadKots, updateKotStatus, updateLineStatus } = useKotsStore()
+
+  // Seed on mount
+  useEffect(() => { loadKots() }, [])
 
   // Tick every 30s to refresh elapsed timers
   useEffect(() => {
@@ -30,14 +35,7 @@ export default function KitchenDisplay() {
     return () => clearInterval(id)
   }, [])
 
-  // Primary data source: SQLite via IPC (works offline)
-  const { data: kots = [], isLoading } = useQuery<LocalKot[]>({
-    queryKey: ['kitchen-kots'],
-    queryFn: () => ipc.kots.list(),
-    refetchInterval: 5_000,
-  })
-
-  // Background API sync: pull active KOTs from server → upsert into SQLite
+  // Background API sync every 30s — picks up KOTs from the main window / other devices
   useEffect(() => {
     const syncFromApi = async () => {
       if (syncingRef.current) return
@@ -47,7 +45,8 @@ export default function KitchenDisplay() {
         const serverKots: unknown[] = res.data?.data ?? []
         await Promise.all(serverKots.map((k) => ipc.kots.upsertFromServer(k)))
         setIsOnline(true)
-        qc.invalidateQueries({ queryKey: ['kitchen-kots'] })
+        // Reload from SQLite after upsert so the store reflects server state
+        await loadKots()
       } catch {
         setIsOnline(false)
       } finally {
@@ -56,23 +55,23 @@ export default function KitchenDisplay() {
     }
 
     syncFromApi()
-    const id = setInterval(syncFromApi, 15_000)
+    const id = setInterval(syncFromApi, 30_000)
     return () => clearInterval(id)
-  }, [qc])
+  }, [])
 
-  // KOT status advance: SQLite only — main process handles background API push
+  // KOT status advance: SQLite write + optimistic Zustand update
   const advanceMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: 'in_progress' | 'ready' | 'served' }) =>
       ipc.kots.updateStatus(id, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kitchen-kots'] }),
+    onSuccess: (_, { id, status }) => updateKotStatus(id, status),
     onError: () => toast.error('Failed to update status'),
   })
 
-  // Line status toggle: SQLite only — main process handles background API push
+  // Line status toggle: SQLite write + optimistic Zustand update
   const lineMutation = useMutation({
     mutationFn: ({ kotId, lineId, status }: { kotId: string; lineId: string; status: 'cooking' | 'ready' }) =>
       ipc.kots.updateLineStatus(kotId, lineId, status),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['kitchen-kots'] }),
+    onSuccess: (_, { kotId, lineId, status }) => updateLineStatus(kotId, lineId, status),
     onError: () => toast.error('Failed to update item'),
   })
 
@@ -81,7 +80,7 @@ export default function KitchenDisplay() {
       .filter((k) => k.status === status)
       .sort((a, b) => a.created_at.localeCompare(b.created_at))
 
-  if (isLoading) {
+  if (!isLoaded) {
     return (
       <div className="h-screen flex items-center justify-center bg-gray-900 text-white">
         <Loader2 className="w-8 h-8 animate-spin" />
@@ -179,8 +178,6 @@ function KOTCard({ kot, now, onAdvance, onLineToggle, advancing, isDark }: KOTCa
 
   const next = nextStatus[kot.status]
   const nextLbl = nextLabel[kot.status]
-
-  // Warn if older than 15 minutes
   const isOverdue = elapsedMin >= 15
 
   return (

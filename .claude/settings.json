@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "Write-Output '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"ALWAYS read CLAUDE.md (D:\\\\erp\\\\pos\\\\CLAUDE.md) and electron-app/CLAUDE.md (D:\\\\erp\\\\pos\\\\electron-app\\\\CLAUDE.md) before starting any work. They contain critical version constraints, architecture decisions, API endpoints, and feature documentation for the Zazzy POS project.\"}}'",
+            "statusMessage": "Loading project context…"
+          }
+        ]
+      }
+    ]
+  }
+}

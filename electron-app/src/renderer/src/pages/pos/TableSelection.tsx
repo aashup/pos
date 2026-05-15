@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import { useCartStore } from '../../store/cartStore'
 import { useTablesStore } from '../../store/tablesStore'
 import { useSyncStore } from '../../store/syncStore'
+import { useOrdersStore } from '../../store/ordersStore'
 import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
@@ -73,30 +74,27 @@ export default function TableSelection() {
     staleTime: 90_000,
   })
 
-  const { data: draftOrders = [], refetch: refetchDraftOrders } = useQuery<LocalOrderSummary[]>({
-    queryKey: ['draft-orders'],
-    queryFn: async () => (await ipc.order.list({ status: 'draft' })) as LocalOrderSummary[],
-    staleTime: 30_000,
-  })
+  const { orders, loadOrders } = useOrdersStore()
 
   const orderByTable = useMemo(() => {
     const m = new Map<string, LocalOrderSummary>()
-    for (const o of draftOrders) if (o.table_id) m.set(o.table_id, o)
+    for (const o of orders) if (o.table_id) m.set(o.table_id, o)
     return m
-  }, [draftOrders])
+  }, [orders])
 
-  // Load tables from SQLite on mount (offline-first, instant — no network round-trip)
+  // Load tables + order summaries from SQLite on mount
   useEffect(() => {
     loadTables()
+    loadOrders()
   }, [])
 
-  // Reload from SQLite whenever a sync finishes (fresh server data was pulled)
+  // Re-seed from SQLite whenever a sync finishes (multi-device orders arrive)
   const prevSyncStatus = useRef(syncStatus)
   useEffect(() => {
     if (prevSyncStatus.current === 'syncing' && syncStatus === 'idle') {
       loadTables()
       refetch()
-      refetchDraftOrders()
+      loadOrders()
     }
     prevSyncStatus.current = syncStatus
   }, [syncStatus])
@@ -145,6 +143,16 @@ export default function TableSelection() {
       clearOrder()
       // Offline-first: create local SQLite order — server push happens in background on KOT/checkout
       const localId = await ipc.order.create({ order_type: 'dine_in', table_id: table.id, pax })
+      useOrdersStore.getState().upsertOrder({
+        id: localId, table_id: table.id, table_name: table.name,
+        order_type: 'dine_in', status: 'draft', pax,
+        computed_total: 0, kot_count: 0, pending_line_count: 0,
+        latest_kot_status: null, line_count: 0, pos_held: 0,
+        grand_total: 0, server_id: null, discount_amount: 0,
+        taxable_amount: 0, cgst_total: 0, sgst_total: 0,
+        pos_payment_mode: null, notes: null, invoice_number: null,
+        sync_status: 'pending', created_at: new Date().toISOString(),
+      })
       setLocalOrder(localId, 'dine_in', table.id, table.name)
       navigate('/pos/billing')
     } catch (err: unknown) {

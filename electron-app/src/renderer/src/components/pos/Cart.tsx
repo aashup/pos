@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2, User, X } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2, User, X, MessageSquare } from 'lucide-react'
 import { useCartStore } from '../../store/cartStore'
+import { ipc } from '../../bridge/ipc'
 import { formatCurrency, cn } from '../../lib/utils'
 import CustomerModal from './CustomerModal'
 
@@ -16,10 +17,16 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
   const {
     lines, totals, tableName, orderType,
     customerName, setCustomer, clearCustomer,
-    updateQty, removeItem, clearCart,
+    updateQty, removeItem, clearCart, setLineNotes,
   } = useCartStore()
 
   const [showCustomerModal, setShowCustomerModal] = useState(false)
+  const [openNoteId, setOpenNoteId] = useState<string | null>(null)
+  const noteInputRef = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    if (openNoteId) noteInputRef.current?.focus()
+  }, [openNoteId])
 
   const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
   const hasSentLines = lines.some((l) => l.kotStatus !== 'pending')
@@ -100,45 +107,88 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
           </div>
         ) : (
           <div className="divide-y divide-gray-50 dark:divide-gray-800">
-            {lines.map((line) => (
-              <div key={line.id} className="px-4 py-3">
-                <div className="flex items-start justify-between gap-2">
+            {lines.map((line) => {
+              const isPending = line.kotStatus === 'pending'
+              const hasNote = !!line.notes
+              const noteOpen = openNoteId === line.id
+              return (
+                <div key={line.id}>
+                  <div  className="px-3 py-3 flex gap-2">
+                  {/* Left: item details + qty controls + note input */}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{line.name}</p>
+                    <div className="flex items-start justify-between gap-1">
+                      <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{line.name}</p>
+                      <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium shrink-0', kotStatusColor(line.kotStatus))}>
+                        {line.kotStatus === 'pending' ? 'new' : line.kotStatus}
+                      </span>
+                    </div>
                     <p className="text-xs text-gray-400 dark:text-gray-500">₹{line.rate} × {line.quantity} = ₹{(line.rate * line.quantity).toFixed(2)}</p>
+                    {!isPending && hasNote && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400 italic truncate">{line.notes}</p>
+                    )}
+                    {/* <div className="flex items-center gap-1 mt-2">
+                      <button
+                        onClick={() => updateQty(line.id, line.quantity - 1)}
+                        disabled={!isPending}
+                        className="w-7 h-7 rounded border border-gray-200 dark:border-gray-600 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30"
+                      >
+                        <Minus className="w-3.5 h-3.5 text-gray-600 dark:text-gray-300" />
+                      </button>
+                      <span className="w-8 text-center text-sm font-medium text-gray-800 dark:text-gray-100">{line.quantity}</span>
+                      <button
+                        onClick={() => updateQty(line.id, line.quantity + 1)}
+                        disabled={!isPending}
+                        className="w-7 h-7 rounded border border-gray-200 dark:border-gray-600 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30"
+                      >
+                        <Plus className="w-3.5 h-3.5 text-gray-600 dark:text-gray-300" />
+                      </button>
+                    </div> */}
+
                   </div>
-                  <span className={cn('text-xs px-1.5 py-0.5 rounded font-medium', kotStatusColor(line.kotStatus))}>
-                    {line.kotStatus === 'pending' ? 'new' : line.kotStatus}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between mt-2">
-                  <div className="flex items-center gap-1">
+
+                  {/* Right: action buttons */}
+                  <div className="flex justify-start gap-2 shrink-0">
+                    {isPending && (
+                      <button
+                        onClick={() => setOpenNoteId(noteOpen ? null : line.id)}
+                        title="Chef note"
+                        className={cn(
+                          'w-11 h-11 rounded-xl flex items-center justify-center transition-colors',
+                          hasNote || noteOpen
+                            ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-500 hover:bg-amber-200 dark:hover:bg-amber-900/50'
+                            : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 hover:bg-gray-200 dark:hover:bg-gray-700',
+                        )}
+                      >
+                        <MessageSquare className="w-5 h-5" />
+                      </button>
+                    )}
                     <button
-                      onClick={() => updateQty(line.id, line.quantity - 1)}
-                      disabled={line.kotStatus !== 'pending'}
-                      className="w-6 h-6 rounded border border-gray-200 dark:border-gray-600 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30"
+                      onClick={() => removeItem(line.id)}
+                      disabled={!isPending}
+                      className="w-11 h-11 rounded-xl flex items-center justify-center bg-red-50 dark:bg-red-900/20 text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 hover:text-red-600 disabled:opacity-30 transition-colors"
                     >
-                      <Minus className="w-3 h-3 text-gray-600 dark:text-gray-300" />
-                    </button>
-                    <span className="w-8 text-center text-sm font-medium text-gray-800 dark:text-gray-100">{line.quantity}</span>
-                    <button
-                      onClick={() => updateQty(line.id, line.quantity + 1)}
-                      disabled={line.kotStatus !== 'pending'}
-                      className="w-6 h-6 rounded border border-gray-200 dark:border-gray-600 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-30"
-                    >
-                      <Plus className="w-3 h-3 text-gray-600 dark:text-gray-300" />
+                      <Trash2 className="w-5 h-5" />
                     </button>
                   </div>
-                  <button
-                    onClick={() => removeItem(line.id)}
-                    disabled={line.kotStatus !== 'pending'}
-                    className="text-red-400 hover:text-red-600 disabled:opacity-30"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  </div>
+                  <div>                    {isPending && noteOpen && (
+                      <textarea
+                        ref={noteInputRef}
+                        value={line.notes}
+                        onChange={(e) => {
+                          const val = e.target.value
+                          setLineNotes(line.id, val)
+                          ipc.order.updateLineNotes(line.id, val || null).catch(() => {})
+                        }}
+                        placeholder="Note for chef…"
+                        rows={2}
+                        className="mt-2 w-full text-xs rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 px-2.5 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-amber-400"
+                      />
+                    )}
+                    </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

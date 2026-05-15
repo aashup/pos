@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Play, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ipc } from '../../bridge/ipc'
 import { useSyncStore } from '../../store/syncStore'
 import { useThemeStore } from '../../store/themeStore'
+import { useOrdersStore } from '../../store/ordersStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import { useCartStore } from '../../store/cartStore'
 import Header from '../../components/layout/Header'
@@ -33,22 +33,20 @@ function mapToCartLines(lines: LocalOrderLine[]) {
 
 export default function HoldOrders() {
   const navigate = useNavigate()
-  const qc = useQueryClient()
   const { setLocalOrder, populateLines } = useCartStore()
   const { theme } = useThemeStore()
   const { status: syncStatus } = useSyncStore()
   const isDark = theme === 'dark'
   const [resuming, setResuming] = useState<string | null>(null)
 
-  const { data: orders = [], isLoading, refetch } = useQuery<LocalHeldOrder[]>({
-    queryKey: ['held-orders'],
-    queryFn: () => ipc.order.listHeld() as Promise<LocalHeldOrder[]>,
-    staleTime: 10_000,
-  })
+  const { heldOrders, loadHeldOrders, removeHeld } = useOrdersStore()
 
+  useEffect(() => { loadHeldOrders() }, [])
+
+  // Re-seed from SQLite on sync complete
   const prevSync = useRef(syncStatus)
   useEffect(() => {
-    if (prevSync.current === 'syncing' && syncStatus === 'idle') refetch()
+    if (prevSync.current === 'syncing' && syncStatus === 'idle') loadHeldOrders()
     prevSync.current = syncStatus
   }, [syncStatus])
 
@@ -61,7 +59,7 @@ export default function HoldOrders() {
       const cartLines = mapToCartLines((full as any).lines ?? order.lines)
       populateLines(cartLines, full.id)
       setLocalOrder(full.id, full.order_type, (full as any).table_id ?? undefined, (full as any).table_name ?? undefined)
-      qc.invalidateQueries({ queryKey: ['held-orders'] })
+      removeHeld(order.id)
       navigate('/pos/billing')
     } catch {
       toast.error('Failed to resume order')
@@ -72,21 +70,17 @@ export default function HoldOrders() {
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <Header title={`Held Orders (${orders.length})`} onBack={() => navigate('/pos/tables')} />
+      <Header title={`Held Orders (${heldOrders.length})`} onBack={() => navigate('/pos/tables')} />
 
       <div className="flex-1 overflow-y-auto p-4">
-        {isLoading ? (
-          <div className={cn('flex items-center justify-center h-40 text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>
-            <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading…
-          </div>
-        ) : orders.length === 0 ? (
+        {heldOrders.length === 0 ? (
           <div className={cn('flex flex-col items-center justify-center h-60', isDark ? 'text-gray-500' : 'text-gray-400')}>
             <p className="text-sm">No held orders</p>
             <p className="text-xs mt-1">Use "Hold" from the billing screen to park an order</p>
           </div>
         ) : (
           <div className="space-y-3">
-            {orders.map((order) => (
+            {heldOrders.map((order) => (
               <div key={order.id} className={cn('rounded-2xl p-4 shadow-sm border', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100')}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
@@ -117,7 +111,6 @@ export default function HoldOrders() {
                   </button>
                 </div>
 
-                {/* Items preview */}
                 {order.lines.length > 0 && (
                   <div className="mt-3 flex flex-wrap gap-1.5">
                     {order.lines.slice(0, 5).map((l) => (

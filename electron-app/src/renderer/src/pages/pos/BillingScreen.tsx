@@ -6,6 +6,7 @@ import toast from 'react-hot-toast'
 import { useCartStore } from '../../store/cartStore'
 import { useTablesStore } from '../../store/tablesStore'
 import { useThemeStore } from '../../store/themeStore'
+import { useOrdersStore } from '../../store/ordersStore'
 import { ordersApi } from '../../api/orders'
 import { ipc } from '../../bridge/ipc'
 import { formatCurrency, cn } from '../../lib/utils'
@@ -116,6 +117,7 @@ export default function BillingScreen() {
     try {
       const localId = await ipc.order.create({ order_type: type })
       setLocalOrder(localId, type)
+      useOrdersStore.getState().upsertOrder({ id: localId, order_type: type, status: 'draft', pos_held: 0, grand_total: 0, computed_total: 0, pending_line_count: 0, line_count: 0, latest_kot_status: null, kot_count: 0 } as any)
     } catch {
       toast.error('Failed to create order')
     }
@@ -213,6 +215,9 @@ export default function BillingScreen() {
         toast.success(`KOT ${result.kotNumber ?? ''} sent to kitchen`)
         useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
         if (tableId) updateTableStatus(tableId, 'occupied', localOrderId)
+        const os = useOrdersStore.getState()
+        const curr = os.orders.find((o) => o.id === localOrderId)
+        os.upsertOrder({ id: localOrderId, kot_count: (curr?.kot_count ?? 0) + 1, latest_kot_status: 'new', pending_line_count: 0 })
       } else if (orderId) {
         // Resumed occupied table — only push NEW lines (not server-native ones that already exist)
         const newLines = pendingLines.filter((l) => !l.isServerNative)
@@ -255,14 +260,27 @@ export default function BillingScreen() {
         toast.error('No active order to hold')
         return
       }
+      if (localOrderId) useOrdersStore.getState().upsertOrder({ id: localOrderId, pos_held: 1 })
       clearOrder()
       toast.success('Order placed on hold')
+      navigate('/pos/tables')
     } catch {
       toast.error('Failed to hold order')
     } finally {
       setHoldingOrder(false)
     }
-  }, [orderId, localOrderId, clearOrder])
+  }, [orderId, localOrderId, orderType, clearOrder, navigate])
+
+  // Keep ordersStore total in sync as items are added/removed
+  useEffect(() => {
+    if (!localOrderId) return
+    useOrdersStore.getState().upsertOrder({
+      id: localOrderId,
+      computed_total: totals.grandTotal,
+      pending_line_count: lines.filter((l) => l.kotStatus === 'pending').length,
+      line_count: lines.length,
+    })
+  }, [localOrderId, lines, totals])
 
   // Auto-updater notifications
   useEffect(() => {
@@ -360,13 +378,9 @@ export default function BillingScreen() {
           onClose={() => setShowPayment(false)}
           onSuccess={(serverId?: string) => {
             setShowPayment(false)
-            // Only mark confirmed when server checkout was used (serverId provided).
-            // When ipc.order.checkout is used the order is already confirmed in SQLite.
             if (localOrderId && serverId) ipc.order.markConfirmed(localOrderId, serverId).catch(() => {})
-            // Free the table before clearing cart (tableId lives in cartStore)
-            if (tableId && orderType === 'dine_in') {
-              updateTableStatus(tableId, 'vacant', null)
-            }
+            if (localOrderId) useOrdersStore.getState().removeOrder(localOrderId)
+            if (tableId && orderType === 'dine_in') updateTableStatus(tableId, 'vacant', null)
             clearOrder()
             toast.success('Payment complete!')
             navigate('/pos/tables')

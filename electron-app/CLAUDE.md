@@ -42,7 +42,7 @@ src/
 │   │       ├── TableRepository.ts  # getAll(), getFloorPlans(), upsert(), upsertFloorPlan(), updateStatus()
 │   │       ├── UnitRepository.ts   # getAll(), upsert()
 │   │       ├── KotRepository.ts    # listActive(), updateStatus(), updateLineStatus(), setServerId(), getServerId(), markSynced(), upsertFromServer()
-│   │       └── OrderRepository.ts  # createOrder(), addLine(), updateLineQty(), removeLine(), createKot(),
+│   │       └── OrderRepository.ts  # createOrder(), addLine(), updateLineQty(), updateLineNotes(), removeLine(), createKot(),
 │   │                               # setServerId(), markLinesSynced(), markConfirmed(), findActiveByTableId(),
 │   │                               # getOrder(), getPendingLines(),
 │   │                               # list(filters?), getById(), listHeld(), hold(), unhold(), cancel(),
@@ -137,6 +137,7 @@ tables:update-status (id, status, orderId) → TableRepository.updateStatus()
 
 order:create (data)       → OrderRepository.createOrder()   returns local UUID
 order:add-line (invoiceId, line)            → OrderRepository.addLine()
+order:update-line-notes (lineId, notes)     → OrderRepository.updateLineNotes()   persists chef notes to SQLite
 order:update-line-qty (lineId, qty)         → OrderRepository.updateLineQty()
 order:remove-line (lineId)                  → OrderRepository.removeLine()
 order:send-kot (localOrderId)               → OrderRepository.createKot() + print + fire-and-forget server push
@@ -408,6 +409,29 @@ F4    → open PaymentModal
 F5    → handleSyncNow()
 Esc   → close modal/drawer
 ```
+
+---
+
+## Chef Notes on KOT Lines
+
+Per-line notes (e.g. "no onion", "extra spicy") can be attached to cart items before sending a KOT.
+
+**Data flow:**
+- `CartLine.notes: string` (Zustand) + `sales_invoice_lines.notes TEXT` (SQLite) + `kot_lines.notes TEXT` (SQLite)
+- UI: `MessageSquare` icon button per pending line in `Cart.tsx` → toggles amber `<textarea>`
+- On change: `setLineNotes(lineId, val)` (Zustand) + `ipc.order.updateLineNotes(lineId, val)` (SQLite, fire-and-forget)
+- On KOT send (offline-first): `createKot()` reads `notes` from `sales_invoice_lines` → stamps `kot_lines`
+- On KOT send (server-resume): `notes` mapped from Zustand in `addLines` payload
+- After KOT sent: note shows as read-only amber italic text under item name; icon hidden
+
+**Cart layout (two-column):**
+```
+| item name  [status] |  [💬 note]  |
+| ₹rate × qty = ₹amt  |  [🗑 trash] |
+| [−] qty [+]         |             |
+| [amber textarea]    |             |
+```
+Note and delete buttons are `44×44px` touch tiles (`w-11 h-11 rounded-xl`).
 
 ---
 

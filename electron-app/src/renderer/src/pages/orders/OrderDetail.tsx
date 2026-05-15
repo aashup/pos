@@ -1,9 +1,10 @@
 import { useParams, useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { Printer, RotateCcw, Loader2, XCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
+import { useOrdersStore } from '../../store/ordersStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import { useCartStore } from '../../store/cartStore'
 import Header from '../../components/layout/Header'
@@ -32,7 +33,6 @@ function mapToCartLines(lines: LocalOrderLine[]) {
 export default function OrderDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const qc = useQueryClient()
   const { setLocalOrder, populateLines } = useCartStore()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
@@ -47,15 +47,16 @@ export default function OrderDetail() {
     mutationFn: () => ipc.order.cancel(id!),
     onSuccess: () => {
       toast.success('Order cancelled')
-      qc.invalidateQueries({ queryKey: ['orders-list'] })
-      qc.invalidateQueries({ queryKey: ['order', id] })
+      useOrdersStore.getState().removeOrder(id!)
       navigate('/pos/orders')
     },
     onError: () => toast.error('Failed to cancel order'),
   })
 
-  const resumeOrder = () => {
+  const resumeOrder = async () => {
     if (!order) return
+    await ipc.order.unhold(order.id).catch(() => {})
+    useOrdersStore.getState().removeHeld(order.id)
     const cartLines = mapToCartLines(order.lines ?? [])
     populateLines(cartLines, order.id)
     setLocalOrder(order.id, order.order_type, order.table_id ?? undefined, order.table_name ?? undefined)

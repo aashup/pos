@@ -57,6 +57,10 @@ export function registerIpcHandlers(): void {
     item_variant_id?: string | null; modifiers_total?: number
   }) => OrderRepository.addLine(invoiceId, line))
 
+  ipcMain.handle('order:update-line-notes', (_, lineId: string, notes: string | null) =>
+    OrderRepository.updateLineNotes(lineId, notes),
+  )
+
   ipcMain.handle('order:update-line-qty', (_, lineId: string, qty: number) =>
     OrderRepository.updateLineQty(lineId, qty),
   )
