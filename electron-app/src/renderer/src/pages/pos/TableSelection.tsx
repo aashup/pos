@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Users, RefreshCw, LayoutGrid, Map } from 'lucide-react'
+import { Users, RefreshCw, LayoutGrid, Map, Menu } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { useCartStore } from '../../store/cartStore'
@@ -11,6 +11,7 @@ import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import Header from '../../components/layout/Header'
+import NavigationDrawer from '../../components/pos/NavigationDrawer'
 import type { FloorPlan, DiningTable, TableStatus } from '../../types'
 import type { LocalOrderLine } from '../../bridge/ipc'
 
@@ -64,6 +65,7 @@ export default function TableSelection() {
   const [viewMode, setViewMode] = useState<'map' | 'grid'>(
     () => (localStorage.getItem('tableViewMode') as 'map' | 'grid') ?? 'grid',
   )
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   const { data: floors = [], isLoading, refetch } = useQuery<FloorPlan[]>({
     queryKey: ['floor-plans-local'],
@@ -151,8 +153,10 @@ export default function TableSelection() {
         actions={[
           { icon: viewMode === 'map' ? LayoutGrid : Map, label: viewMode === 'map' ? 'Grid' : 'Map', onClick: () => { const next = viewMode === 'map' ? 'grid' : 'map'; setViewMode(next); localStorage.setItem('tableViewMode', next) }, className: 'text-xs' },
           { icon: RefreshCw, label: 'Refresh', onClick: () => { refetch(); loadTables() }, className: 'text-xs' },
+          { icon: Menu, label: '', onClick: () => setDrawerOpen(true) },
         ]}
       />
+      <NavigationDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} isDark={isDark} />
 
       {/* Floor plan tabs */}
       {floors.length > 1 && (
