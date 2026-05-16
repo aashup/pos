@@ -81,7 +81,7 @@ export default function PrinterSettings() {
 <div class="center" style="margin-top:6px">Thank you! Visit again.</div>
 </body></html>`
     try {
-      const result = await ipc.print.htmlInvoice(html, false)
+      const result = await ipc.print.htmlInvoice(html, true)
       if (result.success) toast.success('Test receipt sent to printer!')
       else toast.error(result.error ?? 'Print failed')
     } catch (err) {
@@ -111,7 +111,7 @@ export default function PrinterSettings() {
 <div class="line"></div>
 </body></html>`
     try {
-      const result = await ipc.print.htmlKot(html, false)
+      const result = await ipc.print.htmlKot(html, true)
       if (result.success) toast.success('Test KOT sent to printer!')
       else toast.error(result.error ?? 'KOT print failed')
     } catch (err) {

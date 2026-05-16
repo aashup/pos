@@ -282,7 +282,7 @@ export default function BillingScreen() {
   const handleSendKot = useCallback(async () => {
     const result = await createKotEntry()
     if (!result) return
-    ipc.window.openKitchen()
+    // ipc.window.openKitchen()
     if (result.kotData) {
       printKOT(result.kotData, { skipDuplicateCheck: true }).catch(() => {})
     }

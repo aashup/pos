@@ -14,6 +14,15 @@ async function printWithPrinter(
   widthMicrons = 80000,
 ): Promise<{ success: boolean; error?: string }> {
 
+  const widthMm = widthMicrons / 1000
+
+  // Inject @page CSS so Chromium reflows content to the correct paper width.
+  // This overrides any existing @page rule in the caller's HTML.
+  const pageStyle = `<style>@page{size:${widthMm}mm auto;margin:0}html,body{margin:0;padding:0;width:${widthMm}mm}</style>`
+  const styledHtml = html.includes('</head>')
+    ? html.replace('</head>', `${pageStyle}</head>`)
+    : pageStyle + html
+
   let win: BrowserWindow | null = null
   try {
     win = new BrowserWindow({
@@ -26,23 +35,23 @@ async function printWithPrinter(
       },
     })
 
-    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+    await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(styledHtml)}`)
 
     await new Promise<void>((resolve, reject) => {
       if (!win) return reject(new Error('Window destroyed'))
 
-      const printOptions: Electron.WebContentsPrintOptions = {
-        silent,
-        printBackground: true,
-        // 1 000 000 µm tall = 1 m — enough for any receipt; content height controls actual cut
-        pageSize: { width: widthMicrons, height: 1000000 },
-        ...(printerName ? { deviceName: printerName } : {}),
-      }
-
-      win.webContents.print(printOptions, (success, failureReason) => {
-        if (success) resolve()
-        else reject(new Error(failureReason ?? 'Print failed'))
-      })
+      win.webContents.print(
+        {
+          silent,
+          printBackground: true,
+          pageSize: { width: widthMicrons, height: 1000000 },
+          ...(printerName ? { deviceName: printerName } : {}),
+        },
+        (success, failureReason) => {
+          if (success) resolve()
+          else reject(new Error(failureReason ?? 'Print failed'))
+        },
+      )
     })
 
     return { success: true }

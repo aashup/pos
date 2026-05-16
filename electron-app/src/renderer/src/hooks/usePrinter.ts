@@ -109,9 +109,14 @@ export function usePrinter(): UsePrinterResult {
         return ipc.print.kotFromTemplate(data, template.layout)
       }
 
-      // Default KOT template (ESC/POS ##directives)
+      // Default KOT template — may be HTML or ESC/POS
       const effectiveTemplate = DEFAULT_KOT_TEMPLATE
       if (effectiveTemplate.layout) {
+        const isHtmlDefault = effectiveTemplate.layout.trimStart().startsWith('<')
+        if (isHtmlDefault) {
+          const html = renderTemplate(effectiveTemplate.layout, flattenKotData(data), false)
+          return ipc.print.htmlKot(html)
+        }
         return ipc.print.kotFromTemplate(data, effectiveTemplate.layout)
       }
 

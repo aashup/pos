@@ -11,17 +11,34 @@ import type { LocalPrintTemplate } from '../bridge/ipc'
 //   ##DIVIDER  full-width separator line
 //   {{key}}    scalar token   {{#items}}...{{/items}} array block
 
-const DEFAULT_KOT_LAYOUT = `##CENTER##BOLD KOT ##/BOLD
-##CENTER #{{kotNumber}}
-##DIVIDER
-##LEFT {{orderType}}{{tableName}} {{pax}}
-{{time}}
-##DIVIDER
-{{#items}}##BOLD {{quantity}}x  {{name}} ##/BOLD
-  {{notes}}
-{{/items}}
-##DIVIDER
-{{notes}}`
+const DEFAULT_KOT_LAYOUT = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:monospace;font-size:13px;width:80mm;padding:8px}
+  .center{text-align:center}.bold{font-weight:bold}
+  .divider{border-top:1px dashed #000;margin:4px 0}
+  .item{margin:3px 0}.note{font-size:11px;margin-left:8px}
+  @media print{@page{margin:0;size:80mm auto}body{width:80mm}}
+</style>
+</head>
+<body>
+  <div class="center bold" style="font-size:18px">KOT</div>
+  <div class="center">#{{kot_number}}</div>
+  <div class="divider"></div>
+  <div>{{order_type}}{{table_name}}</div>
+  <div>{{time}}</div>
+  <div class="divider"></div>
+  {{#items}}
+  <div class="item bold">{{quantity}}x  {{name}}</div>
+  {{#notes}}<div class="note">&#8627; {{notes}}</div>{{/notes}}
+  {{/items}}
+  <div class="divider"></div>
+  {{#notes}}<div style="font-size:11px">Note: {{notes}}</div>{{/notes}}
+</body>
+</html>`
 
 // ── Invoice (HTML template) ───────────────────────────────────────────────────
 //
