@@ -14,6 +14,7 @@ import type { Item, ModifierGroup, MediaItem } from '../../types'
 import { SlideSelect } from '../../components/ui/SlideSelect'
 
 type VariantRow = { id?: string; name: string; price: string }
+type ModifierEditRow = { id?: string; name: string; price: string }
 
 export default function ItemDetail() {
   const { id } = useParams<{ id: string }>()
@@ -35,6 +36,8 @@ export default function ItemDetail() {
   })
   const [selectedModifierGroups, setSelectedModifierGroups] = useState<string[]>([])
   const [variantRows, setVariantRows] = useState<VariantRow[]>([])
+  // Keyed by group id — tracks inline editable modifier rows per group
+  const [modifierRowsByGroup, setModifierRowsByGroup] = useState<Record<string, ModifierEditRow[]>>({})
 
   // ── Queries ─────────────────────────────────────────────────────────────────
   const { data: item, isLoading: itemLoading } = useQuery({
@@ -60,7 +63,7 @@ export default function ItemDetail() {
   const { data: modifierGroups = [] } = useQuery({
     queryKey: ['modifier-groups'],
     queryFn: async () => {
-      const res = await modifierGroupsApi.list()
+      const res = await modifierGroupsApi.list({ per_page: 1000 })
       return res.data?.data ?? []
     },
   })
@@ -125,10 +128,47 @@ export default function ItemDetail() {
       }
 
       // Server variants whose id is no longer in variantRows → delete
-      const activeIds = new Set(variantRows.map((r) => r.id).filter(Boolean))
+      const activeVariantIds = new Set(variantRows.map((r) => r.id).filter(Boolean))
       for (const sv of serverVariants) {
-        if (!activeIds.has(sv.id)) {
+        if (!activeVariantIds.has(sv.id)) {
           ops.push(itemVariantsApi.delete(sv.id))
+        }
+      }
+
+      // Sync modifier rows for every selected group
+      for (const groupId of selectedModifierGroups) {
+        const rows = modifierRowsByGroup[groupId] ?? []
+        const originalGroup = (modifierGroups as any[]).find((g: any) => g.id === groupId)
+        const originalMods: any[] = originalGroup?.modifiers ?? []
+
+        for (const row of rows) {
+          if (!row.name.trim()) continue
+          if (!row.id) {
+            ops.push(
+              modifierGroupsApi.createModifier(groupId, {
+                name: row.name.trim(),
+                price: Number(row.price) || 0,
+                sort_order: rows.indexOf(row),
+                is_active: true,
+              } as any),
+            )
+          } else {
+            ops.push(
+              modifierGroupsApi.updateModifier(groupId, row.id, {
+                name: row.name.trim(),
+                price: Number(row.price) || 0,
+                sort_order: rows.indexOf(row),
+              } as any),
+            )
+          }
+        }
+
+        // Modifiers removed from the table → delete
+        const activeModIds = new Set(rows.map((r) => r.id).filter(Boolean))
+        for (const orig of originalMods) {
+          if (!activeModIds.has(orig.id)) {
+            ops.push(modifierGroupsApi.deleteModifier(groupId, orig.id))
+          }
         }
       }
 
@@ -139,6 +179,7 @@ export default function ItemDetail() {
       if (isNew) navigate(`/inventory/items/${(res as any).data.data.id}`)
       qc.invalidateQueries({ queryKey: ['items'] })
       qc.invalidateQueries({ queryKey: ['variants', id] })
+      qc.invalidateQueries({ queryKey: ['modifier-groups'] })
     },
     onError: () => toast.error('Failed to save item'),
   })
@@ -182,6 +223,23 @@ export default function ItemDetail() {
     )
   }, [serverVariants])
 
+  // Initialise modifier rows from server data whenever groups refresh
+  useEffect(() => {
+    if (!modifierGroups.length) return
+    setModifierRowsByGroup((prev) => {
+      const next: Record<string, ModifierEditRow[]> = {}
+      for (const g of modifierGroups as any[]) {
+        // Preserve any unsaved local edits; only reset if no local entry exists
+        next[g.id] = prev[g.id] ?? (g.modifiers ?? []).map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          price: String(m.price ?? 0),
+        }))
+      }
+      return next
+    })
+  }, [modifierGroups])
+
   // ── Variant row helpers ──────────────────────────────────────────────────────
   const addVariantRow = () =>
     setVariantRows((rows) => [...rows, { name: '', price: '' }])
@@ -191,6 +249,26 @@ export default function ItemDetail() {
 
   const removeVariantRow = (idx: number) =>
     setVariantRows((rows) => rows.filter((_, i) => i !== idx))
+
+  // ── Modifier row helpers (per group) ────────────────────────────────────────
+
+  const addModifierRow = (groupId: string) =>
+    setModifierRowsByGroup((prev) => ({
+      ...prev,
+      [groupId]: [...(prev[groupId] ?? []), { name: '', price: '0' }],
+    }))
+
+  const updateModifierRow = (groupId: string, idx: number, field: keyof ModifierEditRow, value: string) =>
+    setModifierRowsByGroup((prev) => ({
+      ...prev,
+      [groupId]: (prev[groupId] ?? []).map((r, i) => (i === idx ? { ...r, [field]: value } : r)),
+    }))
+
+  const removeModifierRow = (groupId: string, idx: number) =>
+    setModifierRowsByGroup((prev) => ({
+      ...prev,
+      [groupId]: (prev[groupId] ?? []).filter((_, i) => i !== idx),
+    }))
 
   // ── Render ───────────────────────────────────────────────────────────────────
   if (itemLoading) {
@@ -397,31 +475,109 @@ export default function ItemDetail() {
 
         {/* ── Modifier Groups ── */}
         {!isNew && (
-          <div className={cn('rounded-xl p-4 space-y-3', isDark ? 'bg-gray-900' : 'bg-white')}>
+          <div className={cn('rounded-xl p-4 space-y-4', isDark ? 'bg-gray-900' : 'bg-white')}>
             <h3 className={cn('font-semibold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>Modifier Groups</h3>
-            <div className="space-y-2">
-              {modifierGroups.length === 0 ? (
-                <p className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>No modifier groups available</p>
-              ) : (
-                modifierGroups.map((g: any) => (
-                  <label key={g.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedModifierGroups.includes(g.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedModifierGroups([...selectedModifierGroups, g.id])
-                        } else {
-                          setSelectedModifierGroups(selectedModifierGroups.filter((mid) => mid !== g.id))
-                        }
-                      }}
-                      className="rounded"
-                    />
-                    <span className={cn('text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>{g.name}</span>
-                  </label>
-                ))
-              )}
-            </div>
+            {modifierGroups.length === 0 ? (
+              <p className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-600')}>No modifier groups available</p>
+            ) : (
+              <div className="space-y-4">
+                {(modifierGroups as any[]).map((g: any) => {
+                  const isChecked = selectedModifierGroups.includes(g.id)
+                  const rows = modifierRowsByGroup[g.id] ?? []
+                  const rowInputCls = cn(
+                    'w-full px-2 py-1.5 rounded text-sm border focus:outline-none focus:ring-2 focus:ring-orange-400',
+                    isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white',
+                  )
+
+                  return (
+                    <div key={g.id} className={cn('rounded-lg border', isDark ? 'border-gray-700' : 'border-gray-200')}>
+                      {/* Group header row */}
+                      <label className={cn('flex items-center gap-2 cursor-pointer px-3 py-2.5', isDark ? 'hover:bg-gray-800' : 'hover:bg-gray-50')}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedModifierGroups([...selectedModifierGroups, g.id])
+                            } else {
+                              setSelectedModifierGroups(selectedModifierGroups.filter((mid) => mid !== g.id))
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <span className={cn('text-sm font-medium flex-1', isDark ? 'text-gray-200' : 'text-gray-800')}>{g.name}</span>
+                        <span className={cn('text-xs', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                          {rows.length} modifier{rows.length !== 1 ? 's' : ''}
+                        </span>
+                      </label>
+
+                      {/* Inline modifier table — only when checked */}
+                      {isChecked && (
+                        <div className={cn('px-3 pb-3 border-t', isDark ? 'border-gray-700' : 'border-gray-200')}>
+                          <table className="w-full text-sm mt-2">
+                            <thead>
+                              <tr className={cn('text-xs font-medium', isDark ? 'text-gray-400' : 'text-gray-500')}>
+                                <th className="text-left pb-1.5 pr-2">Name</th>
+                                <th className="text-left pb-1.5 pr-2 w-28">Price (₹)</th>
+                                <th className="w-6" />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rows.length === 0 ? (
+                                <tr>
+                                  <td colSpan={3} className={cn('text-xs text-center py-2', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                                    No options yet — click + Add below
+                                  </td>
+                                </tr>
+                              ) : (
+                                rows.map((row, idx) => (
+                                  <tr key={idx}>
+                                    <td className="pr-2 pb-1.5">
+                                      <input
+                                        type="text"
+                                        placeholder="e.g. Mild"
+                                        value={row.name}
+                                        onChange={(e) => updateModifierRow(g.id, idx, 'name', e.target.value)}
+                                        className={rowInputCls}
+                                      />
+                                    </td>
+                                    <td className="pr-2 pb-1.5">
+                                      <input
+                                        type="number"
+                                        placeholder="0"
+                                        min="0"
+                                        step="0.01"
+                                        value={row.price}
+                                        onChange={(e) => updateModifierRow(g.id, idx, 'price', e.target.value)}
+                                        className={rowInputCls}
+                                      />
+                                    </td>
+                                    <td className="pb-1.5">
+                                      <button
+                                        onClick={() => removeModifierRow(g.id, idx)}
+                                        className="p-1 text-red-400 hover:text-red-300"
+                                      >
+                                        <X className="w-3.5 h-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                          <button
+                            onClick={() => addModifierRow(g.id)}
+                            className="flex items-center gap-1 text-xs text-orange-500 hover:text-orange-400 mt-1"
+                          >
+                            <Plus className="w-3 h-3" /> Add
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
 

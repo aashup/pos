@@ -86,9 +86,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   print: {
-    receipt:      (data: unknown): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:receipt', data),
-    kot:          (data: unknown): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:kot', data),
-    listPrinters: (): Promise<string[]> => ipcRenderer.invoke('print:list-printers'),
+    receipt:          (data: unknown): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:receipt', data),
+    kot:              (data: unknown): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:kot', data),
+    kotFromTemplate:  (data: unknown, layout: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:kot-from-template', data, layout),
+    htmlInvoice:      (html: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:html-invoice', html),
+    listPrinters:     (): Promise<string[]> => ipcRenderer.invoke('print:list-printers'),
+  },
+
+  templates: {
+    list:       (): Promise<unknown[]> => ipcRenderer.invoke('templates:list'),
+    getActive:  (type: string): Promise<unknown | null> => ipcRenderer.invoke('templates:get-active', type),
+    upsert:     (template: unknown): Promise<void> => ipcRenderer.invoke('templates:upsert', template),
+    bulkUpsert: (templates: unknown[]): Promise<void> => ipcRenderer.invoke('templates:bulk-upsert', templates),
   },
 
   kots: {

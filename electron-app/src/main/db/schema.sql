@@ -254,6 +254,18 @@ CREATE TABLE IF NOT EXISTS kot_lines (
   status           TEXT DEFAULT 'pending'
 );
 
+CREATE TABLE IF NOT EXISTS print_templates (
+  id          TEXT PRIMARY KEY,
+  type        TEXT NOT NULL CHECK(type IN ('kot','invoice')),
+  name        TEXT NOT NULL,
+  layout      TEXT NOT NULL,
+  is_active   INTEGER NOT NULL DEFAULT 1,
+  server_id   TEXT,
+  sync_status TEXT NOT NULL DEFAULT 'synced',
+  updated_at  TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ── Local customers (offline-first, no server sync required) ─────────────────
 
 CREATE TABLE IF NOT EXISTS pos_customers (

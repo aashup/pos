@@ -194,6 +194,123 @@ export async function printKOT(data: KOTData): Promise<{ success: boolean; error
   }
 }
 
+// ── Template-driven KOT printing ─────────────────────────────────────────────
+//
+// Template syntax (text-based, ESC/POS markers):
+//   ##CENTER   — align center for the rest of the line
+//   ##LEFT     — align left (default)
+//   ##BOLD     — bold on
+//   ##/BOLD    — bold off
+//   ##DIVIDER  — full-width horizontal rule
+//   {{key}}    — scalar substitution (kotNumber, tableName, orderType, pax, notes, time)
+//   {{#items}} ... {{/items}} — repeated block; inner {{name}}, {{quantity}}, {{notes}}
+//
+// Falls back to the hardcoded printKOT() layout if the template is empty or parsing fails.
+
+function resolveToken(token: string, ctx: Record<string, string>): string {
+  return ctx[token] ?? ''
+}
+
+function interpolate(text: string, ctx: Record<string, string>): string {
+  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => resolveToken(k, ctx))
+}
+
+function applyDirectives(
+  printer: ThermalPrinter,
+  line: string,
+  ctx: Record<string, string>,
+  w: number,
+): void {
+  let remaining = line
+  let isBold = false
+  let isCenter = false
+
+  // Extract leading directives
+  while (remaining.startsWith('##')) {
+    const end = remaining.indexOf(' ') === -1 ? remaining.length : remaining.indexOf(' ')
+    // Directives can be adjacent: ##CENTER##BOLD text
+    const nextHash = remaining.indexOf('##', 2)
+    const directiveEnd = nextHash > 0 && nextHash < end ? nextHash : end
+    const directive = remaining.slice(0, directiveEnd)
+    remaining = remaining.slice(directiveEnd).trimStart()
+
+    if (directive === '##CENTER')  { isCenter = true; printer.alignCenter() }
+    else if (directive === '##LEFT')    { isCenter = false; printer.alignLeft() }
+    else if (directive === '##BOLD')    { isBold = true;  printer.bold(true) }
+    else if (directive === '##/BOLD')   { isBold = false; printer.bold(false) }
+    else if (directive === '##DIVIDER') { printer.println(line(w)); return }
+  }
+
+  if (remaining.trim()) printer.println(interpolate(remaining, ctx))
+
+  // Reset state after each line to avoid bleed-through
+  if (isBold)   printer.bold(false)
+  if (isCenter) printer.alignLeft()
+}
+
+export async function printKotFromTemplate(
+  data: KOTData,
+  layout: string,
+): Promise<{ success: boolean; error?: string }> {
+  if (!layout.trim()) return printKOT(data)
+
+  const kotPrinterName = TokenStore.getSetting('kotPrinterName') ?? getPrinterName()
+  const printer        = buildPrinter(kotPrinterName)
+  const w              = getPaperWidth()
+
+  if (!printer) return { success: false, error: 'No KOT printer configured.' }
+
+  try {
+    const scalarCtx: Record<string, string> = {
+      kotNumber:  data.kotNumber,
+      tableName:  data.tableName ?? '',
+      orderType:  data.orderType.replace('_', ' '),
+      pax:        data.pax != null ? String(data.pax) : '',
+      notes:      data.notes ?? '',
+      time:       new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+    }
+
+    // Split layout into the static part and the items block
+    const itemsBlockRe = /\{\{#items\}\}([\s\S]*?)\{\{\/items\}\}/
+    const itemsMatch   = layout.match(itemsBlockRe)
+    const itemsBlock   = itemsMatch ? itemsMatch[1] : ''
+    const parts        = layout.split(itemsBlockRe)
+    // parts: [before, block-content, after] — block-content is index 1
+    const beforeItems  = parts[0] ?? ''
+    const afterItems   = parts[2] ?? ''
+
+    for (const rawLine of beforeItems.split('\n')) {
+      if (rawLine.trim()) applyDirectives(printer, rawLine, scalarCtx, w)
+    }
+
+    if (itemsBlock) {
+      for (const item of data.items) {
+        const itemCtx: Record<string, string> = {
+          ...scalarCtx,
+          name:     item.name,
+          quantity: String(item.quantity),
+          notes:    item.notes ?? '',
+        }
+        for (const rawLine of itemsBlock.split('\n')) {
+          if (rawLine.trim()) applyDirectives(printer, rawLine, itemCtx, w)
+        }
+      }
+    }
+
+    for (const rawLine of afterItems.split('\n')) {
+      if (rawLine.trim()) applyDirectives(printer, rawLine, scalarCtx, w)
+    }
+
+    printer.cut()
+    await printer.execute()
+    return { success: true }
+  } catch (err) {
+    // If template parsing produces a bad output, fall back to the standard layout
+    try { printer.clear() } catch { /* ignore */ }
+    return printKOT(data)
+  }
+}
+
 export async function listPrinters(): Promise<string[]> {
   try {
     // Electron's webContents.getPrintersAsync is not accessible from main without a window

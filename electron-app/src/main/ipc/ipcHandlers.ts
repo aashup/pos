@@ -8,7 +8,10 @@ import { OrderRepository, type CheckoutData } from '../db/repositories/OrderRepo
 import { KotRepository } from '../db/repositories/KotRepository'
 import { CustomerRepository } from '../db/repositories/CustomerRepository'
 import { runSync, getSyncStatus } from '../sync/SyncEngine'
-import { printReceipt, printKOT, type ReceiptData, type KOTData } from '../print/ThermalPrinter'
+import { printReceipt, printKOT, printKotFromTemplate, type ReceiptData, type KOTData } from '../print/ThermalPrinter'
+import { printHtmlInvoice } from '../print/HtmlInvoicePrinter'
+import { PrintTemplateRepository } from '../db/repositories/PrintTemplateRepository'
+import type { LocalPrintTemplate } from '../db/repositories/PrintTemplateRepository'
 
 export function registerIpcHandlers(): void {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -404,6 +407,10 @@ export function registerIpcHandlers(): void {
   // ── Print ─────────────────────────────────────────────────────────────────
   ipcMain.handle('print:receipt', (_, data: ReceiptData) => printReceipt(data))
   ipcMain.handle('print:kot', (_, data: KOTData) => printKOT(data))
+  ipcMain.handle('print:kot-from-template', (_, data: KOTData, layout: string) =>
+    printKotFromTemplate(data, layout),
+  )
+  ipcMain.handle('print:html-invoice', (_, html: string) => printHtmlInvoice(html))
 
   // List printers via renderer's webContents (which has access to OS printers)
   ipcMain.handle('print:list-printers', async (event) => {
@@ -415,4 +422,16 @@ export function registerIpcHandlers(): void {
       return []
     }
   })
+
+  // ── Print Templates ───────────────────────────────────────────────────────
+  ipcMain.handle('templates:list', () => PrintTemplateRepository.getAll())
+  ipcMain.handle('templates:get-active', (_, type: 'kot' | 'invoice') =>
+    PrintTemplateRepository.getActiveByType(type),
+  )
+  ipcMain.handle('templates:upsert', (_, template: LocalPrintTemplate) =>
+    PrintTemplateRepository.upsert(template),
+  )
+  ipcMain.handle('templates:bulk-upsert', (_, templates: LocalPrintTemplate[]) =>
+    PrintTemplateRepository.bulkUpsert(templates),
+  )
 }

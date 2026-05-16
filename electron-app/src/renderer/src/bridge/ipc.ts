@@ -1,3 +1,17 @@
+export type TemplateType = 'kot' | 'invoice'
+
+export interface LocalPrintTemplate {
+  id: string
+  type: TemplateType
+  name: string
+  layout: string
+  is_active: number
+  server_id: string | null
+  sync_status: string
+  updated_at: string | null
+  created_at: string
+}
+
 export interface LocalCustomer {
   id: string
   server_id: string | null
@@ -198,7 +212,15 @@ declare global {
       print: {
         receipt(data: unknown): Promise<{ success: boolean; error?: string }>
         kot(data: unknown): Promise<{ success: boolean; error?: string }>
+        kotFromTemplate(data: unknown, layout: string): Promise<{ success: boolean; error?: string }>
+        htmlInvoice(html: string): Promise<{ success: boolean; error?: string }>
         listPrinters(): Promise<string[]>
+      }
+      templates: {
+        list(): Promise<LocalPrintTemplate[]>
+        getActive(type: TemplateType): Promise<LocalPrintTemplate | null>
+        upsert(template: LocalPrintTemplate): Promise<void>
+        bulkUpsert(templates: LocalPrintTemplate[]): Promise<void>
       }
       kots: {
         list(): Promise<LocalKot[]>
@@ -291,9 +313,17 @@ export const ipc = {
     onStatusChange: (cb: (s: unknown) => void) => window.electronAPI.sync.onStatusChange(cb),
   },
   print: {
-    receipt:      (data: unknown) => window.electronAPI.print.receipt(data),
-    kot:          (data: unknown) => window.electronAPI.print.kot(data),
-    listPrinters: () => window.electronAPI.print.listPrinters(),
+    receipt:         (data: unknown) => window.electronAPI.print.receipt(data),
+    kot:             (data: unknown) => window.electronAPI.print.kot(data),
+    kotFromTemplate: (data: unknown, layout: string) => window.electronAPI.print.kotFromTemplate(data, layout),
+    htmlInvoice:     (html: string) => window.electronAPI.print.htmlInvoice(html),
+    listPrinters:    () => window.electronAPI.print.listPrinters(),
+  },
+  templates: {
+    list:       () => window.electronAPI.templates.list(),
+    getActive:  (type: TemplateType) => window.electronAPI.templates.getActive(type),
+    upsert:     (template: LocalPrintTemplate) => window.electronAPI.templates.upsert(template),
+    bulkUpsert: (templates: LocalPrintTemplate[]) => window.electronAPI.templates.bulkUpsert(templates),
   },
   kots: {
     list:             () => window.electronAPI.kots.list(),
