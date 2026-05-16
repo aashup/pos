@@ -71,6 +71,7 @@ export interface ReceiptData {
   invoiceDate: string
   orderType: string
   tableName?: string
+  customerName?: string
   items: { name: string; quantity: number; rate: number; gstRate: number; lineTotal: number }[]
   subtotal: number
   cgst: number
@@ -159,6 +160,9 @@ export async function printReceipt(data: ReceiptData): Promise<{ success: boolea
     printer.println(`Invoice: ${data.invoiceNumber}`)
     printer.println(`Date:    ${data.invoiceDate}`)
     printer.println(`Type:    ${data.orderType.replace('_',' ')}${data.tableName ? ` (${data.tableName})` : ''}`)
+    if (data.customerName && data.customerName !== 'Walk-In') {
+      printer.println(`Customer: ${data.customerName}`)
+    }
     printer.println(line(w))
 
     // Items

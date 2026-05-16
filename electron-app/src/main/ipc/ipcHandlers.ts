@@ -2,6 +2,7 @@ import { ipcMain, webContents } from 'electron'
 import axios from 'axios'
 import { TokenStore } from '../auth/TokenStore'
 import { ItemRepository } from '../db/repositories/ItemRepository'
+import { ComboRepository } from '../db/repositories/ComboRepository'
 import { TableRepository } from '../db/repositories/TableRepository'
 import { UnitRepository } from '../db/repositories/UnitRepository'
 import { OrderRepository, type CheckoutData } from '../db/repositories/OrderRepository'
@@ -12,6 +13,7 @@ import { printReceipt, printKOT, printKotFromTemplate, type ReceiptData, type KO
 import { printHtmlInvoice, printHtmlKot } from '../print/HtmlInvoicePrinter'
 import { PrintTemplateRepository } from '../db/repositories/PrintTemplateRepository'
 import type { LocalPrintTemplate } from '../db/repositories/PrintTemplateRepository'
+import { ReportRepository } from '../db/repositories/ReportRepository'
 
 export function registerIpcHandlers(): void {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -31,12 +33,16 @@ export function registerIpcHandlers(): void {
   )
   ipcMain.handle('items:groups', () => ItemRepository.getGroups())
   ipcMain.handle('items:get-all', () => ItemRepository.getAllForPOS())
+  ipcMain.handle('items:get-all-inventory', () => ItemRepository.getAll())
   ipcMain.handle('items:get-variants', (_, itemId: string) =>
     ItemRepository.getVariants(itemId),
   )
   ipcMain.handle('items:get-modifier-groups', (_, itemId: string) =>
     ItemRepository.getModifierGroupsForItem(itemId),
   )
+
+  // ── Combos ────────────────────────────────────────────────────────────────
+  ipcMain.handle('combos:get-all', () => ComboRepository.getAll())
 
   // ── Units ─────────────────────────────────────────────────────────────────
   ipcMain.handle('units:get-all', () => UnitRepository.getAll())
@@ -57,7 +63,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('order:add-line', (_, invoiceId: string, line: {
     id: string; item_id: string; item_name: string; quantity: number
     rate: number; discount_percent: number; gst_rate: number; notes?: string | null
-    item_variant_id?: string | null; modifiers_total?: number
+    item_variant_id?: string | null; combo_id?: string | null; modifiers_total?: number
   }) => OrderRepository.addLine(invoiceId, line))
 
   ipcMain.handle('order:update-line-notes', (_, lineId: string, notes: string | null) =>
@@ -82,6 +88,10 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('order:find-by-table', (_, tableId: string) =>
     OrderRepository.findActiveByTableId(tableId),
+  )
+
+  ipcMain.handle('order:find-by-server-id', (_, serverId: string) =>
+    OrderRepository.findByServerId(serverId),
   )
 
   /**
@@ -389,6 +399,20 @@ export function registerIpcHandlers(): void {
 
     return customer
   })
+
+  // ── Reports (offline-first, SQLite) ──────────────────────────────────────
+  ipcMain.handle('reports:sales-summary', (_, dateFrom: string, dateTo: string) =>
+    ReportRepository.salesSummary(dateFrom, dateTo),
+  )
+  ipcMain.handle('reports:item-wise', (_, dateFrom: string, dateTo: string) =>
+    ReportRepository.itemWise(dateFrom, dateTo),
+  )
+  ipcMain.handle('reports:day-close', (_, date: string) =>
+    ReportRepository.dayClose(date),
+  )
+  ipcMain.handle('reports:gst-summary', (_, dateFrom: string, dateTo: string) =>
+    ReportRepository.gstSummary(dateFrom, dateTo),
+  )
 
   // ── Sync ──────────────────────────────────────────────────────────────────
   ipcMain.handle('sync:trigger', () => runSync())

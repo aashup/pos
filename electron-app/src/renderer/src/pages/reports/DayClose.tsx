@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Printer } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { reportsApi } from '../../api/reports'
 import { useThemeStore } from '../../store/themeStore'
 import { useAuthStore } from '../../store/authStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
@@ -12,7 +11,6 @@ import Header from '../../components/layout/Header'
 
 interface DayCloseData {
   date: string
-  opening_cash: number
   total_cash: number
   total_upi: number
   total_card: number
@@ -36,10 +34,7 @@ export default function DayClose() {
 
   const { data, isLoading } = useQuery<DayCloseData>({
     queryKey: ['day-close', applied],
-    queryFn: async () => {
-      const res = await reportsApi.dayClose({ date: applied })
-      return res.data?.data
-    },
+    queryFn: () => ipc.reports.dayClose(applied),
   })
 
   async function handlePrint() {

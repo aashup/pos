@@ -22,6 +22,7 @@ export default function CustomerDropdown({ onClose, onSelect }: CustomerDropdown
 
   useEffect(() => {
     searchRef.current?.focus()
+    ipc.customer.search('').then(setResults).catch(() => setResults([]))
   }, [])
 
   // Close on outside click
@@ -36,10 +37,6 @@ export default function CustomerDropdown({ onClose, onSelect }: CustomerDropdown
   }, [onClose])
 
   useEffect(() => {
-    if (query.trim().length === 0) {
-      setResults([])
-      return
-    }
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
       setSearching(true)
@@ -84,8 +81,18 @@ export default function CustomerDropdown({ onClose, onSelect }: CustomerDropdown
       className="absolute left-0 right-0 top-full mt-1 z-50 bg-[#1e2130] rounded-xl shadow-2xl border border-white/10 overflow-hidden"
       style={{ minWidth: 220 }}
     >
-      {/* Search */}
+      {/* Header: search + close */}
       <div className="px-3 pt-3 pb-2">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-semibold text-gray-300 flex-1">Add Customer</span>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-400 hover:text-white hover:bg-white/10 active:bg-white/20 transition-colors"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
@@ -93,6 +100,7 @@ export default function CustomerDropdown({ onClose, onSelect }: CustomerDropdown
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
             placeholder="Search by name or phone..."
             className="w-full pl-8 pr-3 py-2 text-xs rounded-lg bg-white/10 text-gray-100 placeholder-gray-400 border border-white/10 focus:outline-none focus:ring-1 focus:ring-indigo-400"
           />

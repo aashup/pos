@@ -49,5 +49,6 @@ export interface InvoiceTemplateData {
   amountTendered?: number
   change?: number
   splitPayments?: SplitPayment[]
+  customerName?: string
   footerNote?: string
 }

@@ -75,6 +75,7 @@ const DEFAULT_INVOICE_LAYOUT = `<!DOCTYPE html>
   <div>Invoice: <strong>{{invoiceNumber}}</strong></div>
   <div>Date: {{invoiceDate}}</div>
   <div>Type: {{orderType}}{{tableName}}</div>
+  {{#customerName}}<div>Customer: {{customerName}}</div>{{/customerName}}
   <div class="divider"></div>
   <table>
     <thead>

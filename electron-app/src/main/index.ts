@@ -139,7 +139,7 @@ function registerWindowIpc(): void {
 function registerMediaProtocol(): void {
   const mediaCacheDir = join(app.getPath('userData'), 'media-cache')
   protocol.handle('media', (request) => {
-    const filename = decodeURIComponent(request.url.slice('media://'.length).replace(/^\/+/, ''))
+    const filename = decodeURIComponent(request.url.slice('media://'.length).replace(/^\/+/, '').replace(/\/+$/, ''))
     const filePath = join(mediaCacheDir, filename)
     if (!existsSync(filePath)) return new Response(null, { status: 404 })
     return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)

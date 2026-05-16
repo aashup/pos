@@ -2,15 +2,13 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { TrendingUp, ShoppingBag, Receipt } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { reportsApi } from '../../api/reports'
+import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import Header from '../../components/layout/Header'
 
 interface SalesSummaryData {
-  date_from: string
-  date_to: string
   total_orders: number
   total_revenue: number
   total_tax: number
@@ -54,10 +52,7 @@ export default function SalesSummary() {
 
   const { data, isLoading } = useQuery<SalesSummaryData>({
     queryKey: ['sales-summary', applied.from, applied.to],
-    queryFn: async () => {
-      const res = await reportsApi.salesSummary({ date_from: applied.from, date_to: applied.to })
-      return res.data?.data
-    },
+    queryFn: () => ipc.reports.salesSummary(applied.from, applied.to),
   })
 
   return (

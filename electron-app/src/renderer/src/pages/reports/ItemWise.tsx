@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Search, Printer } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { reportsApi } from '../../api/reports'
 import { useThemeStore } from '../../store/themeStore'
 import { useAuthStore } from '../../store/authStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
@@ -34,10 +33,7 @@ export default function ItemWise() {
 
   const { data: rows = [], isLoading } = useQuery<ItemRow[]>({
     queryKey: ['item-wise', applied.from, applied.to],
-    queryFn: async () => {
-      const res = await reportsApi.itemWise({ date_from: applied.from, date_to: applied.to })
-      return res.data?.data ?? []
-    },
+    queryFn: () => ipc.reports.itemWise(applied.from, applied.to),
   })
 
   const filtered = rows.filter((r) =>

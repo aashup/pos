@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Search, Plus, Edit2, Trash2, RefreshCw, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { itemsApi } from '../../api/items'
+import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import type { Item } from '../../types'
@@ -17,9 +18,10 @@ export default function ItemList() {
   const { data: items = [], isLoading, refetch } = useQuery({
     queryKey: ['items'],
     queryFn: async () => {
-      const res = await itemsApi.list({ per_page: 1000 })
-      return (res.data?.data ?? []) as Item[]
+      const rows = await ipc.items.getAllInventory()
+      return rows as Item[]
     },
+    staleTime: 30_000,
   })
 
   const filteredItems = items.filter(

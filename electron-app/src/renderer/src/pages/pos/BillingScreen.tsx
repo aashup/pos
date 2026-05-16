@@ -19,7 +19,7 @@ import PaymentModal from '../../components/pos/PaymentModal'
 import PosHeader from '../../components/pos/PosHeader'
 import NavigationDrawer from '../../components/pos/NavigationDrawer'
 import VariantModifierModal from '../../components/pos/VariantModifierModal'
-import type { POSItem } from '../../components/pos/ItemGrid'
+import type { POSItem, POSCombo } from '../../components/pos/ItemGrid'
 import type { POSItemVariant } from '../../bridge/ipc'
 import type { Item, SelectedModifier, ItemVariant } from '../../types'
 import type { KotTemplateData } from '../../types/printing'
@@ -178,6 +178,29 @@ export default function BillingScreen() {
     }
   }, [])
 
+  const handleAddCombo = useCallback((combo: POSCombo) => {
+    const state = useCartStore.getState()
+    const { localOrderId: lid } = state
+    const lineId = uuidv4()
+    const gstRate = (combo.cgst ?? 0) + (combo.sgst ?? 0) + (combo.igst ?? 0)
+
+    if (lid) {
+      ipc.order.addLine(lid, {
+        id: lineId,
+        item_id: '',
+        combo_id: combo.id,
+        item_name: combo.name,
+        quantity: 1,
+        rate: combo.price ?? 0,
+        discount_percent: 0,
+        gst_rate: gstRate,
+        notes: null,
+        modifiers_total: 0,
+      }).catch(() => {})
+    }
+    state.addCombo(combo, [], lineId)
+  }, [])
+
   const handleVariantModalConfirm = useCallback((
     variant: POSItemVariant | null,
     modifiers: SelectedModifier[],
@@ -247,6 +270,23 @@ export default function BillingScreen() {
         }
         return { kotData }
       } else if (orderId) {
+        // Try to find a local SQLite copy of this server order first (offline-first)
+        const localCopy = await ipc.order.findByServerId(orderId)
+        if (localCopy) {
+          const cartState = useCartStore.getState()
+          setLocalOrder(localCopy.id, localCopy.order_type, cartState.tableId ?? null, cartState.tableName ?? null)
+          const result = await ipc.order.sendKot(localCopy.id)
+          if (!result.success) {
+            toast.error(result.error ?? 'No pending items')
+            return null
+          }
+          toast.success(`KOT ${result.kotNumber ?? ''} sent to kitchen`)
+          useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
+          if (result.kotNumber) setKotNumber(result.kotNumber)
+          if (tableId) updateTableStatus(tableId, 'occupied', localCopy.id)
+          return { kotData: null }
+        }
+        // Fallback: order not yet in local SQLite (multi-device, not synced) — requires network
         const newLines = pendingLines.filter((l) => !l.isServerNative)
         if (newLines.length > 0) {
           await ordersApi.addLines(orderId, newLines.map((l) => ({
@@ -324,6 +364,7 @@ export default function BillingScreen() {
       invoiceDate: new Date().toLocaleDateString('en-IN'),
       orderType,
       tableName: useCartStore.getState().tableName ?? undefined,
+      customerName: useCartStore.getState().customerName ?? undefined,
       items: lines.map((l) => ({
         name: l.variantName ? `${l.name} (${l.variantName})` : l.name,
         quantity: l.quantity,
@@ -386,7 +427,7 @@ export default function BillingScreen() {
       {/* Main 3-column layout */}
       <div className="flex-1 flex overflow-hidden">
         <div className={cn('flex-1 overflow-hidden', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-          <ItemGrid onItemAdd={handleAddItem} />
+          <ItemGrid onItemAdd={handleAddItem} onComboAdd={handleAddCombo} />
         </div>
         <div
           className="w-1.5 shrink-0 cursor-col-resize bg-gray-200 dark:bg-gray-700 hover:bg-orange-400 dark:hover:bg-orange-500 active:bg-orange-500 transition-colors select-none"
@@ -466,6 +507,7 @@ export default function BillingScreen() {
                 invoiceDate: new Date().toLocaleDateString('en-IN'),
                 orderType: snap.orderType,
                 tableName: snap.tableName ?? undefined,
+                customerName: snap.customerName ?? undefined,
                 items: snap.lines.map((l) => ({
                   name: l.variantName ? `${l.name} (${l.variantName})` : l.name,
                   quantity: l.quantity,

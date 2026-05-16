@@ -18,8 +18,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     search:            (query: string, groupId?: string): Promise<unknown[]> => ipcRenderer.invoke('items:search', query, groupId),
     getGroups:         (): Promise<unknown[]> => ipcRenderer.invoke('items:groups'),
     getAll:            (): Promise<unknown[]> => ipcRenderer.invoke('items:get-all'),
+    getAllInventory:    (): Promise<unknown[]> => ipcRenderer.invoke('items:get-all-inventory'),
     getVariants:       (itemId: string): Promise<unknown[]> => ipcRenderer.invoke('items:get-variants', itemId),
     getModifierGroups: (itemId: string): Promise<unknown[]> => ipcRenderer.invoke('items:get-modifier-groups', itemId),
+  },
+
+  combos: {
+    getAll: (): Promise<unknown[]> => ipcRenderer.invoke('combos:get-all'),
   },
 
   units: {
@@ -39,7 +44,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     addLine: (invoiceId: string, line: {
       id: string; item_id: string; item_name: string; quantity: number
       rate: number; discount_percent: number; gst_rate: number; notes?: string | null
-      item_variant_id?: string | null; modifiers_total?: number
+      item_variant_id?: string | null; combo_id?: string | null; modifiers_total?: number
     }): Promise<void> => ipcRenderer.invoke('order:add-line', invoiceId, line),
     updateLineNotes: (lineId: string, notes: string | null): Promise<void> =>
       ipcRenderer.invoke('order:update-line-notes', lineId, notes),
@@ -55,6 +60,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('order:mark-confirmed', localId, serverId),
     findByTable: (tableId: string): Promise<unknown> =>
       ipcRenderer.invoke('order:find-by-table', tableId),
+    findByServerId: (serverId: string): Promise<unknown> =>
+      ipcRenderer.invoke('order:find-by-server-id', serverId),
     list: (filters?: { status?: string; today?: boolean }): Promise<unknown[]> =>
       ipcRenderer.invoke('order:list', filters),
     get: (id: string): Promise<unknown> =>
@@ -74,6 +81,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   customer: {
     search: (query: string): Promise<unknown[]> => ipcRenderer.invoke('customer:search', query),
     create: (name: string, phone?: string): Promise<unknown> => ipcRenderer.invoke('customer:create', name, phone),
+  },
+
+  reports: {
+    salesSummary: (dateFrom: string, dateTo: string): Promise<unknown> =>
+      ipcRenderer.invoke('reports:sales-summary', dateFrom, dateTo),
+    itemWise: (dateFrom: string, dateTo: string): Promise<unknown[]> =>
+      ipcRenderer.invoke('reports:item-wise', dateFrom, dateTo),
+    dayClose: (date: string): Promise<unknown> =>
+      ipcRenderer.invoke('reports:day-close', date),
+    gstSummary: (dateFrom: string, dateTo: string): Promise<unknown> =>
+      ipcRenderer.invoke('reports:gst-summary', dateFrom, dateTo),
   },
 
   sync: {

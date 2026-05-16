@@ -42,7 +42,7 @@ async function run() {
   // ── PUSH: local pending invoices → server ──────────────────────────────────
   try {
     const pendingInvoices = db
-      .prepare(`SELECT * FROM sales_invoices WHERE sync_status = 'pending' AND status = 'confirmed' LIMIT 50`)
+      .prepare(`SELECT * FROM sales_invoices WHERE sync_status IN ('pending', 'failed') AND status = 'confirmed' LIMIT 50`)
       .all() as Record<string, any>[]
 
     for (const invoice of pendingInvoices) {
@@ -83,7 +83,7 @@ async function run() {
   // ── PUSH: pending local customers → server ────────────────────────────────
   try {
     const pending = db
-      .prepare(`SELECT id, name, phone, type FROM pos_customers WHERE sync_status = 'pending' LIMIT 50`)
+      .prepare(`SELECT id, name, phone, type FROM pos_customers WHERE sync_status IN ('pending', 'failed') LIMIT 50`)
       .all() as { id: string; name: string; phone: string | null; type: string }[]
 
     for (const c of pending) {
@@ -237,6 +237,34 @@ async function run() {
       page++
     }
   } catch (e: unknown) { errors.push(`modifier-groups: ${(e as Error).message}`) }
+
+  // Combos (paginated)
+  try {
+    const stmt = db.prepare(
+      `INSERT OR REPLACE INTO combos
+         (id, company_id, name, description, price, cgst, sgst, igst, sort_order, is_active, synced_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+    )
+    let page = 1
+    while (true) {
+      const res = await client.get(`/combos?per_page=200&page=${page}&is_active=true`)
+      const payload = res.data
+      const rows: any[] = payload.data ?? payload ?? []
+      if (rows.length === 0) break
+      db.transaction((items: any[]) => {
+        for (const c of items) {
+          stmt.run(
+            c.id, c.company_id ?? null, c.name, c.description ?? null,
+            Number(c.price ?? 0), Number(c.cgst ?? 0), Number(c.sgst ?? 0), Number(c.igst ?? 0),
+            c.sort_order ?? 0, c.is_active ? 1 : 0,
+          )
+          pulled++
+        }
+      })(rows)
+      if (!payload.next_page_url) break
+      page++
+    }
+  } catch (e: unknown) { errors.push(`combos: ${(e as Error).message}`) }
 
   // Item → modifier group links
   try {

@@ -98,13 +98,19 @@ export const ItemRepository = {
       .prepare(
         `SELECT i.*,
            (SELECT CASE
-              WHEN local_path IS NOT NULL THEN 'media://' || local_path
+              WHEN local_path IS NOT NULL THEN 'media:///' || local_path
               ELSE url
             END
             FROM media
             WHERE entity_type = 'item' AND entity_id = i.id
             ORDER BY is_primary DESC, sort_order ASC
             LIMIT 1) AS image_url,
+           (SELECT json_group_array(img_url) FROM (
+              SELECT CASE WHEN local_path IS NOT NULL THEN 'media:///' || local_path ELSE url END AS img_url
+              FROM media
+              WHERE entity_type = 'item' AND entity_id = i.id
+              ORDER BY is_primary DESC, sort_order ASC
+           )) AS image_urls_json,
            (SELECT COUNT(*) FROM item_variants
             WHERE item_id = i.id AND is_active = 1) AS has_variants,
            (SELECT COUNT(*) FROM item_modifier_groups

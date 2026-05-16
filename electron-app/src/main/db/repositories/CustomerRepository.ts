@@ -21,7 +21,7 @@ export const CustomerRepository = {
         `SELECT id, server_id, name, phone, type, sync_status, created_at
          FROM pos_customers
          WHERE (name LIKE ? OR phone LIKE ?) AND type IN ('customer', 'both')
-         ORDER BY name ASC LIMIT 20`,
+         ORDER BY name ASC LIMIT 50`,
       )
       .all(q, q) as LocalCustomer[]
   },

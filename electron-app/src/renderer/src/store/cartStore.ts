@@ -46,7 +46,7 @@ interface CartState {
   // Cart operations
   addItem: (item: { id: string; name: string; selling_price: number; unit: string; cgst: number; sgst: number; igst: number }, lineId?: string) => void
   addVariantItem: (item: Item, variant: ItemVariant | null, modifiers: SelectedModifier[]) => void
-  addCombo: (combo: Combo, modifiers: SelectedModifier[]) => void
+  addCombo: (combo: Pick<Combo, 'id' | 'name' | 'price' | 'cgst' | 'sgst' | 'igst'>, modifiers: SelectedModifier[], lineId?: string) => void
   updateQty: (lineId: string, qty: number) => void
   removeItem: (lineId: string) => void
   setLineNotes: (lineId: string, notes: string) => void
@@ -202,13 +202,13 @@ export const useCartStore = create<CartState>((set, get) => ({
     set({ lines: newLines, totals: computeTotals(newLines, isInterState, discountPct) })
   },
 
-  addCombo: (combo, modifiers) => {
+  addCombo: (combo: Pick<Combo, 'id' | 'name' | 'price' | 'cgst' | 'sgst' | 'igst'>, modifiers, lineId) => {
     const { lines, isInterState, discountPct } = get()
     const gstRate = combo.cgst + combo.sgst + combo.igst
     const modifiersTotal = modifiers.reduce((sum, m) => sum + m.price, 0)
 
     const newLine: CartLine = {
-      id: uuidv4(),
+      id: lineId ?? uuidv4(),
       itemId: '',
       comboId: combo.id,
       name: combo.name,

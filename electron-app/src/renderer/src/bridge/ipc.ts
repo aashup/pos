@@ -1,5 +1,71 @@
 export type TemplateType = 'kot' | 'invoice'
 
+export interface SalesSummaryResult {
+  total_orders: number
+  total_revenue: number
+  total_tax: number
+  total_discount: number
+  avg_order_value: number
+  by_order_type: { order_type: string; count: number; revenue: number }[]
+  by_payment_mode: { payment_mode: string; count: number; amount: number }[]
+  daily: { date: string; count: number; revenue: number }[]
+}
+
+export interface ItemWiseRow {
+  item_id: string
+  item_name: string
+  total_quantity: number
+  total_revenue: number
+  taxable_amount: number
+  tax_amount: number
+  order_count: number
+}
+
+export interface DayCloseResult {
+  date: string
+  total_cash: number
+  total_upi: number
+  total_card: number
+  total_credit: number
+  total_revenue: number
+  total_orders: number
+  total_tax: number
+  total_discount: number
+  cancelled_orders: number
+  top_items: { name: string; quantity: number; revenue: number }[]
+}
+
+export interface GSTResult {
+  date_from: string
+  date_to: string
+  by_rate: {
+    gst_rate: number
+    taxable_amount: number
+    cgst_total: number
+    sgst_total: number
+    igst_total: number
+    total_tax: number
+  }[]
+  total_taxable: number
+  total_cgst: number
+  total_sgst: number
+  total_igst: number
+}
+
+export interface POSCombo {
+  id: string
+  company_id: string
+  name: string
+  description: string | null
+  price: number
+  cgst: number
+  sgst: number
+  igst: number
+  sort_order: number
+  is_active: number
+  image_url: string | null
+}
+
 export interface LocalPrintTemplate {
   id: string
   type: TemplateType
@@ -168,8 +234,12 @@ declare global {
         search(query: string, groupId?: string): Promise<unknown[]>
         getGroups(): Promise<unknown[]>
         getAll(): Promise<unknown[]>
+        getAllInventory(): Promise<unknown[]>
         getVariants(itemId: string): Promise<unknown[]>
         getModifierGroups(itemId: string): Promise<unknown[]>
+      }
+      combos: {
+        getAll(): Promise<unknown[]>
       }
       units: {
         getAll(): Promise<unknown[]>
@@ -184,14 +254,16 @@ declare global {
         addLine(invoiceId: string, line: {
           id: string; item_id: string; item_name: string; quantity: number
           rate: number; discount_percent: number; gst_rate: number; notes?: string | null
-          item_variant_id?: string | null; modifiers_total?: number
+          item_variant_id?: string | null; combo_id?: string | null; modifiers_total?: number
         }): Promise<void>
         updateLineNotes(lineId: string, notes: string | null): Promise<void>
+        updateNotes(id: string, notes: string | null): Promise<void>
         updateLineQty(lineId: string, qty: number): Promise<void>
         removeLine(lineId: string): Promise<void>
         sendKot(localOrderId: string): Promise<{ success: boolean; kotNumber?: string; lines?: unknown[]; error?: string }>
         markConfirmed(localId: string, serverId?: string | null): Promise<void>
         findByTable(tableId: string): Promise<LocalActiveOrder | null>
+        findByServerId(serverId: string): Promise<{ id: string; order_type: string } | null>
         list(filters?: { status?: string; today?: boolean }): Promise<LocalOrderSummary[]>
         get(id: string): Promise<LocalOrderFull | null>
         listHeld(): Promise<LocalHeldOrder[]>
@@ -203,6 +275,12 @@ declare global {
       customer: {
         search(query: string): Promise<LocalCustomer[]>
         create(name: string, phone?: string): Promise<LocalCustomer>
+      }
+      reports: {
+        salesSummary(dateFrom: string, dateTo: string): Promise<SalesSummaryResult>
+        itemWise(dateFrom: string, dateTo: string): Promise<ItemWiseRow[]>
+        dayClose(date: string): Promise<DayCloseResult>
+        gstSummary(dateFrom: string, dateTo: string): Promise<GSTResult>
       }
       sync: {
         trigger(): Promise<unknown>
@@ -254,10 +332,17 @@ export const ipc = {
     set:    (key: string, value: string) => window.electronAPI.settings.set(key, value),
     delete: (key: string) => window.electronAPI.settings.delete(key),
   },
+  combos: {
+    getAll: async (): Promise<POSCombo[]> => {
+      const rows = await window.electronAPI.combos.getAll() as POSCombo[]
+      return rows.map((r) => ({ ...r, is_active: Number(r.is_active) }))
+    },
+  },
   items: {
     search:    (query: string, groupId?: string) => window.electronAPI.items.search(query, groupId),
     getGroups: () => window.electronAPI.items.getGroups(),
     getAll:    () => window.electronAPI.items.getAll(),
+    getAllInventory: () => window.electronAPI.items.getAllInventory(),
     getVariants: async (itemId: string): Promise<POSItemVariant[]> => {
       const rows = await window.electronAPI.items.getVariants(itemId) as any[]
       return rows.map((r) => ({ ...r, is_active: !!r.is_active }))
@@ -300,6 +385,7 @@ export const ipc = {
     sendKot:        (localOrderId: string) => window.electronAPI.order.sendKot(localOrderId),
     markConfirmed:  (localId: string, serverId?: string | null) => window.electronAPI.order.markConfirmed(localId, serverId),
     findByTable:    (tableId: string) => window.electronAPI.order.findByTable(tableId),
+    findByServerId: (serverId: string) => window.electronAPI.order.findByServerId(serverId),
     list:           (filters?: { status?: string; today?: boolean }) => window.electronAPI.order.list(filters),
     get:            (id: string) => window.electronAPI.order.get(id),
     listHeld:       () => window.electronAPI.order.listHeld(),
@@ -307,6 +393,16 @@ export const ipc = {
     unhold:         (id: string) => window.electronAPI.order.unhold(id),
     cancel:         (id: string) => window.electronAPI.order.cancel(id),
     checkout:       (id: string, data: CheckoutData) => window.electronAPI.order.checkout(id, data),
+  },
+  reports: {
+    salesSummary: (dateFrom: string, dateTo: string): Promise<SalesSummaryResult> =>
+      window.electronAPI.reports.salesSummary(dateFrom, dateTo) as Promise<SalesSummaryResult>,
+    itemWise: (dateFrom: string, dateTo: string): Promise<ItemWiseRow[]> =>
+      window.electronAPI.reports.itemWise(dateFrom, dateTo) as Promise<ItemWiseRow[]>,
+    dayClose: (date: string): Promise<DayCloseResult> =>
+      window.electronAPI.reports.dayClose(date) as Promise<DayCloseResult>,
+    gstSummary: (dateFrom: string, dateTo: string): Promise<GSTResult> =>
+      window.electronAPI.reports.gstSummary(dateFrom, dateTo) as Promise<GSTResult>,
   },
   sync: {
     trigger:        () => window.electronAPI.sync.trigger(),

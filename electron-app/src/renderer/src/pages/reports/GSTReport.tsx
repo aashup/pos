@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Printer } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { reportsApi } from '../../api/reports'
+import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
 import { cn } from '../../lib/utils'
@@ -51,10 +51,7 @@ export default function GSTReport() {
 
   const { data, isLoading } = useQuery<GSTData>({
     queryKey: ['gst-summary', applied.from, applied.to],
-    queryFn: async () => {
-      const res = await reportsApi.gstSummary({ date_from: applied.from, date_to: applied.to })
-      return res.data?.data
-    },
+    queryFn: () => ipc.reports.gstSummary(applied.from, applied.to),
   })
 
   return (

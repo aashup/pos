@@ -3,7 +3,7 @@ import { Trash2, Send, CreditCard, PauseCircle, Loader2, User, X, MessageSquare,
 import { useCartStore } from '../../store/cartStore'
 import { ipc } from '../../bridge/ipc'
 import { formatCurrency, cn } from '../../lib/utils'
-import CustomerModal from './CustomerModal'
+import CustomerDropdown from './CustomerDropdown'
 
 interface CartProps {
   onSendKot: () => void
@@ -75,7 +75,8 @@ export default function Cart({ onSendKot, onCharge, onHold, onPrint, onKotDispla
         {/* Add / view customer */}
         <div className="relative border-r border-gray-200 dark:border-gray-700">
           <button
-            onClick={() => setShowCustomerModal(true)}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={() => setShowCustomerModal((v) => !v)}
             className="w-full h-full flex flex-col items-center justify-center gap-1 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 active:bg-blue-100 transition-colors"
           >
             <User className={cn('w-7 h-7', customerName ? 'text-blue-500' : 'text-gray-400 dark:text-gray-500')} />
@@ -92,7 +93,7 @@ export default function Cart({ onSendKot, onCharge, onHold, onPrint, onKotDispla
             </button>
           )}
           {showCustomerModal && (
-            <CustomerModal
+            <CustomerDropdown
               onClose={() => setShowCustomerModal(false)}
               onSelect={(id, name) => { if (id === 'walk_in') clearCustomer(); else setCustomer(id, name); setShowCustomerModal(false) }}
             />

@@ -117,6 +117,7 @@ export const OrderRepository = {
     gst_rate: number
     notes?: string | null
     item_variant_id?: string | null
+    combo_id?: string | null
     modifiers_total?: number
   }): void {
     const db = getDb()
@@ -128,13 +129,13 @@ export const OrderRepository = {
     const half = gstAmt / 2
     db.prepare(`
       INSERT OR REPLACE INTO sales_invoice_lines
-        (id, sales_invoice_id, item_id, item_variant_id, item_name, quantity, rate,
+        (id, sales_invoice_id, item_id, item_variant_id, combo_id, item_name, quantity, rate,
          discount_percent, modifiers_total, gst_rate, cgst, sgst, igst,
          taxable_amount, line_total, kot_status, sync_status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending', 'pending')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'pending', 'pending')
     `).run(
-      line.id, invoiceId, line.item_id, line.item_variant_id ?? null, line.item_name,
-      line.quantity, line.rate, discountPct, modifiersTotal, line.gst_rate,
+      line.id, invoiceId, line.item_id, line.item_variant_id ?? null, line.combo_id ?? null,
+      line.item_name, line.quantity, line.rate, discountPct, modifiersTotal, line.gst_rate,
       half, half, taxable, taxable + gstAmt,
     )
   },
@@ -272,6 +273,14 @@ export const OrderRepository = {
    * after app restart or navigation away). Returns the order with its lines, or
    * null if no draft exists for that table.
    */
+  findByServerId(serverId: string): { id: string; order_type: string } | null {
+    return getDb().prepare(
+      `SELECT id, order_type FROM sales_invoices
+       WHERE server_id = ? AND status IN ('draft','confirmed') AND pos_held = 0
+       LIMIT 1`,
+    ).get(serverId) as { id: string; order_type: string } | null
+  },
+
   findActiveByTableId(tableId: string): LocalActiveOrder | null {
     const db = getDb()
     const order = db.prepare(`
@@ -426,6 +435,7 @@ export const OrderRepository = {
         change_amount = ?,
         balance_due = ?,
         discount_amount = ?,
+        split_payments = ?,
         notes = COALESCE(?, notes),
         updated_at_local = datetime('now')
       WHERE id = ?
@@ -440,6 +450,7 @@ export const OrderRepository = {
       data.change_amount,
       data.balance_due,
       data.discount_amount,
+      data.split_payments ? JSON.stringify(data.split_payments) : null,
       data.notes ?? null,
       id,
     )

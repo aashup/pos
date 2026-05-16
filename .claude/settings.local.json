@@ -24,7 +24,8 @@
       "Bash(python -c \"import sys; [print\\(l.strip\\(\\)\\) for l in sys.stdin if 'printer' in l.lower\\(\\) or 'node-printer' in l.lower\\(\\)]\")",
       "Bash(dir \"D:\\\\erp\\\\pos\\\\electron-app\\\\node_modules\")",
       "Bash(findstr /i \"printer\")",
-      "Bash(npx prebuild-install *)"
+      "Bash(npx prebuild-install *)",
+      "mcp__Claude_in_Chrome__navigate"
     ]
   }
 }

@@ -39,4 +39,9 @@ export function initDatabase(): void {
   if (!mediaCols.find((c) => c.name === 'local_path')) {
     db.exec('ALTER TABLE media ADD COLUMN local_path TEXT')
   }
+
+  const invoiceCols = db.prepare('PRAGMA table_info(sales_invoices)').all() as { name: string }[]
+  if (!invoiceCols.find((c) => c.name === 'split_payments')) {
+    db.exec('ALTER TABLE sales_invoices ADD COLUMN split_payments TEXT DEFAULT NULL')
+  }
 }
