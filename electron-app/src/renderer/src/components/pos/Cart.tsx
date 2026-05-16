@@ -61,7 +61,7 @@ export default function Cart({ onSendKot, onCharge, onHold, onPrint, onKotDispla
   return (
     <div className="flex flex-col h-full bg-white dark:bg-gray-900 border-l border-gray-200 dark:border-gray-700">
       {/* Header — touch-friendly grid row */}
-      <div className="grid grid-cols-3 border-b border-gray-200 dark:border-gray-700">
+      <div className="grid grid-cols-4 border-b border-gray-200 dark:border-gray-700">
         {/* Table / order type */}
         <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-gray-200 dark:border-gray-700">
           <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -75,12 +75,12 @@ export default function Cart({ onSendKot, onCharge, onHold, onPrint, onKotDispla
         {/* Add / view customer */}
         <div className="relative border-r border-gray-200 dark:border-gray-700">
           <button
-            onClick={() => setShowCustomerModal((v) => !v)}
+            onClick={() => setShowCustomerModal(true)}
             className="w-full h-full flex flex-col items-center justify-center gap-1 py-3 hover:bg-blue-50 dark:hover:bg-blue-900/20 active:bg-blue-100 transition-colors"
           >
             <User className={cn('w-7 h-7', customerName ? 'text-blue-500' : 'text-gray-400 dark:text-gray-500')} />
             <span className={cn('text-xs font-medium truncate max-w-full px-1 text-center leading-tight', customerName ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500')}>
-              {customerName ?? 'Customer'}
+              {customerName ?? 'Walk-In'}
             </span>
           </button>
           {customerName && (
@@ -94,24 +94,26 @@ export default function Cart({ onSendKot, onCharge, onHold, onPrint, onKotDispla
           {showCustomerModal && (
             <CustomerModal
               onClose={() => setShowCustomerModal(false)}
-              onSelect={(id, name) => { setCustomer(id, name); setShowCustomerModal(false) }}
+              onSelect={(id, name) => { if (id === 'walk_in') clearCustomer(); else setCustomer(id, name); setShowCustomerModal(false) }}
             />
           )}
         </div>
 
-        {/* Item count + clear */}
-        <div className="flex flex-col items-center justify-center gap-1 py-3 relative">
+        {/* Item count */}
+        <div className="flex flex-col items-center justify-center gap-1 py-3 border-r border-gray-200 dark:border-gray-700">
           <span className="text-2xl font-bold text-gray-700 dark:text-gray-200">{lines.length}</span>
           <span className="text-xs text-gray-400 dark:text-gray-500">item{lines.length !== 1 ? 's' : ''}</span>
-          {!isEmpty && (
-            <button
-              onClick={clearCart}
-              className="absolute top-1 right-2 text-xs text-red-400 hover:text-red-600"
-            >
-              Clear
-            </button>
-          )}
         </div>
+
+        {/* Clear cart */}
+        <button
+          onClick={clearCart}
+          disabled={isEmpty}
+          className="flex flex-col items-center justify-center gap-1 py-3 transition-colors disabled:opacity-30 hover:bg-red-50 dark:hover:bg-red-900/20 active:bg-red-100 disabled:pointer-events-none"
+        >
+          <Trash2 className="w-7 h-7 text-red-400 dark:text-red-500" />
+          <span className="text-xs font-medium text-red-400 dark:text-red-500">Clear</span>
+        </button>
       </div>
 
       {/* Order notes row */}

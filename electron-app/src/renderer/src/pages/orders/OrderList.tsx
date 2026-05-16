@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Search, RefreshCw } from 'lucide-react'
+import { Search, RefreshCw, Printer } from 'lucide-react'
 import { ipc } from '../../bridge/ipc'
 import { useSyncStore } from '../../store/syncStore'
 import { useThemeStore } from '../../store/themeStore'
@@ -9,6 +9,7 @@ import { useOrdersStore } from '../../store/ordersStore'
 import { formatCurrency } from '../../lib/utils'
 import { cn } from '../../lib/utils'
 import Header from '../../components/layout/Header'
+import GridDisplaySelection from '../../components/pos/GridDisplaySelection'
 import type { LocalOrderSummary } from '../../bridge/ipc'
 
 const getStatusColors = (isDark: boolean): Record<string, string> => ({
@@ -17,10 +18,10 @@ const getStatusColors = (isDark: boolean): Record<string, string> => ({
   cancelled: isDark ? 'bg-red-900 text-red-200' : 'bg-red-100 text-red-500',
 })
 
-const TABS = [
-  { key: 'draft',     label: 'Active' },
-  { key: 'confirmed', label: 'Paid Today' },
-  { key: 'all',       label: 'All' },
+const TAB_ITEMS = [
+  { id: 'draft',     label: 'Active' },
+  { id: 'confirmed', label: 'Paid Today' },
+  { id: 'all',       label: 'All' },
 ]
 
 export default function OrderList() {
@@ -69,28 +70,62 @@ export default function OrderList() {
 
   const statusColors = getStatusColors(isDark)
 
+  function handlePrint() {
+    const tabLabel = TAB_ITEMS.find((t) => t.id === tab)?.label ?? tab
+    const rows = orders
+      .map(
+        (o) => `<tr>
+          <td>${o.invoice_number ?? `Draft #${o.id.slice(-6)}`}</td>
+          <td>${o.order_type.replace('_', ' ')}${o.table_name ? ` · Table ${o.table_name}` : ''}</td>
+          <td>${o.line_count} items</td>
+          <td>${o.status}</td>
+          <td style="text-align:right">${formatCurrency(o.grand_total)}</td>
+        </tr>`,
+      )
+      .join('')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <style>
+        body { font-family: sans-serif; font-size: 12px; margin: 16px; }
+        h2 { margin: 0 0 4px; font-size: 14px; }
+        p  { margin: 0 0 12px; font-size: 11px; color: #666; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; border-bottom: 1px solid #ccc; padding: 4px 6px; font-size: 11px; }
+        td { padding: 4px 6px; border-bottom: 1px solid #eee; }
+      </style></head><body>
+      <h2>Orders — ${tabLabel}</h2>
+      <p>${new Date().toLocaleString()}</p>
+      <table>
+        <thead><tr>
+          <th>Invoice</th><th>Type</th><th>Items</th><th>Status</th><th style="text-align:right">Total</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      </body></html>`
+    ipc.print.htmlInvoice(html)
+  }
+
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
       <Header
         title="Orders"
         onBack={() => navigate('/pos/tables')}
-        actions={[{ icon: RefreshCw, label: '', onClick: () => tab === 'draft' ? loadOrders() : refetch() }]}
+        actions={[
+          { icon: Printer, label: '', onClick: handlePrint },
+          { icon: RefreshCw, label: '', onClick: () => tab === 'draft' ? loadOrders() : refetch() },
+        ]}
       />
 
       {/* Tabs */}
-      <div className={cn('flex px-4 gap-1 shrink-0 border-b', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100')}>
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              'px-4 py-3 text-sm font-medium border-b-2 transition-colors',
-              tab === t.key ? 'border-orange-500 text-orange-500' : isDark ? 'border-transparent text-gray-400 hover:text-gray-300' : 'border-transparent text-gray-500 hover:text-gray-700',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className={cn('px-4 py-2 shrink-0 border-b', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100')}>
+        <GridDisplaySelection
+          items={TAB_ITEMS}
+          selectedIds={[tab]}
+          onChange={(ids) => setTab((ids[0] as string) ?? 'draft')}
+          isMultiSelect={false}
+          columns={3}
+          accentColor="orange"
+          ariaLabel="Filter orders"
+        />
       </div>
 
       {/* Search */}

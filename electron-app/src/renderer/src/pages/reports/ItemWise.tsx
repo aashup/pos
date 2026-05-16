@@ -1,10 +1,13 @@
 import { useState } from 'react'
+import { Search, Printer } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { reportsApi } from '../../api/reports'
 import { useThemeStore } from '../../store/themeStore'
+import { useAuthStore } from '../../store/authStore'
 import { formatCurrency, todayLocalDate } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+import { ipc } from '../../bridge/ipc'
 import Header from '../../components/layout/Header'
 
 interface ItemRow {
@@ -21,11 +24,13 @@ export default function ItemWise() {
   const navigate = useNavigate()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
+  const { user } = useAuthStore()
   const today = todayLocalDate()
   const [dateFrom, setDateFrom] = useState(today)
   const [dateTo, setDateTo]     = useState(today)
   const [applied, setApplied]   = useState({ from: today, to: today })
   const [search, setSearch]     = useState('')
+  const [isPrinting, setIsPrinting] = useState(false)
 
   const { data: rows = [], isLoading } = useQuery<ItemRow[]>({
     queryKey: ['item-wise', applied.from, applied.to],
@@ -39,12 +44,94 @@ export default function ItemWise() {
     !search || r.item_name.toLowerCase().includes(search.toLowerCase()),
   )
 
-  const grandTotal   = rows.reduce((s, r) => s + r.total_revenue, 0)
-  const grandQty     = rows.reduce((s, r) => s + r.total_quantity, 0)
+  const grandTotal = rows.reduce((s, r) => s + Number(r.total_revenue), 0)
+  const grandQty   = rows.reduce((s, r) => s + Number(r.total_quantity), 0)
+
+  async function handlePrint() {
+    if (!rows.length) return
+    setIsPrinting(true)
+    try {
+      const company = user?.company
+      const fmt = (n: number | string) => `Rs.${Number(n).toFixed(2)}`
+      const divider = '<hr style="border:none;border-top:1px dashed #000;margin:6px 0"/>'
+      const dateLabel = applied.from === applied.to ? applied.from : `${applied.from} to ${applied.to}`
+
+      const itemRows = rows.map((row, i) =>
+        `<tr>
+          <td style="padding:2px 4px 2px 0;vertical-align:top">${i + 1}.</td>
+          <td style="padding:2px 4px;vertical-align:top">${row.item_name}</td>
+          <td style="padding:2px 4px;text-align:right;vertical-align:top">${Number(row.total_quantity).toFixed(0)}</td>
+          <td style="padding:2px 4px;text-align:right;vertical-align:top">${row.order_count}</td>
+          <td style="padding:2px 0 2px 4px;text-align:right;vertical-align:top">${fmt(row.total_revenue)}</td>
+        </tr>`
+      ).join('')
+
+      const html = `<!DOCTYPE html><html><head>
+<meta charset="utf-8"/>
+<style>
+  body { font-family: 'Courier New', monospace; font-size: 10px; margin: 0; padding: 6px; }
+  h2 { font-size: 12px; margin: 0 0 2px; text-align: center; }
+  p  { margin: 0; }
+  .center { text-align: center; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { font-size: 10px; padding: 2px 4px; border-bottom: 1px solid #000; text-align: right; }
+  thead th:nth-child(2) { text-align: left; }
+  thead th:first-child { text-align: left; }
+  tfoot td { padding: 2px 4px; border-top: 1px solid #000; font-weight: bold; text-align: right; }
+  tfoot td:first-child, tfoot td:nth-child(2) { text-align: left; }
+</style>
+</head><body>
+<div class="center">
+  <h2>${company?.name ?? 'Item-Wise Sales'}</h2>
+  ${company?.phone ? `<p>Ph: ${company.phone}</p>` : ''}
+  ${company?.gstin ? `<p>GSTIN: ${company.gstin}</p>` : ''}
+</div>
+${divider}
+<div class="center">
+  <p><strong>ITEM-WISE SALES REPORT</strong></p>
+  <p>${dateLabel}</p>
+  <p>${rows.length} item(s) &nbsp;|&nbsp; ${grandQty.toFixed(0)} qty sold</p>
+</div>
+${divider}
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th style="text-align:left">Item</th>
+      <th>Qty</th>
+      <th>Ord</th>
+      <th>Revenue</th>
+    </tr>
+  </thead>
+  <tbody>${itemRows}</tbody>
+  <tfoot>
+    <tr>
+      <td colspan="2">Total</td>
+      <td style="text-align:right">${grandQty.toFixed(0)}</td>
+      <td></td>
+      <td style="text-align:right">${fmt(grandTotal)}</td>
+    </tr>
+  </tfoot>
+</table>
+${divider}
+<div class="center"><p>--- End of Report ---</p></div>
+</body></html>`
+
+      const result = await ipc.print.htmlInvoice(html, true)
+      if (!result.success) {
+        alert(`Print failed: ${result.error ?? 'Unknown error'}`)
+      }
+    } finally {
+      setIsPrinting(false)
+    }
+  }
 
   return (
     <div className={cn('h-screen flex flex-col', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
-      <Header title="Item-Wise Sales" />
+      <Header
+        title="Item-Wise Sales"
+        actions={[{ icon: Printer, label: isPrinting ? 'Printing…' : 'Print', onClick: handlePrint, disabled: isPrinting || !rows.length }]}
+      />
 
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Filters */}

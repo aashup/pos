@@ -3,6 +3,7 @@ import { Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { ipc } from '../../bridge/ipc'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
+import { useResizable } from '../../hooks/useResizable'
 import { useCartStore } from '../../store/cartStore'
 import { cn } from '../../lib/utils'
 import type { Item, ItemGroup } from '../../types'
@@ -99,6 +100,9 @@ export default function ItemGrid({ onItemAdd }: Props = {}) {
 
   const selectedGroupIds = selectedGroup ? [selectedGroup] : ['__all__']
 
+  const { width: groupsWidth, startResize: startGroupsResize } =
+    useResizable('pos.layout.groups_width', 112, 80, 220)
+
   // F2 focuses search — registered via global shortcut stack so conflicts resolve correctly
   const f2Shortcut = useMemo(() => [
     { key: 'F2', label: 'Focus item search', action: () => searchRef.current?.focus() },
@@ -123,46 +127,62 @@ export default function ItemGrid({ onItemAdd }: Props = {}) {
         </div>
       </div>
 
-      {/* Category tabs */}
-      {groups.length > 0 && (
-        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 shrink-0">
-          <GridDisplaySelection
-            items={groupItems}
-            selectedIds={selectedGroupIds}
-            onChange={(ids) => {
-              const first = ids[0]
-              setSelectedGroup(first === '__all__' || first === undefined ? undefined : String(first))
-            }}
-            isMultiSelect={false}
-            columns="auto"
-            accentColor="orange"
-            ariaLabel="Filter by category"
-          />
-        </div>
-      )}
+      {/* Body: category sidebar + item grid */}
+      <div className="flex flex-1 min-h-0">
 
-      {/* Grid */}
-      <div className="flex-1 overflow-y-auto p-3">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
-            Loading…
-          </div>
-        ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-32 text-gray-400 dark:text-gray-600">
-            <span className="text-2xl mb-2">🍽️</span>
-            <span className="text-sm">{search || selectedGroup ? 'No items found' : 'No items synced yet'}</span>
-          </div>
-        ) : (
-          <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-2">
-            {filtered.map((item) => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                onAdd={() => handleAdd(item)}
+        {/* Category sidebar */}
+        {groups.length > 0 && (
+          <>
+            <div
+              className="shrink-0 overflow-y-auto border-r border-gray-100 dark:border-gray-700 py-2 px-1.5"
+              style={{ width: groupsWidth }}
+            >
+              <GridDisplaySelection
+                items={groupItems}
+                selectedIds={selectedGroupIds}
+                onChange={(ids) => {
+                  const first = ids[0]
+                  setSelectedGroup(first === '__all__' || first === undefined ? undefined : String(first))
+                }}
+                isMultiSelect={false}
+                columns={1}
+                accentColor="orange"
+                ariaLabel="Filter by category"
               />
-            ))}
-          </div>
+            </div>
+            <div
+              className="w-1.5 shrink-0 cursor-col-resize bg-gray-200 dark:bg-gray-700 hover:bg-orange-400 dark:hover:bg-orange-500 active:bg-orange-500 transition-colors select-none"
+              style={{ touchAction: 'none' }}
+              onMouseDown={startGroupsResize}
+              onTouchStart={startGroupsResize}
+            />
+          </>
         )}
+
+        {/* Item grid */}
+        <div className="flex-1 overflow-y-auto p-3">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32 text-gray-400 text-sm">
+              Loading…
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-gray-400 dark:text-gray-600">
+              <span className="text-2xl mb-2">🍽️</span>
+              <span className="text-sm">{search || selectedGroup ? 'No items found' : 'No items synced yet'}</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {filtered.map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  onAdd={() => handleAdd(item)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
       </div>
     </div>
   )

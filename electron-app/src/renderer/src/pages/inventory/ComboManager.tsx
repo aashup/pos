@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Plus, Edit2, Trash2, RefreshCw, X, Image as ImageIcon } from 'lucide-react'
+import { ArrowLeft, Plus, Edit2, Trash2, RefreshCw, X, Image as ImageIcon, Search } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { combosApi } from '../../api/combos'
 import { itemsApi } from '../../api/items'
@@ -26,7 +26,11 @@ export default function ComboManager() {
   })
   const [selectedComboId, setSelectedComboId] = useState<string | null>(null)
   const [showItemSelection, setShowItemSelection] = useState(false)
-  const [selectedItems, setSelectedItems] = useState<string[]>([])
+  const [localComboItems, setLocalComboItems] = useState<
+    Array<{ item_id: string; item_variant_id: string | null; quantity: number; sort_order: number }>
+  >([])
+  const [showItemPicker, setShowItemPicker] = useState(false)
+  const [itemPickerSearch, setItemPickerSearch] = useState('')
   const [draggedFile, setDraggedFile] = useState<File | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
 
@@ -68,6 +72,23 @@ export default function ComboManager() {
 
   const selectedCombo = combos.find((c) => c.id === selectedComboId)
   const images = (comboImages as any)[selectedComboId] || []
+
+  useEffect(() => {
+    if (selectedCombo?.combo_items) {
+      setLocalComboItems(
+        selectedCombo.combo_items.map((ci, idx) => ({
+          item_id: ci.item_id,
+          item_variant_id: ci.item_variant_id ?? null,
+          quantity: ci.quantity,
+          sort_order: ci.sort_order ?? idx,
+        }))
+      )
+    } else {
+      setLocalComboItems([])
+    }
+    setShowItemPicker(false)
+    setItemPickerSearch('')
+  }, [selectedComboId])
 
   // Save combo mutation
   const saveComboMutation = useMutation({
@@ -131,6 +152,19 @@ export default function ComboManager() {
     },
   })
 
+  // Save combo items mutation
+  const saveItemsMutation = useMutation({
+    mutationFn: () =>
+      combosApi.update(selectedComboId!, { items: localComboItems } as any),
+    onSuccess: () => {
+      toast.success('Items saved')
+      queryClient.invalidateQueries({ queryKey: ['combos'] })
+    },
+    onError: () => {
+      toast.error('Failed to save items')
+    },
+  })
+
   const handleCreateCombo = () => {
     setEditingCombo(null)
     setComboFormData({ name: '', description: '', price: 0, is_active: true })
@@ -174,24 +208,25 @@ export default function ComboManager() {
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    if (file && file.type.startsWith('image/')) {
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'))
+    if (files.length > 0) {
       setUploadingImage(true)
-      uploadImageMutation.mutate(file)
+      files.forEach(file => uploadImageMutation.mutate(file))
       setUploadingImage(false)
     } else {
-      toast.error('Please drop an image file')
+      toast.error('Please drop image files')
     }
     setDraggedFile(null)
   }
 
   const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.currentTarget.files?.[0]
-    if (file) {
+    const files = Array.from(e.currentTarget.files ?? [])
+    if (files.length > 0) {
       setUploadingImage(true)
-      uploadImageMutation.mutate(file)
+      files.forEach(file => uploadImageMutation.mutate(file))
       setUploadingImage(false)
     }
+    e.currentTarget.value = ''
   }
 
   return (
@@ -373,6 +408,7 @@ export default function ComboManager() {
                     <input
                       type="file"
                       accept="image/*"
+                      multiple
                       onChange={handleImageSelect}
                       className="hidden"
                       id="image-input"
@@ -426,31 +462,150 @@ export default function ComboManager() {
 
               {/* Items Tab */}
               {showItemSelection && (
-                <div className="flex-1 overflow-y-auto">
-                  {!selectedCombo.combo_items || selectedCombo.combo_items.length === 0 ? (
-                    <div
-                      className={cn(
-                        'flex flex-col items-center justify-center h-40 text-sm',
-                        isDark ? 'text-gray-500' : 'text-gray-400'
-                      )}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {/* Toolbar */}
+                  <div className={cn('px-4 py-2 border-b shrink-0 flex items-center justify-between', isDark ? 'border-gray-800' : 'border-gray-100')}>
+                    <span className={cn('text-xs font-semibold', isDark ? 'text-gray-400' : 'text-gray-600')}>
+                      {localComboItems.length} item{localComboItems.length !== 1 ? 's' : ''}
+                    </span>
+                    <button
+                      onClick={() => { setShowItemPicker((v) => !v); setItemPickerSearch('') }}
+                      className="flex items-center gap-1 text-xs bg-orange-500 hover:bg-orange-600 text-white px-2.5 py-1.5 rounded-lg"
                     >
-                      <p>No items in this combo</p>
-                    </div>
-                  ) : (
-                    <div className={cn('divide-y', isDark ? 'divide-gray-800' : 'divide-gray-100')}>
-                      {selectedCombo.combo_items.map((comboItem, idx) => (
-                        <div key={idx} className={cn('px-4 py-3', isDark ? 'hover:bg-gray-900' : 'hover:bg-gray-50')}>
-                          <p className={cn('font-semibold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>
-                            {comboItem.item?.name || 'Item'}
-                          </p>
-                          <p className={cn('text-xs mt-0.5', isDark ? 'text-gray-400' : 'text-gray-600')}>
-                            Qty: {comboItem.quantity}
-                            {comboItem.item_variant && ` • ${comboItem.item_variant.name}`}
-                          </p>
-                        </div>
-                      ))}
+                      <Plus className="w-3 h-3" />
+                      Add Item
+                    </button>
+                  </div>
+
+                  {/* Item Picker */}
+                  {showItemPicker && (
+                    <div className={cn('shrink-0 border-b', isDark ? 'bg-gray-900 border-gray-800' : 'bg-gray-50 border-gray-100')}>
+                      <div className="px-3 py-2 flex items-center gap-2">
+                        <Search className={cn('w-3.5 h-3.5 shrink-0', isDark ? 'text-gray-500' : 'text-gray-400')} />
+                        <input
+                          autoFocus
+                          type="text"
+                          value={itemPickerSearch}
+                          onChange={(e) => setItemPickerSearch(e.target.value)}
+                          placeholder="Search items…"
+                          className={cn(
+                            'flex-1 text-xs bg-transparent focus:outline-none',
+                            isDark ? 'text-gray-200 placeholder-gray-600' : 'text-gray-900 placeholder-gray-400'
+                          )}
+                        />
+                        <button onClick={() => setShowItemPicker(false)}>
+                          <X className={cn('w-3.5 h-3.5', isDark ? 'text-gray-500' : 'text-gray-400')} />
+                        </button>
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        {items
+                          .filter((it) =>
+                            it.name.toLowerCase().includes(itemPickerSearch.toLowerCase())
+                          )
+                          .map((it) => (
+                            <button
+                              key={it.id}
+                              onClick={() => {
+                                setLocalComboItems((prev) => [
+                                  ...prev,
+                                  { item_id: it.id, item_variant_id: null, quantity: 1, sort_order: prev.length },
+                                ])
+                                setShowItemPicker(false)
+                                setItemPickerSearch('')
+                              }}
+                              className={cn(
+                                'w-full text-left px-4 py-2 text-sm transition-colors',
+                                isDark ? 'hover:bg-gray-800 text-gray-200' : 'hover:bg-white text-gray-800'
+                              )}
+                            >
+                              {it.name}
+                            </button>
+                          ))}
+                        {items.filter((it) => it.name.toLowerCase().includes(itemPickerSearch.toLowerCase())).length === 0 && (
+                          <p className={cn('px-4 py-3 text-xs', isDark ? 'text-gray-500' : 'text-gray-400')}>No items found</p>
+                        )}
+                      </div>
                     </div>
                   )}
+
+                  {/* Current Items List */}
+                  <div className="flex-1 overflow-y-auto">
+                    {localComboItems.length === 0 ? (
+                      <div className={cn('flex flex-col items-center justify-center h-40 text-sm', isDark ? 'text-gray-500' : 'text-gray-400')}>
+                        <p>No items in this combo</p>
+                        <p className="text-xs mt-1">Click "Add Item" to get started</p>
+                      </div>
+                    ) : (
+                      <div className={cn('divide-y', isDark ? 'divide-gray-800' : 'divide-gray-100')}>
+                        {localComboItems.map((ci, idx) => {
+                          const itemName = items.find((i) => i.id === ci.item_id)?.name ?? ci.item_id
+                          return (
+                            <div key={idx} className={cn('px-4 py-3 flex items-center gap-3', isDark ? 'hover:bg-gray-900' : 'hover:bg-gray-50')}>
+                              <div className="flex-1 min-w-0">
+                                <p className={cn('font-semibold text-sm truncate', isDark ? 'text-gray-200' : 'text-gray-800')}>
+                                  {itemName}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  onClick={() =>
+                                    setLocalComboItems((prev) =>
+                                      prev.map((x, i) => i === idx ? { ...x, quantity: Math.max(1, x.quantity - 1) } : x)
+                                    )
+                                  }
+                                  className={cn('w-7 h-7 rounded-lg text-sm font-bold flex items-center justify-center', isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}
+                                >
+                                  −
+                                </button>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={ci.quantity}
+                                  onChange={(e) => {
+                                    const q = Math.max(1, Number(e.target.value) || 1)
+                                    setLocalComboItems((prev) =>
+                                      prev.map((x, i) => i === idx ? { ...x, quantity: q } : x)
+                                    )
+                                  }}
+                                  className={cn(
+                                    'w-10 text-center text-sm rounded-lg border focus:outline-none focus:ring-1 focus:ring-orange-400 py-1',
+                                    isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white text-gray-900'
+                                  )}
+                                />
+                                <button
+                                  onClick={() =>
+                                    setLocalComboItems((prev) =>
+                                      prev.map((x, i) => i === idx ? { ...x, quantity: x.quantity + 1 } : x)
+                                    )
+                                  }
+                                  className={cn('w-7 h-7 rounded-lg text-sm font-bold flex items-center justify-center', isDark ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200')}
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <button
+                                onClick={() => setLocalComboItems((prev) => prev.filter((_, i) => i !== idx))}
+                                className="shrink-0 text-red-400 hover:text-red-300 p-1"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Save Button */}
+                  <div className={cn('px-4 py-3 border-t shrink-0', isDark ? 'border-gray-800' : 'border-gray-100')}>
+                    <button
+                      onClick={() => saveItemsMutation.mutate()}
+                      disabled={saveItemsMutation.isPending}
+                      className="w-full py-2 rounded-lg text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50"
+                    >
+                      {saveItemsMutation.isPending ? 'Saving…' : 'Save Items'}
+                    </button>
+                  </div>
                 </div>
               )}
             </>

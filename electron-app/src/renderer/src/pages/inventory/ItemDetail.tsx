@@ -594,9 +594,10 @@ export default function ItemDetail() {
               <input
                 type="file"
                 accept="image/*"
+                multiple
                 onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) uploadMutation.mutate(file)
+                  Array.from(e.target.files ?? []).forEach(file => uploadMutation.mutate(file))
+                  e.target.value = ''
                 }}
                 className="hidden"
               />

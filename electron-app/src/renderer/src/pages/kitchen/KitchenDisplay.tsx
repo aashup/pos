@@ -186,7 +186,7 @@ function KOTCard({ kot, now, onAdvance, onLineToggle, advancing, isDark }: KOTCa
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={cn('font-bold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>
-              KOT #{kot.kot_number}
+              #{kot.kot_number}
             </span>
             {kot.order_type === 'dine_in' && kot.table_name ? (
               <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-orange-500 text-white">

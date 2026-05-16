@@ -54,23 +54,6 @@ export default function PosHeader({ orderType, onOrderTypeChange, onMenuOpen }: 
         <span className="font-bold text-orange-400 text-sm">Zazzy POS</span>
 
         {/* Active order context */}
-        {orderType === 'dine_in' && tableName && (
-          <div className="flex flex-col leading-none">
-            <span className={cn('text-xs font-semibold', isDark ? 'text-gray-200' : 'text-gray-700')}>
-              Table {tableName}
-              {kotNumber && (
-                <span className={cn('ml-1.5 font-normal', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                  (#{kotNumber})
-                </span>
-              )}
-            </span>
-            {orderNotes && (
-              <span className={cn('text-xs truncate max-w-48', isDark ? 'text-orange-300' : 'text-orange-500')}>
-                {orderNotes}
-              </span>
-            )}
-          </div>
-        )}
 
         <div className="flex gap-1">
           {(['takeaway', 'dine_in', 'delivery'] as const).map((t) => (

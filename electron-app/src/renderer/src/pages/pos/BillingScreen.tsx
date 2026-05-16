@@ -10,6 +10,7 @@ import { useOrdersStore } from '../../store/ordersStore'
 import { ordersApi } from '../../api/orders'
 import { ipc } from '../../bridge/ipc'
 import { usePrinter } from '../../hooks/usePrinter'
+import { useResizable } from '../../hooks/useResizable'
 import { useAuthStore } from '../../store/authStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import ItemGrid from '../../components/pos/ItemGrid'
@@ -32,6 +33,8 @@ export default function BillingScreen() {
   const isDark = theme === 'dark'
   const { printInvoice, printKOT } = usePrinter()
   const { user } = useAuthStore()
+  const { width: cartWidth, startResize: startCartResize } =
+    useResizable('pos.layout.cart_width', 320, 260, 520, true)
   const [sendingKot, setSendingKot] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -380,12 +383,18 @@ export default function BillingScreen() {
         onMenuOpen={() => setDrawerOpen(true)}
       />
 
-      {/* Main 2-column layout */}
+      {/* Main 3-column layout */}
       <div className="flex-1 flex overflow-hidden">
         <div className={cn('flex-1 overflow-hidden', isDark ? 'bg-gray-950' : 'bg-gray-50')}>
           <ItemGrid onItemAdd={handleAddItem} />
         </div>
-        <div className="w-80 xl:w-96 shrink-0">
+        <div
+          className="w-1.5 shrink-0 cursor-col-resize bg-gray-200 dark:bg-gray-700 hover:bg-orange-400 dark:hover:bg-orange-500 active:bg-orange-500 transition-colors select-none"
+          style={{ touchAction: 'none' }}
+          onMouseDown={startCartResize}
+          onTouchStart={startCartResize}
+        />
+        <div className="shrink-0" style={{ width: cartWidth }}>
           <Cart
             onSendKot={handleSendKot}
             onCharge={() => setShowPayment(true)}
