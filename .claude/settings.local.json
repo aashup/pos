@@ -2,19 +2,22 @@
   "permissions": {
     "allow": [
       "Bash(npm i *)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(npx tsc --noEmit *)",
+      "Bash(cd * && npx tsc *)",
+      "Bash(cd * && npm run *)",
+      "Bash(make *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
       "PowerShell(npm *)",
       "PowerShell(nvm *)",
-      "Bash(npm install *)",
-      "PowerShell(& \"C:\\\\Users\\\\xtrox\\\\AppData\\\\Roaming\\\\nvm\\\\nvm.exe\" install 20.11.0)",
-      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\api\" -Recurse -Filter \"api.php\" -Type File)",
-      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\main\" -Recurse -File)",
-      "Bash(Select-Object FullName)",
-      "Bash(Sort-Object FullName)",
-      "Bash(npx tsc *)",
-      "Bash(make pos-fresh *)",
-      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\main\\\\db\\\\repositories\\\\\" -File | Select-Object Name)",
-      "Bash(Get-ChildItem -Path \"D:\\\\erp\\\\pos\\\\electron-app\\\\src\\\\renderer\\\\src\" -Recurse -Directory)",
-      "Bash(Select-Object -ExpandProperty FullName)"
+      "PowerShell(npx tsc *)",
+      "PowerShell(cd *; npx tsc *)",
+      "PowerShell(git *)",
+      "PowerShell(& \"C:\\\\Users\\\\xtrox\\\\AppData\\\\Roaming\\\\nvm\\\\nvm.exe\" install 20.11.0)"
     ]
   }
 }

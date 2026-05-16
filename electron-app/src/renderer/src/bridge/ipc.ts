@@ -121,6 +121,8 @@ export interface LocalKot {
   print_count: number
   sync_status: string
   created_at: string
+  table_name: string | null
+  order_type: string
   lines: {
     id: string
     kot_id: string

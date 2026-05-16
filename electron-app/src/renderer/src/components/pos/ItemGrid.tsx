@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import { Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { ipc } from '../../bridge/ipc'
@@ -17,6 +17,9 @@ export interface POSItem extends Item {
 interface Props {
   onItemAdd?: (item: POSItem) => void
 }
+
+// Module-level cache — survives React Query re-fetches for the lifetime of the renderer process
+const imageUrlCache = new Map<string, string | null>()
 
 // Deterministic pastel background per item name (for placeholder)
 const CARD_COLORS = [
@@ -76,6 +79,16 @@ export default function ItemGrid({ onItemAdd }: Props = {}) {
       return matchesGroup && matchesSearch
     })
   }, [allItems, search, selectedGroup])
+
+  // Populate module-level cache; update entry if URL changed (e.g. image downloaded since last fetch)
+  useEffect(() => {
+    for (const item of allItems) {
+      const cached = imageUrlCache.get(item.id)
+      if (cached === undefined || (item.image_url && cached !== item.image_url)) {
+        imageUrlCache.set(item.id, item.image_url ?? null)
+      }
+    }
+  }, [allItems])
 
   // F2 focuses search — registered via global shortcut stack so conflicts resolve correctly
   const f2Shortcut = useMemo(() => [
@@ -167,6 +180,8 @@ function ItemCard({ item, onAdd }: { item: POSItem; onAdd: () => void }) {
     .map((w) => w[0]?.toUpperCase() ?? '')
     .join('')
 
+  const resolvedImageUrl = imageUrlCache.get(item.id) ?? item.image_url ?? null
+
   return (
     <button
       onClick={onAdd}
@@ -174,9 +189,9 @@ function ItemCard({ item, onAdd }: { item: POSItem; onAdd: () => void }) {
     >
       {/* Image / placeholder */}
       <div className="relative w-full aspect-square overflow-hidden">
-        {item.image_url ? (
+        {resolvedImageUrl ? (
           <img
-            src={item.image_url}
+            src={resolvedImageUrl}
             alt={item.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
             loading="lazy"
@@ -192,7 +207,7 @@ function ItemCard({ item, onAdd }: { item: POSItem; onAdd: () => void }) {
           className={cn(
             'absolute inset-0 flex items-center justify-center text-xl font-bold',
             color,
-            item.image_url ? 'hidden' : 'flex',
+            resolvedImageUrl ? 'hidden' : 'flex',
           )}
         >
           {initials}

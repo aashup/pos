@@ -1,0 +1,6 @@
+1. image cash at FE
+2. variants not working
+3. print KOT
+4. Print Invoice 
+5. Download template form backend and store in FE
+6 Mobile app

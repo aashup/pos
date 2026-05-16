@@ -6,6 +6,7 @@ import { useThemeStore } from '../../store/themeStore'
 import { cn } from '../../lib/utils'
 import type { SelectedModifier } from '../../types'
 import type { POSItem } from './ItemGrid'
+import GridDisplaySelection from './GridDisplaySelection'
 
 interface Props {
   item: POSItem
@@ -56,25 +57,6 @@ export default function VariantModifierModal({ item, onConfirm, onClose }: Props
       .reduce((s, m) => s + m.price, 0)
   }, 0)
   const totalPrice = basePrice + modifiersTotal
-
-  const toggleModifier = (group: POSModifierGroup, modifierId: string) => {
-    setSelectedByGroup((prev) => {
-      const next = new Map(prev)
-      const current = new Set(next.get(group.id) ?? [])
-      if (current.has(modifierId)) {
-        current.delete(modifierId)
-      } else {
-        if (group.max_selections === 1) {
-          current.clear()
-        } else if (current.size >= group.max_selections) {
-          return prev
-        }
-        current.add(modifierId)
-      }
-      next.set(group.id, current)
-      return next
-    })
-  }
 
   const handleConfirm = () => {
     if (!canAdd) return
@@ -145,40 +127,17 @@ export default function VariantModifierModal({ item, onConfirm, onClose }: Props
                       <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />
                     )}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {variants.map((v) => {
-                      const price = v.price_override ?? item.selling_price ?? 0
-                      const isSelected = selectedVariantId === v.id
-                      return (
-                        <button
-                          key={v.id}
-                          onClick={() => setSelectedVariantId(v.id)}
-                          style={{ minHeight: 64 }}
-                          className={cn(
-                            'flex flex-col items-center justify-center rounded-xl border-2 px-3 py-3 transition-all text-center',
-                            isSelected
-                              ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/30'
-                              : isDark
-                                ? 'border-gray-700 bg-gray-800 hover:border-gray-600'
-                                : 'border-gray-200 bg-gray-50 hover:border-gray-300',
-                          )}
-                        >
-                          <span className={cn(
-                            'font-semibold text-sm leading-snug',
-                            isSelected ? 'text-orange-700 dark:text-orange-300' : '',
-                          )}>
-                            {v.name}
-                          </span>
-                          <span className={cn(
-                            'text-sm font-bold mt-1',
-                            isSelected ? 'text-orange-600 dark:text-orange-400' : 'text-gray-500 dark:text-gray-400',
-                          )}>
-                            ₹{price.toFixed(0)}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <GridDisplaySelection
+                    items={variants.map((v) => ({
+                      id: v.id,
+                      label: v.name,
+                      sublabel: `₹${(v.price_override ?? item.selling_price ?? 0).toFixed(0)}`,
+                    }))}
+                    selectedIds={selectedVariantId ? [selectedVariantId] : []}
+                    onChange={(ids) => setSelectedVariantId(ids[0] ?? null)}
+                    isMultiSelect={false}
+                    accentColor="orange"
+                  />
                 </section>
               )}
 
@@ -216,41 +175,24 @@ export default function VariantModifierModal({ item, onConfirm, onClose }: Props
                         <CheckCircle2 className="w-4 h-4 text-green-500 ml-auto" />
                       )}
                     </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {(group.modifiers ?? []).map((mod) => {
-                        const isSelected = sel.has(mod.id)
-                        return (
-                          <button
-                            key={mod.id}
-                            onClick={() => toggleModifier(group, mod.id)}
-                            style={{ minHeight: 64 }}
-                            className={cn(
-                              'flex flex-col items-center justify-center rounded-xl border-2 px-3 py-3 transition-all text-center',
-                              isSelected
-                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30'
-                                : isDark
-                                  ? 'border-gray-700 bg-gray-800 hover:border-gray-600'
-                                  : 'border-gray-200 bg-gray-50 hover:border-gray-300',
-                            )}
-                          >
-                            <span className={cn(
-                              'font-semibold text-sm leading-snug',
-                              isSelected ? 'text-blue-700 dark:text-blue-300' : '',
-                            )}>
-                              {mod.name}
-                            </span>
-                            {mod.price > 0 && (
-                              <span className={cn(
-                                'text-sm font-bold mt-1',
-                                isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400',
-                              )}>
-                                +₹{mod.price.toFixed(0)}
-                              </span>
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
+                    <GridDisplaySelection
+                      items={(group.modifiers ?? []).map((m) => ({
+                        id: m.id,
+                        label: m.name,
+                        sublabel: m.price > 0 ? `+₹${m.price.toFixed(0)}` : undefined,
+                      }))}
+                      selectedIds={Array.from(sel)}
+                      onChange={(ids) => {
+                        setSelectedByGroup((prev) => {
+                          const next = new Map(prev)
+                          next.set(group.id, new Set(ids))
+                          return next
+                        })
+                      }}
+                      isMultiSelect={group.max_selections > 1}
+                      maxSelections={group.max_selections > 1 ? group.max_selections : undefined}
+                      accentColor="blue"
+                    />
                   </section>
                 )
               })}

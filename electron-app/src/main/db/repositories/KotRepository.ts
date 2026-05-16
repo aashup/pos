@@ -44,6 +44,8 @@ export interface ActiveKot {
   print_count: number
   sync_status: string
   created_at: string
+  table_name: string | null
+  order_type: string
   lines: LocalKotLine[]
 }
 
@@ -51,10 +53,13 @@ export const KotRepository = {
   listActive(): ActiveKot[] {
     const db = getDb()
     const kots = db.prepare(`
-      SELECT id, server_id, sales_invoice_id, kot_number, status, notes, print_count, sync_status, created_at
-      FROM kots
-      WHERE status IN ('new', 'in_progress', 'ready')
-      ORDER BY created_at ASC
+      SELECT k.id, k.server_id, k.sales_invoice_id, k.kot_number, k.status, k.notes,
+             k.print_count, k.sync_status, k.created_at,
+             si.table_name, COALESCE(si.order_type, 'dine_in') AS order_type
+      FROM kots k
+      LEFT JOIN sales_invoices si ON si.id = k.sales_invoice_id
+      WHERE k.status IN ('new', 'in_progress', 'ready')
+      ORDER BY k.created_at ASC
     `).all() as Record<string, any>[]
 
     return kots.map((k) => ({

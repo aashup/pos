@@ -97,7 +97,11 @@ export const ItemRepository = {
     return db
       .prepare(
         `SELECT i.*,
-           (SELECT url FROM media
+           (SELECT CASE
+              WHEN local_path IS NOT NULL THEN 'media://' || local_path
+              ELSE url
+            END
+            FROM media
             WHERE entity_type = 'item' AND entity_id = i.id
             ORDER BY is_primary DESC, sort_order ASC
             LIMIT 1) AS image_url,

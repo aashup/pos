@@ -286,9 +286,14 @@ function calcRoundOff(amount: number) {
 - Uses `db.transaction()` for every batch upsert (atomic, avoids lock contention)
 - Sets `busy_timeout = 5000` so concurrent reads from main thread don't cause SQLITE_BUSY
 - **PUSH** — `sales_invoices` where `sync_status='pending'` (LIMIT 50); marks `'synced'` or `'failed'`
-- **PULL** — in order: `units`, `item_groups`, `items` (paginated), `media` (paginated), `floor_plans`, `dining_tables`, `godowns`, `orders` (paginated)
+- **PULL** — in order: `units`, `item_groups`, `items` (paginated), `media` (paginated + image download), `floor_plans`, `dining_tables`, `godowns`, `orders` (paginated)
 - Orders pull skips any row where local `sync_status='pending'` to avoid overwriting unsynced local changes
 - Posts `{ pushed, pulled, errors }` via `parentPort.postMessage()` then exits
+
+**Media pull is three-phase** (see Media Image Cache section below):
+1. Metadata upsert (INSERT OR IGNORE + UPDATE — never INSERT OR REPLACE)
+2. Purge records deleted from server + delete local files
+3. Download image files to `{userData}/media-cache/`
 
 **electron-vite config** — SyncWorker is a second rollup entry point:
 ```typescript
@@ -312,6 +317,65 @@ This endpoint (`MediaController@sync`) requires only `entity_type` and returns p
 with `next_page_url` for the cursor loop — no `entity_id` needed.
 
 Do NOT change `SyncWorker.ts` to call `/media` — it will 422 every time.
+
+### ⚠️ Media INSERT OR REPLACE Gotcha
+
+The media upsert **must use `INSERT OR IGNORE` + `UPDATE`**, never `INSERT OR REPLACE`.
+
+`INSERT OR REPLACE` silently deletes the old row and inserts a new one — this wipes `local_path`
+(the cached image filename) on every sync, forcing a re-download each time.
+
+```typescript
+// ✅ correct — preserves local_path on existing rows
+insertStmt.run(...)   // INSERT OR IGNORE
+updateMetaStmt.run(…, id)  // UPDATE all metadata fields WHERE id=?
+
+// ❌ wrong — wipes local_path every sync
+db.prepare('INSERT OR REPLACE INTO media (...) VALUES (...)').run(...)
+```
+
+---
+
+## Media Image Cache
+
+Item images are downloaded to disk during SyncWorker pulls and served via a custom Electron protocol.
+
+### Local cache directory
+`{app.getPath('userData')}/media-cache/` — one file per media record, named `{media_id}{ext}`.
+SyncWorker derives this path from `dirname(dbPath)` (same userData folder, no `app` access in worker).
+
+### Custom protocol: `media://`
+Registered in `src/main/index.ts` before `app.whenReady()`:
+```typescript
+// Before app.whenReady() — required for <img> rendering
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { secure: true, standard: true, supportFetchAPI: true } },
+])
+
+// Inside app.whenReady() before initDatabase():
+protocol.handle('media', (request) => {
+  const filename = decodeURIComponent(request.url.slice('media://'.length).replace(/^\/+/, ''))
+  const filePath = join(app.getPath('userData'), 'media-cache', filename)
+  if (!existsSync(filePath)) return new Response(null, { status: 404 })
+  return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)  // forward slashes required on Windows
+})
+```
+
+### SQLite `media` table — `local_path` column
+`local_path TEXT` stores the bare filename (e.g. `abc-uuid.jpg`). `NULL` means not yet downloaded.
+
+`ItemRepository.getAllForPOS()` returns `media://{local_path}` when file is cached, falls back to remote `url`:
+```sql
+(SELECT CASE
+  WHEN local_path IS NOT NULL THEN 'media://' || local_path
+  ELSE url
+END FROM media WHERE entity_type='item' AND entity_id=i.id
+ORDER BY is_primary DESC, sort_order ASC LIMIT 1) AS image_url
+```
+
+### Frontend session cache (`ItemGrid.tsx`)
+A module-level `Map<string, string | null>` (`imageUrlCache`) prevents image flicker across React Query
+30-second re-fetches. Populated via `useEffect` on `allItems`; `ItemCard` reads from the map first.
 
 ---
 
@@ -461,6 +525,33 @@ This POS runs on touch-screen hardware. All interactive elements must be **minim
 - Price preview updates live as the user selects options
 - Data loaded via two IPC channels: `items:get-variants` and `items:get-modifier-groups` (SQLite, offline-first)
 - Items with no variants and no modifier groups bypass the modal entirely (direct cart add)
+- Both grid sections rendered via `GridDisplaySelection` (see below)
+
+## Reusable Grid Selection (`src/renderer/src/components/pos/GridDisplaySelection.tsx`)
+
+Touch-optimized controlled grid component for any "tap to select" UI (variants, modifiers, etc.).
+
+```typescript
+// Props
+items: GridDisplayItem[]          // { id, label, sublabel? }
+selectedIds: string[]             // controlled
+onChange: (ids: string[]) => void
+isMultiSelect?: boolean           // false = radio (default)
+maxSelections?: number            // cap enforced inside — caller never receives invalid arrays
+columns?: number | 'auto'         // int = fixed cols; undefined/'auto' = responsive 2→3
+accentColor?: 'orange' | 'blue'  // default 'blue'
+ariaLabel?: string
+renderItem?: (item, isSelected, isDark) => ReactNode  // optional custom layout
+className?: string
+```
+
+**Key design rules:**
+- `maxSelections` cap is enforced inside the component — `onChange` is never called with an over-limit array
+- Column classes use a static `COLS_CLASS` record — do NOT use `grid-cols-${n}` (Tailwind purges dynamic interpolation at build)
+- Radio mode supports toggle-off (re-tapping the selected item deselects it)
+- ARIA: container `role="listbox"` + `aria-multiselectable`; items `role="option"` + `aria-selected`
+- Touch: `minHeight: 64`, `touchAction: 'manipulation'`, `active:scale-95` on every item
+- Keyboard: `tabIndex={0}`, `Enter`/`Space` handled via `onKeyDown`
 
 ---
 

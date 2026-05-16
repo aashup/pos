@@ -183,13 +183,24 @@ function KOTCard({ kot, now, onAdvance, onLineToggle, advancing, isDark }: KOTCa
   return (
     <div className={cn('rounded-xl shadow-sm overflow-hidden border', isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200')}>
       <div className={cn('flex items-center justify-between px-3 py-2 border-b', isDark ? 'border-gray-700' : 'border-gray-100')}>
-        <div>
-          <span className={cn('font-bold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>
-            #{kot.kot_number}
-          </span>
-          {kot.notes && <p className={cn('text-xs', isDark ? 'text-gray-400' : 'text-gray-500')}>{kot.notes}</p>}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={cn('font-bold text-sm', isDark ? 'text-gray-200' : 'text-gray-800')}>
+              KOT #{kot.kot_number}
+            </span>
+            {kot.order_type === 'dine_in' && kot.table_name ? (
+              <span className="text-xs font-semibold px-1.5 py-0.5 rounded bg-orange-500 text-white">
+                Table {kot.table_name}
+              </span>
+            ) : (
+              <span className={cn('text-xs font-medium px-1.5 py-0.5 rounded', isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-600')}>
+                {kot.order_type === 'takeaway' ? 'Takeaway' : kot.order_type === 'delivery' ? 'Delivery' : '—'}
+              </span>
+            )}
+          </div>
+          {kot.notes && <p className={cn('text-xs mt-0.5', isDark ? 'text-orange-300' : 'text-orange-600')}>{kot.notes}</p>}
         </div>
-        <div className={cn('flex items-center gap-1 text-xs', isOverdue ? 'text-red-400' : isDark ? 'text-gray-400' : 'text-gray-500')}>
+        <div className={cn('flex items-center gap-1 text-xs shrink-0 ml-2', isOverdue ? 'text-red-400' : isDark ? 'text-gray-400' : 'text-gray-500')}>
           <Clock className="w-3 h-3" />
           <span className="tabular-nums">{elapsedMin}m</span>
         </div>

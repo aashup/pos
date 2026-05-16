@@ -6,6 +6,9 @@
  */
 import { workerData, parentPort } from 'worker_threads'
 import { randomUUID } from 'crypto'
+import { existsSync, mkdirSync, createWriteStream, unlinkSync } from 'fs'
+import { join, dirname, extname } from 'path'
+import { pipeline } from 'stream/promises'
 import Database from 'better-sqlite3'
 import axios from 'axios'
 
@@ -28,6 +31,9 @@ async function run() {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     timeout: 15000,
   })
+
+  const mediaCacheDir = join(dirname(dbPath), 'media-cache')
+  mkdirSync(mediaCacheDir, { recursive: true })
 
   let pulled = 0
   let pushed = 0
@@ -257,11 +263,19 @@ async function run() {
   } catch (e: unknown) { errors.push(`item-modifier-groups: ${(e as Error).message}`) }
 
   // Item media (paginated) — uses /media/sync which allows bulk fetch by entity_type
+  // Three-phase: (A) upsert metadata, (B) purge deleted, (C) download image files
   try {
-    const stmt = db.prepare(
-      `INSERT OR REPLACE INTO media (id, company_id, entity_type, entity_id, url, sort_order, is_primary, synced_at)
+    // Phase A — metadata upsert using INSERT OR IGNORE + UPDATE to preserve local_path
+    // INSERT OR REPLACE would delete+reinsert the row, wiping local_path on every sync.
+    const insertStmt = db.prepare(
+      `INSERT OR IGNORE INTO media (id, company_id, entity_type, entity_id, url, sort_order, is_primary, synced_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
     )
+    const updateMetaStmt = db.prepare(
+      `UPDATE media SET company_id=?, entity_type=?, entity_id=?, url=?, sort_order=?, is_primary=?, synced_at=datetime('now')
+       WHERE id=?`,
+    )
+    const serverIds = new Set<string>()
     let page = 1
     while (true) {
       const res = await client.get(`/media/sync?entity_type=item&per_page=200&page=${page}`)
@@ -270,12 +284,51 @@ async function run() {
       if (rows.length === 0) break
       db.transaction((items: any[]) => {
         for (const m of items) {
-          stmt.run(m.id, m.company_id ?? null, m.entity_type, m.entity_id, m.url, m.sort_order ?? 0, m.is_primary ? 1 : 0)
+          serverIds.add(m.id)
+          insertStmt.run(m.id, m.company_id ?? null, m.entity_type, m.entity_id, m.url, m.sort_order ?? 0, m.is_primary ? 1 : 0)
+          updateMetaStmt.run(m.company_id ?? null, m.entity_type, m.entity_id, m.url, m.sort_order ?? 0, m.is_primary ? 1 : 0, m.id)
           pulled++
         }
       })(rows)
       if (!payload.next_page_url) break
       page++
+    }
+
+    // Phase B — purge records removed from server, delete local files
+    const allLocal = db.prepare(
+      `SELECT id, local_path FROM media WHERE entity_type = 'item'`,
+    ).all() as { id: string; local_path: string | null }[]
+    const deleteStmt = db.prepare(`DELETE FROM media WHERE id = ?`)
+    for (const row of allLocal.filter((r) => !serverIds.has(r.id))) {
+      if (row.local_path) {
+        try { unlinkSync(join(mediaCacheDir, row.local_path)) } catch { /* non-critical */ }
+      }
+      deleteStmt.run(row.id)
+    }
+
+    // Phase C — download missing image files (async I/O outside any transaction)
+    const toDownload = db.prepare(
+      `SELECT id, url, local_path FROM media WHERE entity_type = 'item' AND url IS NOT NULL`,
+    ).all() as { id: string; url: string; local_path: string | null }[]
+    const updateLocalPathStmt = db.prepare(`UPDATE media SET local_path = ? WHERE id = ?`)
+    for (const row of toDownload) {
+      try {
+        const urlPath = new URL(row.url).pathname
+        const ext = extname(urlPath) || '.jpg'
+        const filename = `${row.id}${ext}`
+        const filePath = join(mediaCacheDir, filename)
+        if (row.local_path === filename && existsSync(filePath)) continue
+        const imgRes = await axios.get(row.url, {
+          responseType: 'stream',
+          timeout: 20_000,
+          maxContentLength: 5 * 1024 * 1024,
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        await pipeline(imgRes.data, createWriteStream(filePath))
+        updateLocalPathStmt.run(filename, row.id)
+      } catch (e: unknown) {
+        errors.push(`media-download ${row.id}: ${(e as Error).message}`)
+      }
     }
   } catch (e: unknown) { errors.push(`media: ${(e as Error).message}`) }
 

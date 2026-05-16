@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS media (
   entity_type TEXT,
   entity_id   TEXT,
   url         TEXT,
+  local_path  TEXT,
   sort_order  INTEGER DEFAULT 0,
   is_primary  INTEGER DEFAULT 0,
   synced_at   TEXT

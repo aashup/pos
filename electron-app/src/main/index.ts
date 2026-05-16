@@ -1,11 +1,17 @@
-import { app, BrowserWindow, shell, ipcMain, screen } from 'electron'
+import { app, BrowserWindow, shell, ipcMain, screen, protocol, net } from 'electron'
 import { join } from 'path'
+import { existsSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { autoUpdater } from 'electron-updater'
 import { TokenStore } from './auth/TokenStore'
 import { initDatabase } from './db/database'
 import { registerIpcHandlers } from './ipc/ipcHandlers'
 import { SyncScheduler } from './sync/SyncScheduler'
+
+// Must be called before app.whenReady() so <img> tags can load media:// URLs
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'media', privileges: { secure: true, standard: true, supportFetchAPI: true } },
+])
 
 let mainWindow: BrowserWindow | null = null
 let kitchenWindow: BrowserWindow | null = null
@@ -128,6 +134,18 @@ function registerWindowIpc(): void {
   })
 }
 
+// ── Media protocol ────────────────────────────────────────────────────────────
+
+function registerMediaProtocol(): void {
+  const mediaCacheDir = join(app.getPath('userData'), 'media-cache')
+  protocol.handle('media', (request) => {
+    const filename = decodeURIComponent(request.url.slice('media://'.length).replace(/^\/+/, ''))
+    const filePath = join(mediaCacheDir, filename)
+    if (!existsSync(filePath)) return new Response(null, { status: 404 })
+    return net.fetch(`file:///${filePath.replace(/\\/g, '/')}`)
+  })
+}
+
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
@@ -137,6 +155,7 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
+  registerMediaProtocol()
   initDatabase()
   registerIpcHandlers()
   registerWindowIpc()

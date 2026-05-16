@@ -34,4 +34,9 @@ export function initDatabase(): void {
   if (!cols.find((c) => c.name === 'type')) {
     db.exec("ALTER TABLE pos_customers ADD COLUMN type TEXT DEFAULT 'customer'")
   }
+
+  const mediaCols = db.prepare('PRAGMA table_info(media)').all() as { name: string }[]
+  if (!mediaCols.find((c) => c.name === 'local_path')) {
+    db.exec('ALTER TABLE media ADD COLUMN local_path TEXT')
+  }
 }
