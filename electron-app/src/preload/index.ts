@@ -89,7 +89,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     receipt:          (data: unknown): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:receipt', data),
     kot:              (data: unknown): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:kot', data),
     kotFromTemplate:  (data: unknown, layout: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:kot-from-template', data, layout),
-    htmlInvoice:      (html: string): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:html-invoice', html),
+    htmlInvoice:      (html: string, silent?: boolean): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:html-invoice', html, silent),
+    htmlKot:          (html: string, silent?: boolean): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('print:html-kot', html, silent),
     listPrinters:     (): Promise<string[]> => ipcRenderer.invoke('print:list-printers'),
   },
 

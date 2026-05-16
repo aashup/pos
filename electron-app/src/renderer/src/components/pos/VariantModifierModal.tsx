@@ -105,7 +105,7 @@ export default function VariantModifierModal({ item, onConfirm, onClose }: Props
       'text-xs px-1.5 py-0.5 rounded-full font-medium',
       isDark ? 'bg-gray-700 text-gray-400' : 'bg-gray-100 text-gray-500',
     )}>
-      Optional
+      
     </span>
   )
 

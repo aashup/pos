@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Printer, RefreshCw } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { Printer, RefreshCw, CheckCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ipc } from '../../bridge/ipc'
 import { useThemeStore } from '../../store/themeStore'
@@ -8,7 +7,6 @@ import { cn } from '../../lib/utils'
 import Header from '../../components/layout/Header'
 
 export default function PrinterSettings() {
-  const navigate = useNavigate()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
   const [printers, setPrinters]         = useState<string[]>([])
@@ -16,6 +14,7 @@ export default function PrinterSettings() {
   const [printerName, setPrinterName]   = useState('')
   const [kotPrinter, setKotPrinter]     = useState('')
   const [paperWidth, setPaperWidth]     = useState('80')
+  const [kotPaperWidth, setKotPaperWidth] = useState('80')
   const [saved, setSaved]               = useState(false)
 
   useEffect(() => {
@@ -23,10 +22,12 @@ export default function PrinterSettings() {
       ipc.settings.get('printerName'),
       ipc.settings.get('kotPrinterName'),
       ipc.settings.get('paperWidth'),
-    ]).then(([p, k, w]) => {
+      ipc.settings.get('kotPaperWidth'),
+    ]).then(([p, k, w, kw]) => {
       if (p) setPrinterName(p)
       if (k) setKotPrinter(k)
       if (w) setPaperWidth(w)
+      if (kw) setKotPaperWidth(kw)
     })
   }, [])
 
@@ -48,6 +49,7 @@ export default function PrinterSettings() {
       ipc.settings.set('printerName', printerName),
       ipc.settings.set('kotPrinterName', kotPrinter || printerName),
       ipc.settings.set('paperWidth', paperWidth),
+      ipc.settings.set('kotPaperWidth', kotPaperWidth),
     ])
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
@@ -56,22 +58,65 @@ export default function PrinterSettings() {
 
   const testPrint = async () => {
     if (!printerName) { toast.error('Select a printer first'); return }
-    const result = await ipc.print.receipt({
-      outletName: 'Test Restaurant',
-      outletAddress: '123 Test Street',
-      invoiceNumber: 'TEST-00001',
-      invoiceDate: new Date().toLocaleDateString('en-IN'),
-      orderType: 'takeaway',
-      items: [{ name: 'Test Item', quantity: 1, rate: 100, gstRate: 5, lineTotal: 100 }],
-      subtotal: 95.24,
-      cgst: 2.38,
-      sgst: 2.38,
-      discount: 0,
-      grandTotal: 100,
-      paymentMode: 'cash',
-    })
-    if (result.success) toast.success('Test print sent!')
-    else toast.error(result.error ?? 'Print failed')
+    await ipc.settings.set('printerName', printerName)
+    await ipc.settings.set('paperWidth', paperWidth)
+    const w = paperWidth === '58' ? '58mm' : '80mm'
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:monospace;font-size:${paperWidth==='58'?'9px':'11px'};width:${w};padding:6px}
+.center{text-align:center}.bold{font-weight:bold}.line{border-top:1px dashed #000;margin:4px 0}
+@media print{@page{margin:0;size:${w} auto}body{width:auto}}</style></head><body>
+<div class="center bold" style="font-size:14px">Test Restaurant</div>
+<div class="center">123 Test Street</div>
+<div class="line"></div>
+<div>Invoice: TEST-00001</div>
+<div>Date: ${new Date().toLocaleDateString('en-IN')}</div>
+<div>Type: Takeaway</div>
+<div class="line"></div>
+<div style="display:flex;justify-content:space-between"><span class="bold">Test Item x1</span><span>₹100.00</span></div>
+<div class="line"></div>
+<div style="display:flex;justify-content:space-between"><span>CGST 2.5%</span><span>₹2.38</span></div>
+<div style="display:flex;justify-content:space-between"><span>SGST 2.5%</span><span>₹2.38</span></div>
+<div style="display:flex;justify-content:space-between" class="bold"><span>TOTAL</span><span>₹100.00</span></div>
+<div class="line"></div>
+<div class="center" style="margin-top:6px">Thank you! Visit again.</div>
+</body></html>`
+    try {
+      const result = await ipc.print.htmlInvoice(html, false)
+      if (result.success) toast.success('Test receipt sent to printer!')
+      else toast.error(result.error ?? 'Print failed')
+    } catch (err) {
+      toast.error(`Print error: ${String(err)}`)
+    }
+  }
+
+  const testKotPrint = async () => {
+    const targetPrinter = kotPrinter || printerName
+    if (!targetPrinter) { toast.error('Select a printer first'); return }
+    await ipc.settings.set('kotPrinterName', targetPrinter)
+    await ipc.settings.set('kotPaperWidth', kotPaperWidth)
+    const w = kotPaperWidth === '58' ? '58mm' : '80mm'
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:monospace;font-size:${kotPaperWidth==='58'?'9px':'13px'};width:${w};padding:8px}
+.center{text-align:center}.bold{font-weight:bold}.line{border-top:1px dashed #000;margin:4px 0}.note{font-size:11px;margin-left:8px}
+@media print{@page{margin:0;size:${w} auto}body{width:auto}}</style></head><body>
+<div class="center bold" style="font-size:18px">KOT</div>
+<div class="center">#TEST-001</div>
+<div class="line"></div>
+<div>Dine In — Table 1</div>
+<div>${new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true})}</div>
+<div class="line"></div>
+<div class="bold">2x  Butter Chicken</div>
+<div class="note">↳ Less spicy</div>
+<div class="bold">4x  Naan</div>
+<div class="line"></div>
+</body></html>`
+    try {
+      const result = await ipc.print.htmlKot(html, false)
+      if (result.success) toast.success('Test KOT sent to printer!')
+      else toast.error(result.error ?? 'KOT print failed')
+    } catch (err) {
+      toast.error(`KOT print error: ${String(err)}`)
+    }
   }
 
   return (
@@ -164,6 +209,24 @@ export default function PrinterSettings() {
               className={cn('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400', isDark ? 'bg-gray-800 border-gray-700 text-gray-200' : 'border-gray-200 bg-white')}
             />
           </div>
+          <div>
+            <label className={cn('text-xs block mb-1', isDark ? 'text-gray-400' : 'text-gray-500')}>KOT Paper Width</label>
+            <div className="flex gap-2">
+              {['58', '80'].map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setKotPaperWidth(w)}
+                  className={cn('flex-1 py-2 rounded-lg border text-sm font-medium transition-colors',
+                    kotPaperWidth === w
+                      ? isDark ? 'border-orange-500 bg-orange-900 text-orange-200' : 'border-orange-500 bg-orange-50 text-orange-700'
+                      : isDark ? 'border-gray-700 text-gray-300 hover:border-gray-600' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+                  )}
+                >
+                  {w}mm
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Actions */}
@@ -173,7 +236,14 @@ export default function PrinterSettings() {
             className={cn('flex-1 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 border', isDark ? 'border-gray-700 text-gray-200 hover:bg-gray-800' : 'border-gray-200 text-gray-700 hover:border-gray-300')}
           >
             <Printer className="w-4 h-4" />
-            Test Print
+            Test Receipt
+          </button>
+          <button
+            onClick={testKotPrint}
+            className={cn('flex-1 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2 border', isDark ? 'border-gray-700 text-gray-200 hover:bg-gray-800' : 'border-gray-200 text-gray-700 hover:border-gray-300')}
+          >
+            <Printer className="w-4 h-4" />
+            Test KOT
           </button>
           <button
             onClick={handleSave}

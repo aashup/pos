@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Users, RefreshCw } from 'lucide-react'
+import { Users, RefreshCw, LayoutGrid, Map as MapIcon } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 import { useCartStore } from '../../store/cartStore'
@@ -218,6 +218,17 @@ export default function TableSelection() {
         ))}
         <span className={cn('ml-auto flex items-center gap-3', isDark ? 'text-gray-500' : 'text-gray-400')}>
           {visibleTables.length} tables
+          <button
+            onClick={() => {
+              const next = viewMode === 'map' ? 'grid' : 'map'
+              setViewMode(next)
+              localStorage.setItem('tableViewMode', next)
+            }}
+            className="flex items-center gap-1 hover:text-orange-500 transition-colors"
+            title={viewMode === 'map' ? 'Switch to Grid View' : 'Switch to Map View'}
+          >
+            {viewMode === 'map' ? <LayoutGrid className="w-3.5 h-3.5" /> : <MapIcon className="w-3.5 h-3.5" />}
+          </button>
           <button
             onClick={() => { loadTables(); loadOrders(); refetch() }}
             disabled={loading}

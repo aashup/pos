@@ -9,7 +9,7 @@ import { KotRepository } from '../db/repositories/KotRepository'
 import { CustomerRepository } from '../db/repositories/CustomerRepository'
 import { runSync, getSyncStatus } from '../sync/SyncEngine'
 import { printReceipt, printKOT, printKotFromTemplate, type ReceiptData, type KOTData } from '../print/ThermalPrinter'
-import { printHtmlInvoice } from '../print/HtmlInvoicePrinter'
+import { printHtmlInvoice, printHtmlKot } from '../print/HtmlInvoicePrinter'
 import { PrintTemplateRepository } from '../db/repositories/PrintTemplateRepository'
 import type { LocalPrintTemplate } from '../db/repositories/PrintTemplateRepository'
 
@@ -91,16 +91,6 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('order:send-kot', async (_, localOrderId: string) => {
     const kot = OrderRepository.createKot(localOrderId)
     if (!kot) return { success: false, error: 'No pending items' }
-
-    // Print locally — non-blocking, failure is non-critical
-    try {
-      await printKOT({
-        kotNumber: kot.kot_number,
-        items: kot.lines.map((l) => ({ name: l.item_name, qty: l.quantity, notes: l.notes ?? undefined })),
-      } as KOTData)
-    } catch {
-      // KOT printed nothing — user can reprint from order detail
-    }
 
     // Background push to server (fire-and-forget — SyncWorker retries on failure)
     const token = TokenStore.getToken()
@@ -410,7 +400,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('print:kot-from-template', (_, data: KOTData, layout: string) =>
     printKotFromTemplate(data, layout),
   )
-  ipcMain.handle('print:html-invoice', (_, html: string) => printHtmlInvoice(html))
+  ipcMain.handle('print:html-invoice', (_, html: string, silent?: boolean) => printHtmlInvoice(html, silent ?? true))
+  ipcMain.handle('print:html-kot', (_, html: string, silent?: boolean) => printHtmlKot(html, silent ?? true))
 
   // List printers via renderer's webContents (which has access to OS printers)
   ipcMain.handle('print:list-printers', async (event) => {

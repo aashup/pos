@@ -1,5 +1,66 @@
 import { ThermalPrinter, PrinterTypes, CharacterSet } from 'node-thermal-printer'
 import { TokenStore } from '../auth/TokenStore'
+import { exec } from 'child_process'
+import { writeFileSync, unlinkSync } from 'fs'
+import { join } from 'path'
+import { tmpdir } from 'os'
+
+// Windows raw-printing driver — sends ESC/POS bytes via winspool.drv (no native addon needed)
+const windowsRawDriver = {
+  getPrinters() { return [] },
+  getPrinter(name: string) { return { name, attributes: ['RAW-ONLY'], status: [] } },
+  printDirect({ data, printer, success, error }: {
+    data: Buffer; printer: string; type: string
+    success: (id: number) => void; error: (e: Error) => void
+  }) {
+    const tmp = join(tmpdir(), `pos_${Date.now()}.bin`)
+    try { writeFileSync(tmp, data) } catch (e) { error(e as Error); return }
+
+    // PowerShell: P/Invoke winspool.drv to send RAW bytes to the Windows print spooler
+    const ps = `
+$bytes=[System.IO.File]::ReadAllBytes('${tmp.replace(/'/g, "''")}')
+Add-Type -TypeDefinition @"
+using System;using System.Runtime.InteropServices;
+public class WinSpool{
+  [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Auto)]
+  public struct DOCINFO{public string pDocName;public string pOutputFile;public string pDataType;}
+  [DllImport("winspool.drv",CharSet=CharSet.Auto,SetLastError=true)]
+  public static extern bool OpenPrinter(string n,out IntPtr h,IntPtr d);
+  [DllImport("winspool.drv",CharSet=CharSet.Auto,SetLastError=true)]
+  public static extern bool ClosePrinter(IntPtr h);
+  [DllImport("winspool.drv",CharSet=CharSet.Auto,SetLastError=true)]
+  public static extern int StartDocPrinter(IntPtr h,int lvl,ref DOCINFO d);
+  [DllImport("winspool.drv",CharSet=CharSet.Auto,SetLastError=true)]
+  public static extern bool EndDocPrinter(IntPtr h);
+  [DllImport("winspool.drv",CharSet=CharSet.Auto,SetLastError=true)]
+  public static extern bool StartPagePrinter(IntPtr h);
+  [DllImport("winspool.drv",CharSet=CharSet.Auto,SetLastError=true)]
+  public static extern bool EndPagePrinter(IntPtr h);
+  [DllImport("winspool.drv",CharSet=CharSet.Auto,SetLastError=true)]
+  public static extern bool WritePrinter(IntPtr h,byte[] b,int n,out int w);
+}
+"@ -ErrorAction Stop
+$h=[IntPtr]::Zero
+if(-not [WinSpool]::OpenPrinter('${printer.replace(/'/g, "''")}' ,[ref]$h,[IntPtr]::Zero)){throw "OpenPrinter failed"}
+$di=New-Object WinSpool+DOCINFO;$di.pDocName="POS";$di.pDataType="RAW"
+[WinSpool]::StartDocPrinter($h,1,[ref]$di)|Out-Null
+[WinSpool]::StartPagePrinter($h)|Out-Null
+$w=0;[WinSpool]::WritePrinter($h,$bytes,$bytes.Length,[ref]$w)|Out-Null
+[WinSpool]::EndPagePrinter($h)|Out-Null
+[WinSpool]::EndDocPrinter($h)|Out-Null
+[WinSpool]::ClosePrinter($h)|Out-Null
+Write-Output "ok:$w"
+`
+    exec(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`,
+      { timeout: 15000 },
+      (err, stdout, stderr) => {
+        try { unlinkSync(tmp) } catch { /* ignore */ }
+        if (err) { error(new Error(stderr || err.message)); return }
+        success(1)
+      }
+    )
+  },
+}
 
 export interface ReceiptData {
   outletName: string
@@ -35,8 +96,8 @@ function getPrinterName(): string {
   return TokenStore.getSetting('printerName') ?? ''
 }
 
-function getPaperWidth(): number {
-  const w = TokenStore.getSetting('paperWidth')
+function getPaperWidth(key = 'paperWidth'): number {
+  const w = TokenStore.getSetting(key)
   return w === '58' ? 32 : 48  // chars per line
 }
 
@@ -49,8 +110,10 @@ function buildPrinter(printerName: string): ThermalPrinter | null {
       characterSet: CharacterSet.PC437_USA,
       removeSpecialCharacters: false,
       lineCharacter: '-',
+      driver: windowsRawDriver,
     })
-  } catch {
+  } catch (err) {
+    console.error('[buildPrinter] constructor threw for', printerName, err)
     return null
   }
 }
@@ -151,7 +214,8 @@ export async function printReceipt(data: ReceiptData): Promise<{ success: boolea
 export async function printKOT(data: KOTData): Promise<{ success: boolean; error?: string }> {
   const kotPrinterName = TokenStore.getSetting('kotPrinterName') ?? getPrinterName()
   const printer        = buildPrinter(kotPrinterName)
-  const w              = getPaperWidth()
+  const kotW           = TokenStore.getSetting('kotPaperWidth') ?? TokenStore.getSetting('paperWidth')
+  const w              = kotW === '58' ? 32 : 48
 
   if (!printer) {
     return { success: false, error: 'No KOT printer configured.' }
@@ -256,7 +320,8 @@ export async function printKotFromTemplate(
 
   const kotPrinterName = TokenStore.getSetting('kotPrinterName') ?? getPrinterName()
   const printer        = buildPrinter(kotPrinterName)
-  const w              = getPaperWidth()
+  const kotW           = TokenStore.getSetting('kotPaperWidth') ?? TokenStore.getSetting('paperWidth')
+  const w              = kotW === '58' ? 32 : 48
 
   if (!printer) return { success: false, error: 'No KOT printer configured.' }
 

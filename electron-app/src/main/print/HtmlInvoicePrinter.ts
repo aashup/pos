@@ -1,10 +1,18 @@
 import { BrowserWindow } from 'electron'
 import { TokenStore } from '../auth/TokenStore'
 
-export async function printHtmlInvoice(
+// paper width in mm → microns (Electron pageSize unit)
+function paperWidthMicrons(settingKey: string): number {
+  const val = TokenStore.getSetting(settingKey)
+  return val === '58' ? 58000 : 80000
+}
+
+async function printWithPrinter(
   html: string,
+  printerName: string,
+  silent = true,
+  widthMicrons = 80000,
 ): Promise<{ success: boolean; error?: string }> {
-  const printerName = TokenStore.getSetting('printerName') ?? ''
 
   let win: BrowserWindow | null = null
   try {
@@ -13,21 +21,21 @@ export async function printHtmlInvoice(
       height: 1,
       show: false,
       webPreferences: {
-        // No node integration needed — just rendering static HTML
         nodeIntegration: false,
         contextIsolation: true,
       },
     })
 
-    // data: URI loads instantly without a round-trip; no network required
     await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
 
     await new Promise<void>((resolve, reject) => {
       if (!win) return reject(new Error('Window destroyed'))
 
       const printOptions: Electron.WebContentsPrintOptions = {
-        silent: true,
+        silent,
         printBackground: true,
+        // 1 000 000 µm tall = 1 m — enough for any receipt; content height controls actual cut
+        pageSize: { width: widthMicrons, height: 1000000 },
         ...(printerName ? { deviceName: printerName } : {}),
       }
 
@@ -41,7 +49,27 @@ export async function printHtmlInvoice(
   } catch (err) {
     return { success: false, error: String(err) }
   } finally {
-    // Always clean up — even if print threw
     if (win && !win.isDestroyed()) win.destroy()
   }
+}
+
+export async function printHtmlInvoice(
+  html: string,
+  silent = true,
+): Promise<{ success: boolean; error?: string }> {
+  return printWithPrinter(
+    html,
+    TokenStore.getSetting('printerName') ?? '',
+    silent,
+    paperWidthMicrons('paperWidth'),
+  )
+}
+
+export async function printHtmlKot(
+  html: string,
+  silent = true,
+): Promise<{ success: boolean; error?: string }> {
+  const kotPrinter = TokenStore.getSetting('kotPrinterName') ?? TokenStore.getSetting('printerName') ?? ''
+  const widthKey   = TokenStore.getSetting('kotPaperWidth') ? 'kotPaperWidth' : 'paperWidth'
+  return printWithPrinter(html, kotPrinter, silent, paperWidthMicrons(widthKey))
 }

@@ -9,6 +9,8 @@ import { useThemeStore } from '../../store/themeStore'
 import { useOrdersStore } from '../../store/ordersStore'
 import { ordersApi } from '../../api/orders'
 import { ipc } from '../../bridge/ipc'
+import { usePrinter } from '../../hooks/usePrinter'
+import { useAuthStore } from '../../store/authStore'
 import { formatCurrency, cn } from '../../lib/utils'
 import ItemGrid from '../../components/pos/ItemGrid'
 import Cart from '../../components/pos/Cart'
@@ -19,6 +21,7 @@ import VariantModifierModal from '../../components/pos/VariantModifierModal'
 import type { POSItem } from '../../components/pos/ItemGrid'
 import type { POSItemVariant } from '../../bridge/ipc'
 import type { Item, SelectedModifier, ItemVariant } from '../../types'
+import type { KotTemplateData } from '../../types/printing'
 
 export default function BillingScreen() {
   const navigate = useNavigate()
@@ -27,6 +30,8 @@ export default function BillingScreen() {
   const { updateTableStatus } = useTablesStore()
   const { theme } = useThemeStore()
   const isDark = theme === 'dark'
+  const { printInvoice, printKOT } = usePrinter()
+  const { user } = useAuthStore()
   const [sendingKot, setSendingKot] = useState(false)
   const [showPayment, setShowPayment] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -200,19 +205,18 @@ export default function BillingScreen() {
     state.addVariantItem(item as Item, variant as ItemVariant | null, modifiers)
   }, [variantModalItem])
 
-  const handleSendKot = useCallback(async () => {
+  // Shared KOT creation — marks lines sent, syncs to server, returns kotData for printing (or null for legacy path)
+  const createKotEntry = useCallback(async (): Promise<{ kotData: KotTemplateData | null } | null> => {
     const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
-    if (sendingKot || pendingLines.length === 0) return
+    if (sendingKot || pendingLines.length === 0) return null
 
     setSendingKot(true)
     try {
-      console.log(localOrderId, orderId, )
       if (localOrderId) {
-        // Offline-first: create local KOT, print, push to server in background
         const result = await ipc.order.sendKot(localOrderId)
         if (!result.success) {
           toast.error(result.error ?? 'No pending items')
-          return
+          return null
         }
         toast.success(`KOT ${result.kotNumber ?? ''} sent to kitchen`)
         useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
@@ -221,36 +225,68 @@ export default function BillingScreen() {
         const os = useOrdersStore.getState()
         const curr = os.orders.find((o) => o.id === localOrderId)
         os.upsertOrder({ id: localOrderId, kot_count: (curr?.kot_count ?? 0) + 1, latest_kot_status: 'new', pending_line_count: 0 })
+
+        if (!result.kotNumber) return { kotData: null }
+        const cartState = useCartStore.getState()
+        const kotData: KotTemplateData = {
+          kotNumber: result.kotNumber,
+          tableName: cartState.tableName ?? undefined,
+          orderType: cartState.orderType,
+          pax: cartState.pax ?? undefined,
+          items: (result.lines as Array<{ item_name: string; quantity: number; notes?: string | null }> ?? []).map((l) => ({
+            name: l.item_name,
+            quantity: l.quantity,
+            notes: l.notes ?? undefined,
+          })),
+          notes: cartState.orderNotes || undefined,
+        }
+        return { kotData }
       } else if (orderId) {
-        // Resumed occupied table — only push NEW lines (not server-native ones that already exist)
         const newLines = pendingLines.filter((l) => !l.isServerNative)
         if (newLines.length > 0) {
-          await ordersApi.addLines(
-            orderId,
-            newLines.map((l) => ({
-              item_id: l.itemId,
-              quantity: l.quantity,
-              rate: l.rate,
-              discount_percent: l.discountPct,
-              gst_rate: l.gstRate,
-              notes: l.notes || undefined,
-            })),
-          )
+          await ordersApi.addLines(orderId, newLines.map((l) => ({
+            item_id: l.itemId,
+            quantity: l.quantity,
+            rate: l.rate,
+            discount_percent: l.discountPct,
+            gst_rate: l.gstRate,
+            notes: l.notes || undefined,
+          })))
         }
         const res = await ordersApi.sendKot(orderId)
         const kot = res.data?.data
         toast.success(`KOT ${kot?.kot_number ?? ''} sent to kitchen`)
         useCartStore.getState().markLinesSent(pendingLines.map((l) => l.id))
         if (tableId) updateTableStatus(tableId, 'occupied', orderId)
+        return { kotData: null }
       } else {
         toast.error('No active order. Select a table or choose an order type.')
+        return null
       }
     } catch {
       toast.error('Failed to send KOT')
+      return null
     } finally {
       setSendingKot(false)
     }
-  }, [orderId, localOrderId, lines])
+  }, [orderId, localOrderId, lines, sendingKot, tableId, setKotNumber, updateTableStatus])
+
+  // KOT Display — send KOT to kitchen display only, no print
+  const handleKotDisplay = useCallback(async () => {
+    const result = await createKotEntry()
+    if (!result) return
+    ipc.window.openKitchen()
+  }, [createKotEntry])
+
+  // KOT Print — send KOT to kitchen display and print the slip
+  const handleSendKot = useCallback(async () => {
+    const result = await createKotEntry()
+    if (!result) return
+    ipc.window.openKitchen()
+    if (result.kotData) {
+      printKOT(result.kotData, { skipDuplicateCheck: true }).catch(() => {})
+    }
+  }, [createKotEntry, printKOT])
 
   const handleHoldOrder = useCallback(async () => {
     setHoldingOrder(true)
@@ -273,6 +309,32 @@ export default function BillingScreen() {
       setHoldingOrder(false)
     }
   }, [orderId, localOrderId, orderType, clearOrder, navigate])
+
+  const handlePrint = useCallback(async () => {
+    if (lines.length === 0) return
+    const outletName = user?.name ?? 'Restaurant'
+    const result = await printInvoice({
+      outletName,
+      invoiceNumber: localOrderId ?? orderId ?? 'DRAFT',
+      invoiceDate: new Date().toLocaleDateString('en-IN'),
+      orderType,
+      tableName: useCartStore.getState().tableName ?? undefined,
+      items: lines.map((l) => ({
+        name: l.variantName ? `${l.name} (${l.variantName})` : l.name,
+        quantity: l.quantity,
+        rate: l.rate,
+        gstRate: l.gstRate,
+        lineTotal: +(l.rate * l.quantity).toFixed(2),
+      })),
+      subtotal: totals.subtotal,
+      cgst: totals.cgstTotal,
+      sgst: totals.sgstTotal,
+      discount: 0,
+      grandTotal: totals.netPayable,
+      paymentMode: 'pending',
+    })
+    if (!result.success) toast.error(result.error ?? 'Print failed')
+  }, [lines, totals, localOrderId, orderId, orderType, user, printInvoice])
 
   // Keep ordersStore total in sync as items are added/removed
   useEffect(() => {
@@ -326,6 +388,8 @@ export default function BillingScreen() {
             onSendKot={handleSendKot}
             onCharge={() => setShowPayment(true)}
             onHold={localOrderId || (orderId && !orderId.startsWith('local-')) ? handleHoldOrder : undefined}
+            onPrint={handlePrint}
+            onKotDisplay={handleKotDisplay}
             sendingKot={sendingKot}
             holdingOrder={holdingOrder}
           />

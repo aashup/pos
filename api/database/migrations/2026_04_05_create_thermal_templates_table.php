@@ -14,6 +14,7 @@ return new class extends Migration
             $table->string('name', 255);
             $table->longText('html_content');
             $table->enum('paper_size', ['2inch', '3inch'])->default('2inch');
+            $table->string('template_type', 50)->default('invoice');
             $table->boolean('is_default')->default(false);
             $table->foreignUuid('created_by')->constrained('users');
             $table->foreignUuid('updated_by')->nullable()->constrained('users');
@@ -31,6 +32,7 @@ return new class extends Migration
             // Only a plain index — uniqueness of is_default=true per paper_size
             // is enforced in the controller (MySQL can't do partial unique indexes)
             $table->index(['company_id', 'paper_size']);
+            $table->index(['company_id', 'template_type']);
         });
     }
 

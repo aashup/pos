@@ -10,18 +10,32 @@ interface TemplateSyncResult {
   triggerSync: () => void
 }
 
+function mapBackendTemplate(t: Record<string, unknown>): LocalPrintTemplate {
+  return {
+    id:          t.id as string,
+    type:        ((t.template_type ?? 'invoice') as string) as LocalPrintTemplate['type'],
+    name:        t.name as string,
+    layout:      t.html_content as string,
+    is_active:   t.is_default ? 1 : 0,
+    server_id:   t.id as string,
+    sync_status: 'synced',
+    updated_at:  (t.updated_at as string | null) ?? null,
+    created_at:  t.created_at as string,
+  }
+}
+
 async function fetchTemplatesFromApi(
   serverUrl: string,
   token: string,
 ): Promise<LocalPrintTemplate[]> {
-  const res = await fetch(`${serverUrl}/api/v1/print-templates`, {
+  const res = await fetch(`${serverUrl}/api/v1/thermal-templates?per_page=100`, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     signal: AbortSignal.timeout(8000),
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const json = await res.json()
-  // Accept either { data: [...] } or a bare array
-  return Array.isArray(json) ? json : (json.data ?? [])
+  const raw: Record<string, unknown>[] = Array.isArray(json) ? json : (json.data ?? [])
+  return raw.map(mapBackendTemplate)
 }
 
 export function useTemplateSync(): TemplateSyncResult {

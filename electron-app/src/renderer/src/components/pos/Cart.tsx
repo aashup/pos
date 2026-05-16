@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Minus, Plus, Trash2, Send, CreditCard, PauseCircle, Loader2, User, X, MessageSquare, FileText } from 'lucide-react'
+import { Trash2, Send, CreditCard, PauseCircle, Loader2, User, X, MessageSquare, FileText, Printer, Monitor } from 'lucide-react'
 import { useCartStore } from '../../store/cartStore'
 import { ipc } from '../../bridge/ipc'
 import { formatCurrency, cn } from '../../lib/utils'
@@ -9,11 +9,13 @@ interface CartProps {
   onSendKot: () => void
   onCharge: () => void
   onHold?: () => void
+  onPrint?: () => void
+  onKotDisplay?: () => void
   sendingKot?: boolean
   holdingOrder?: boolean
 }
 
-export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingOrder }: CartProps) {
+export default function Cart({ onSendKot, onCharge, onHold, onPrint, onKotDisplay, sendingKot, holdingOrder }: CartProps) {
   const {
     lines, totals, tableName, orderType, localOrderId,
     orderNotes, setOrderNotes,
@@ -275,38 +277,77 @@ export default function Cart({ onSendKot, onCharge, onHold, sendingKot, holdingO
       )}
 
       {/* Actions */}
-      <div className="p-3 space-y-2 border-t border-gray-100 dark:border-gray-700">
+      <div className="p-3 flex flex-col gap-2 border-t border-gray-100 dark:border-gray-700">
+
+        {/* Row 1: KOT Display + KOT Print — dine_in only */}
         {orderType === 'dine_in' && (
-          <button
-            onClick={onSendKot}
-            disabled={pendingLines.length === 0 || sendingKot}
-            className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-semibold py-2.5 rounded-xl transition-colors text-sm"
-          >
-            <Send className="w-4 h-4" />
-            Send to Kitchen {pendingLines.length > 0 && `(${pendingLines.length})`}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={onKotDisplay}
+              disabled={pendingLines.length === 0 || sendingKot}
+              className="flex-1 flex flex-col items-center justify-center gap-1 bg-gray-800 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-100 font-medium rounded-xl transition-colors"
+              style={{ minHeight: 56 }}
+            >
+              {sendingKot
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Monitor className="w-4 h-4" />}
+              <span className="text-xs">
+                KOT Display{pendingLines.length > 0 ? ` (${pendingLines.length})` : ''}
+              </span>
+            </button>
+
+            <button
+              onClick={onSendKot}
+              disabled={pendingLines.length === 0 || sendingKot}
+              className="flex-1 flex flex-col items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-medium rounded-xl transition-colors"
+              style={{ minHeight: 56 }}
+            >
+              {sendingKot
+                ? <Loader2 className="w-4 h-4 animate-spin" />
+                : <Send className="w-4 h-4" />}
+              <span className="text-xs">
+                KOT Print{pendingLines.length > 0 ? ` (${pendingLines.length})` : ''}
+              </span>
+            </button>
+          </div>
         )}
+
+        {/* Row 2: Charge — full width, primary action */}
         <button
           onClick={onCharge}
           disabled={isEmpty || (orderType === 'dine_in' && !hasSentLines && pendingLines.length > 0)}
-          className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white font-semibold py-2.5 rounded-xl transition-colors"
+          className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white font-bold rounded-xl transition-colors text-base"
+          style={{ minHeight: 60 }}
         >
-          <CreditCard className="w-4 h-4" />
+          <CreditCard className="w-5 h-5" />
           Charge {!isEmpty && formatCurrency(totals.netPayable)}
         </button>
-        {onHold && !isEmpty && (
+
+        {/* Row 3: Hold Order + Invoice Print */}
+        <div className="flex gap-2">
           <button
             onClick={onHold}
-            disabled={holdingOrder}
-            className="w-full flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-700 dark:text-gray-200 font-medium py-2 rounded-xl transition-colors text-sm"
+            disabled={!onHold || isEmpty || holdingOrder}
+            className="flex-1 flex flex-col items-center justify-center gap-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-700 dark:text-gray-200 font-medium rounded-xl transition-colors"
+            style={{ minHeight: 56 }}
           >
             {holdingOrder
               ? <Loader2 className="w-4 h-4 animate-spin" />
-              : <PauseCircle className="w-4 h-4" />
-            }
-            Hold Order
+              : <PauseCircle className="w-4 h-4" />}
+            <span className="text-xs">Hold Order</span>
           </button>
-        )}
+
+          <button
+            onClick={onPrint}
+            disabled={!onPrint || isEmpty}
+            className="flex-1 flex flex-col items-center justify-center gap-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-40 text-gray-700 dark:text-gray-200 font-medium rounded-xl transition-colors"
+            style={{ minHeight: 56 }}
+          >
+            <Printer className="w-4 h-4" />
+            <span className="text-xs">Invoice Print</span>
+          </button>
+        </div>
+
       </div>
 
     </div>

@@ -55,9 +55,10 @@ export const KotRepository = {
     const kots = db.prepare(`
       SELECT k.id, k.server_id, k.sales_invoice_id, k.kot_number, k.status, k.notes,
              k.print_count, k.sync_status, k.created_at,
-             si.table_name, COALESCE(si.order_type, 'dine_in') AS order_type
+             dt.name AS table_name, COALESCE(si.order_type, 'dine_in') AS order_type
       FROM kots k
       LEFT JOIN sales_invoices si ON si.id = k.sales_invoice_id
+      LEFT JOIN dining_tables dt ON dt.id = si.table_id
       WHERE k.status IN ('new', 'in_progress', 'ready')
       ORDER BY k.created_at ASC
     `).all() as Record<string, any>[]

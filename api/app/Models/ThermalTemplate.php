@@ -18,6 +18,7 @@ class ThermalTemplate extends Model
         'name',
         'html_content',
         'paper_size',
+        'template_type',
         'is_default',
         'created_by',
         'updated_by',

@@ -29,6 +29,7 @@ class DatabaseSeeder extends Seeder
 
             // Restaurant POS
             FloorPlanSeeder::class,
+            ThermalTemplateSeeder::class,
 
         ]);
 

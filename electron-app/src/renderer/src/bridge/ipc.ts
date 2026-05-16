@@ -213,7 +213,8 @@ declare global {
         receipt(data: unknown): Promise<{ success: boolean; error?: string }>
         kot(data: unknown): Promise<{ success: boolean; error?: string }>
         kotFromTemplate(data: unknown, layout: string): Promise<{ success: boolean; error?: string }>
-        htmlInvoice(html: string): Promise<{ success: boolean; error?: string }>
+        htmlInvoice(html: string, silent?: boolean): Promise<{ success: boolean; error?: string }>
+        htmlKot(html: string, silent?: boolean): Promise<{ success: boolean; error?: string }>
         listPrinters(): Promise<string[]>
       }
       templates: {
@@ -316,7 +317,8 @@ export const ipc = {
     receipt:         (data: unknown) => window.electronAPI.print.receipt(data),
     kot:             (data: unknown) => window.electronAPI.print.kot(data),
     kotFromTemplate: (data: unknown, layout: string) => window.electronAPI.print.kotFromTemplate(data, layout),
-    htmlInvoice:     (html: string) => window.electronAPI.print.htmlInvoice(html),
+    htmlInvoice:     (html: string, silent?: boolean) => window.electronAPI.print.htmlInvoice(html, silent),
+    htmlKot:         (html: string, silent?: boolean) => window.electronAPI.print.htmlKot(html, silent),
     listPrinters:    () => window.electronAPI.print.listPrinters(),
   },
   templates: {

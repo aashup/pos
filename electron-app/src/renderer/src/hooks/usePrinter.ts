@@ -5,6 +5,24 @@ import { renderTemplate } from '../lib/renderTemplate'
 import { DEFAULT_KOT_TEMPLATE, DEFAULT_INVOICE_TEMPLATE } from '../lib/defaultTemplates'
 import type { KotTemplateData, InvoiceTemplateData, PrintResult } from '../types/printing'
 
+// ── KOT data flattening ───────────────────────────────────────────────────────
+
+function flattenKotData(data: KotTemplateData): Record<string, unknown> {
+  return {
+    kot_number:  data.kotNumber,
+    table_name:  data.tableName ? ` — ${data.tableName}` : '',
+    order_type:  data.orderType.replace('_', ' '),
+    pax:         data.pax != null ? String(data.pax) : '',
+    notes:       data.notes ?? '',
+    time:        new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+    items: data.items.map((i) => ({
+      name:     i.name,
+      quantity: String(i.quantity),
+      notes:    i.notes ?? '',
+    })),
+  }
+}
+
 // ── Invoice data flattening ───────────────────────────────────────────────────
 // renderTemplate works on flat Record<string, unknown>. We convert InvoiceTemplateData
 // into a shape where nested arrays (items, splitPayments) are already structured for
@@ -82,14 +100,22 @@ export function usePrinter(): UsePrinterResult {
         // Ignore — fall through to defaults
       }
 
-      const effectiveTemplate = template ?? DEFAULT_KOT_TEMPLATE
+      if (template != null) {
+        const isHtml = template.layout.trimStart().startsWith('<')
+        if (isHtml) {
+          const html = renderTemplate(template.layout, flattenKotData(data), false)
+          return ipc.print.htmlKot(html)
+        }
+        return ipc.print.kotFromTemplate(data, template.layout)
+      }
 
-      // Route: template-driven ESC/POS if layout is non-trivial; raw fallback otherwise
-      if (effectiveTemplate.id !== '__default_kot__' || template != null) {
+      // Default KOT template (ESC/POS ##directives)
+      const effectiveTemplate = DEFAULT_KOT_TEMPLATE
+      if (effectiveTemplate.layout) {
         return ipc.print.kotFromTemplate(data, effectiveTemplate.layout)
       }
 
-      // Hardcoded ESC/POS fallback (existing printKOT path)
+      // Hardcoded ESC/POS fallback
       return ipc.print.kot(data)
     },
     [],
