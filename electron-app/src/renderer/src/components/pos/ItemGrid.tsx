@@ -6,6 +6,8 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { useCartStore } from '../../store/cartStore'
 import { cn } from '../../lib/utils'
 import type { Item, ItemGroup } from '../../types'
+import GridDisplaySelection from './GridDisplaySelection'
+import type { GridDisplayItem } from './GridDisplaySelection'
 
 export interface POSItem extends Item {
   selling_price: number
@@ -90,6 +92,13 @@ export default function ItemGrid({ onItemAdd }: Props = {}) {
     }
   }, [allItems])
 
+  const groupItems: GridDisplayItem[] = useMemo(() => [
+    { id: '__all__', label: 'All' },
+    ...groups.map((g) => ({ id: g.id, label: g.name })),
+  ], [groups])
+
+  const selectedGroupIds = selectedGroup ? [selectedGroup] : ['__all__']
+
   // F2 focuses search — registered via global shortcut stack so conflicts resolve correctly
   const f2Shortcut = useMemo(() => [
     { key: 'F2', label: 'Focus item search', action: () => searchRef.current?.focus() },
@@ -116,32 +125,19 @@ export default function ItemGrid({ onItemAdd }: Props = {}) {
 
       {/* Category tabs */}
       {groups.length > 0 && (
-        <div className="flex gap-1.5 px-3 py-2 overflow-x-auto border-b border-gray-100 dark:border-gray-700 shrink-0 scrollbar-none">
-          <button
-            onClick={() => setSelectedGroup(undefined)}
-            className={cn(
-              'shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-              !selectedGroup
-                ? 'bg-orange-500 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600',
-            )}
-          >
-            All
-          </button>
-          {groups.map((g) => (
-            <button
-              key={g.id}
-              onClick={() => setSelectedGroup(selectedGroup === g.id ? undefined : g.id)}
-              className={cn(
-                'shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                selectedGroup === g.id
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600',
-              )}
-            >
-              {g.name}
-            </button>
-          ))}
+        <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700 shrink-0">
+          <GridDisplaySelection
+            items={groupItems}
+            selectedIds={selectedGroupIds}
+            onChange={(ids) => {
+              const first = ids[0]
+              setSelectedGroup(first === '__all__' || first === undefined ? undefined : String(first))
+            }}
+            isMultiSelect={false}
+            columns="auto"
+            accentColor="orange"
+            ariaLabel="Filter by category"
+          />
         </div>
       )}
 

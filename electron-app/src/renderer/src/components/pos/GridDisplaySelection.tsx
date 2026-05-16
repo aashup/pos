@@ -240,7 +240,7 @@ export default function GridDisplaySelection({
       : 'text-blue-600 dark:text-blue-400'
 
   const unselectedClass = isDark
-    ? 'border-gray-700 bg-gray-800 hover:border-gray-600'
+    ? 'border-gray-700 bg-gray-800 hover:border-gray-600 text-gray-100'
     : 'border-gray-200 bg-gray-50 hover:border-gray-300'
 
   // ---------------------------------------------------------------------------

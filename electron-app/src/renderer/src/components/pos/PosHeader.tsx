@@ -60,7 +60,7 @@ export default function PosHeader({ orderType, onOrderTypeChange, onMenuOpen }: 
               Table {tableName}
               {kotNumber && (
                 <span className={cn('ml-1.5 font-normal', isDark ? 'text-gray-400' : 'text-gray-500')}>
-                  (KOT #{kotNumber})
+                  (#{kotNumber})
                 </span>
               )}
             </span>

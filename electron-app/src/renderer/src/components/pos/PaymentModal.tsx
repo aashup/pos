@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, Loader2, Banknote, Smartphone, CreditCard, Tag, SplitSquareHorizontal } from 'lucide-react'
+import { X, Loader2, Banknote, Smartphone, CreditCard, Tag, SplitSquareHorizontal, Printer } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { ordersApi, type CheckoutPayload } from '../../api/orders'
 import { ipc, type CheckoutData } from '../../bridge/ipc'
@@ -23,7 +23,7 @@ interface Props {
   lines: CartLine[]
   totals: CartTotals
   onClose: () => void
-  onSuccess: (serverId?: string) => void
+  onSuccess: (serverId?: string, shouldPrint?: boolean) => void
 }
 
 type PayMode = 'cash' | 'upi' | 'card' | 'credit'
@@ -83,7 +83,7 @@ export default function PaymentModal({ orderId, localOrderId, orderType, lines, 
     })
   }
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (shouldPrint = false) => {
     if (isSplit) {
       if (Math.abs(splitTotal - netPayable) > 0.5) {
         toast.error(`Split amounts (${formatCurrency(splitTotal)}) must equal bill total (${formatCurrency(netPayable)})`)
@@ -126,7 +126,7 @@ export default function PaymentModal({ orderId, localOrderId, orderType, lines, 
           notes: notes.trim() || undefined,
         }
         await ipc.order.checkout(localOrderId, checkoutData)
-        onSuccess()
+        onSuccess(undefined, shouldPrint)
       } else if (orderId && !orderId.startsWith('local-')) {
         // ── Server-resumed occupied table: API path ──────────────────────────
         const pendingLines = lines.filter((l) => l.kotStatus === 'pending')
@@ -163,7 +163,7 @@ export default function PaymentModal({ orderId, localOrderId, orderType, lines, 
           }
         }
         await ordersApi.checkout(orderId, payload)
-        onSuccess(orderId)
+        onSuccess(orderId, shouldPrint)
       } else {
         toast.error('No active order')
       }
@@ -394,19 +394,35 @@ export default function PaymentModal({ orderId, localOrderId, orderType, lines, 
         </div>
 
         {/* Confirm */}
-        <div className={cn('p-4 border-t sticky bottom-0 rounded-b-2xl', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100')}>
-          <button
-            onClick={handleCheckout}
-            disabled={
+        <div className={cn('p-4 border-t sticky bottom-0 rounded-b-2xl space-y-2', isDark ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-100')}>
+          {(() => {
+            const isDisabled =
               loading ||
               (!isSplit && payMode === 'cash' && tenderedNum > 0 && tenderedNum < netPayable) ||
               (isSplit && Math.abs(splitTotal - netPayable) > 0.5)
-            }
-            className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
-          >
-            {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-            Confirm Payment · {formatCurrency(netPayable)}
-          </button>
+            return (
+              <>
+                <button
+                  onClick={() => handleCheckout(false)}
+                  disabled={isDisabled}
+                  className="w-full bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors"
+                >
+                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Confirm Payment · {formatCurrency(netPayable)}
+                </button>
+                <button
+                  onClick={() => handleCheckout(true)}
+                  disabled={isDisabled}
+                  className={cn('w-full font-bold py-3 rounded-xl flex items-center justify-center gap-2 border transition-colors disabled:opacity-40',
+                    isDark ? 'border-orange-500 text-orange-300 hover:bg-orange-900/30' : 'border-orange-500 text-orange-600 hover:bg-orange-50'
+                  )}
+                >
+                  <Printer className="w-4 h-4" />
+                  Confirm & Print · {formatCurrency(netPayable)}
+                </button>
+              </>
+            )
+          })()}
         </div>
       </div>
     </div>

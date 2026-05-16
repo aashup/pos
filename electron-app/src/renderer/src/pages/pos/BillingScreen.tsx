@@ -120,6 +120,8 @@ export default function BillingScreen() {
       navigate('/pos/tables')
       return
     }
+    // Clear existing cart before switching order type
+    clearOrder()
     // Create local SQLite order immediately (offline-first)
     try {
       const localId = await ipc.order.create({ order_type: type })
@@ -443,8 +445,33 @@ export default function BillingScreen() {
           lines={lines}
           totals={totals}
           onClose={() => setShowPayment(false)}
-          onSuccess={(serverId?: string) => {
+          onSuccess={(serverId?: string, shouldPrint?: boolean) => {
             setShowPayment(false)
+            if (shouldPrint) {
+              // Capture cart state before clearOrder() wipes it
+              const snap = useCartStore.getState()
+              const outletName = user?.name ?? 'Restaurant'
+              printInvoice({
+                outletName,
+                invoiceNumber: localOrderId ?? serverId ?? 'DRAFT',
+                invoiceDate: new Date().toLocaleDateString('en-IN'),
+                orderType: snap.orderType,
+                tableName: snap.tableName ?? undefined,
+                items: snap.lines.map((l) => ({
+                  name: l.variantName ? `${l.name} (${l.variantName})` : l.name,
+                  quantity: l.quantity,
+                  rate: l.rate,
+                  gstRate: l.gstRate,
+                  lineTotal: +(l.rate * l.quantity).toFixed(2),
+                })),
+                subtotal: snap.totals.subtotal,
+                cgst: snap.totals.cgstTotal,
+                sgst: snap.totals.sgstTotal,
+                discount: 0,
+                grandTotal: snap.totals.netPayable,
+                paymentMode: 'cash',
+              }).catch(() => {})
+            }
             if (localOrderId && serverId) ipc.order.markConfirmed(localOrderId, serverId).catch(() => {})
             if (localOrderId) useOrdersStore.getState().removeOrder(localOrderId)
             if (tableId && orderType === 'dine_in') updateTableStatus(tableId, 'vacant', null)
