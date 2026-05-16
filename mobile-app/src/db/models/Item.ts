@@ -12,4 +12,11 @@ export default class Item extends Model {
   @field('image_url') imageUrl!: string | null;
   @field('is_active') isActive!: boolean;
   @field('synced_at') syncedAt!: number | null;
+  @field('gst_rate') gstRate!: number | null;
+  @field('cgst_pct') cgstPct!: number | null;
+  @field('sgst_pct') sgstPct!: number | null;
+  @field('unit') unit!: string | null;
+  @field('sku') sku!: string | null;
+  @field('has_variants') hasVariants!: boolean;
+  @field('has_modifiers') hasModifiers!: boolean;
 }

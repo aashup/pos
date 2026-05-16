@@ -3,8 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { ipc } from '../bridge/ipc'
 
 export interface ShortcutDef {
-  key: string           // e.g. 'F1', 'F2', 'Escape'
+  key: string           // e.g. 'F1', 'F2', 'Escape', 'Enter'
   label: string         // for future help-overlay display
+  altKey?: boolean      // require Alt to be held
   guard?: () => boolean // return false to skip action
   action: () => void
 }
@@ -19,12 +20,17 @@ type StackEntry = ShortcutDef & { _token: symbol }
 const stacks = new Map<string, StackEntry[]>()
 let _listenerInstalled = false
 
+function stackKey(def: Pick<ShortcutDef, 'key' | 'altKey'>): string {
+  return def.altKey ? `Alt+${def.key}` : def.key
+}
+
 function ensureListener(): void {
   if (_listenerInstalled || typeof window === 'undefined') return
   _listenerInstalled = true
   window.addEventListener('keydown', (e: KeyboardEvent) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-    const stack = stacks.get(e.key)
+    const key = e.altKey ? `Alt+${e.key}` : e.key
+    const stack = stacks.get(key)
     if (!stack?.length) return
     const top = stack[stack.length - 1]
     if (top.guard && !top.guard()) return
@@ -37,8 +43,9 @@ function registerShortcuts(defs: ShortcutDef[]): symbol[] {
   ensureListener()
   return defs.map((def) => {
     const token = Symbol()
-    const existing = stacks.get(def.key) ?? []
-    stacks.set(def.key, [...existing, { ...def, _token: token }])
+    const k = stackKey(def)
+    const existing = stacks.get(k) ?? []
+    stacks.set(k, [...existing, { ...def, _token: token }])
     return token
   })
 }
@@ -46,10 +53,11 @@ function registerShortcuts(defs: ShortcutDef[]): symbol[] {
 function unregisterShortcuts(defs: ShortcutDef[], tokens: symbol[]): void {
   defs.forEach((def, i) => {
     const token = tokens[i]
-    const existing = stacks.get(def.key) ?? []
+    const k = stackKey(def)
+    const existing = stacks.get(k) ?? []
     const updated = existing.filter((e) => e._token !== token)
-    if (updated.length) stacks.set(def.key, updated)
-    else stacks.delete(def.key)
+    if (updated.length) stacks.set(k, updated)
+    else stacks.delete(k)
   })
 }
 
@@ -74,11 +82,12 @@ export function useKeyboardShortcuts(shortcuts: ShortcutDef[]): void {
 // Call once from AppRoutes (always mounted, inside HashRouter).
 // Registers app-wide shortcuts with router-awareness.
 //
-//   F1  → /pos/tables          (all pages)
-//   F3  → shortcut:send-kot    (billing page only, via CustomEvent)
-//   F4  → shortcut:payment     (billing page only, via CustomEvent)
-//   F5  → sync trigger          (all pages)
-//   Esc → shortcut:escape       (billing page only, via CustomEvent)
+//   F1        → /pos/tables          (all pages)
+//   F3        → shortcut:send-kot    (billing page only, via CustomEvent)
+//   F4        → shortcut:payment     (billing page only, via CustomEvent)
+//   F5        → sync trigger          (all pages)
+//   Esc       → shortcut:escape       (billing page only, via CustomEvent)
+//   Alt+Enter → toggle fullscreen     (all pages)
 //
 // BillingScreen listens for the CustomEvents to call its local handlers.
 
@@ -116,6 +125,12 @@ export function useGlobalShortcuts(): void {
         label: 'Close modal',
         guard: () => onBilling,
         action: () => window.dispatchEvent(new CustomEvent('shortcut:escape')),
+      },
+      {
+        key: 'Enter',
+        altKey: true,
+        label: 'Toggle Fullscreen',
+        action: () => { ipc.window.toggleFullscreen() },
       },
     ]
   }, [location.pathname, navigate])

@@ -129,6 +129,16 @@ function registerWindowIpc(): void {
     return true
   })
 
+  ipcMain.handle('window:toggle-fullscreen', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) win.setFullScreen(!win.isFullScreen())
+  })
+
+  ipcMain.handle('window:is-fullscreen', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return win ? win.isFullScreen() : false
+  })
+
   ipcMain.handle('updater:install-now', () => {
     autoUpdater.quitAndInstall()
   })

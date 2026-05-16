@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { RotateCw, LogOut, Menu, Sun, Moon } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { RotateCw, LogOut, Menu, Sun, Moon, Maximize2, Minimize2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuthStore } from '../../store/authStore'
 import { useSyncStore } from '../../store/syncStore'
@@ -21,6 +21,16 @@ export default function PosHeader({ orderType, onOrderTypeChange, onMenuOpen }: 
   const { tableName, kotNumber, orderNotes } = useCartStore()
   const isDark = theme === 'dark'
   const [syncing, setSyncing] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    ipc.window.isFullscreen().then(setIsFullscreen)
+  }, [])
+
+  const handleFullscreen = async () => {
+    await ipc.window.toggleFullscreen()
+    setIsFullscreen((f) => !f)
+  }
 
   const handleSyncNow = async () => {
     setSyncing(true)
@@ -79,6 +89,13 @@ export default function PosHeader({ orderType, onOrderTypeChange, onMenuOpen }: 
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+        </button>
+        <button
+          onClick={handleFullscreen}
+          className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}
+          title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        >
+          {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
         </button>
         <button
           onClick={handleSyncNow}

@@ -132,8 +132,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   window: {
-    openKitchen:  (): Promise<void> => ipcRenderer.invoke('window:open-kitchen'),
-    closeKitchen: (): Promise<void> => ipcRenderer.invoke('window:close-kitchen'),
+    openKitchen:      (): Promise<void> => ipcRenderer.invoke('window:open-kitchen'),
+    closeKitchen:     (): Promise<void> => ipcRenderer.invoke('window:close-kitchen'),
+    toggleFullscreen: (): Promise<void> => ipcRenderer.invoke('window:toggle-fullscreen'),
+    isFullscreen:     (): Promise<boolean> => ipcRenderer.invoke('window:is-fullscreen'),
   },
 
   updater: {

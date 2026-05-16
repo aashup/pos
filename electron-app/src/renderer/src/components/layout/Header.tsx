@@ -1,6 +1,8 @@
-import { ArrowLeft, Sun, Moon } from 'lucide-react'
+import { ArrowLeft, Sun, Moon, Maximize2, Minimize2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useThemeStore } from '../../store/themeStore'
+import { ipc } from '../../bridge/ipc'
 import { cn } from '../../lib/utils'
 
 interface HeaderAction {
@@ -16,12 +18,23 @@ interface HeaderProps {
   actions?: HeaderAction[]
   showThemeToggle?: boolean
   showBackButton?: boolean
+  showFullscreenToggle?: boolean
 }
 
-export default function Header({ title, onBack, actions = [], showThemeToggle = true, showBackButton = true }: HeaderProps) {
+export default function Header({ title, onBack, actions = [], showThemeToggle = true, showBackButton = true, showFullscreenToggle = true }: HeaderProps) {
   const navigate = useNavigate()
   const { theme, toggleTheme } = useThemeStore()
   const isDark = theme === 'dark'
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  useEffect(() => {
+    ipc.window.isFullscreen().then(setIsFullscreen)
+  }, [])
+
+  const handleFullscreen = async () => {
+    await ipc.window.toggleFullscreen()
+    setIsFullscreen((f) => !f)
+  }
 
   const handleBack = onBack ? onBack : () => navigate(-1)
 
@@ -59,6 +72,16 @@ export default function Header({ title, onBack, actions = [], showThemeToggle = 
             title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           >
             {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+          </button>
+        )}
+
+        {showFullscreenToggle && (
+          <button
+            onClick={handleFullscreen}
+            className={isDark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}
+            title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         )}
       </div>

@@ -17,6 +17,7 @@ import { useItemsSync } from '@/hooks/useItemsSync';
 import { TableCard } from '@/components/pos/TableCard';
 import { BarcodeScanner } from '@/components/scanner/BarcodeScanner';
 import { useCartStore } from '@/store/cartStore';
+import { resumeOrderIntoCart } from '@/lib/orderActions';
 import type FloorPlan from '@/db/models/FloorPlan';
 import type DiningTable from '@/db/models/DiningTable';
 import { database } from '@/db';
@@ -32,9 +33,15 @@ function TablesScreen({ floorPlans }: { floorPlans: FloorPlan[] }) {
   const activeFloor = floorPlans.find((f) => f.id === activeFloorId) ?? floorPlans[0];
 
   const handleTablePress = useCallback(
-    (table: DiningTable) => {
-      setTable({ id: table.id, serverId: table.serverId, name: table.name });
-      router.push('/(tabs)/billing');
+    async (table: DiningTable) => {
+      if (table.status === 'occupied' && table.currentOrderId) {
+        // Resume existing order into cart
+        await resumeOrderIntoCart(table.currentOrderId);
+        router.push('/(tabs)/billing');
+      } else {
+        setTable({ id: table.id, serverId: table.serverId, name: table.name });
+        router.push('/(tabs)/billing');
+      }
     },
     [setTable],
   );
@@ -42,7 +49,6 @@ function TablesScreen({ floorPlans }: { floorPlans: FloorPlan[] }) {
   const handleQrScan = useCallback(
     async (value: string) => {
       setScanning(false);
-      // QR encodes the table server_id
       const results = await db
         .get<DiningTable>('dining_tables')
         .query(Q.where('server_id', value))
@@ -86,12 +92,15 @@ function TablesScreen({ floorPlans }: { floorPlans: FloorPlan[] }) {
       {/* Header */}
       <View className="bg-white border-b border-gray-200 pt-12 pb-3 px-4 flex-row items-center justify-between">
         <Text className="text-xl font-bold text-gray-800">Tables</Text>
-        <TouchableOpacity
-          className="bg-amber-500 px-3 py-1.5 rounded-lg"
-          onPress={() => setScanning(true)}
-        >
-          <Text className="text-white text-sm font-medium">Scan QR</Text>
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-3">
+          {(syncingTables || syncingItems) && <ActivityIndicator size="small" color="#d97706" />}
+          <TouchableOpacity
+            className="bg-amber-500 px-3 py-1.5 rounded-lg"
+            onPress={() => setScanning(true)}
+          >
+            <Text className="text-white text-sm font-medium">Scan QR</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Floor plan tabs */}
@@ -128,7 +137,6 @@ function TablesScreen({ floorPlans }: { floorPlans: FloorPlan[] }) {
   );
 }
 
-// Inner component with reactive WatermelonDB query
 function TablesForFloorBase({
   tables,
   onTablePress,
@@ -165,7 +173,6 @@ const enhance = withObservables(['floorPlanId'], ({ floorPlanId }: { floorPlanId
 
 const TablesForFloor = enhance(TablesForFloorBase as any) as any;
 
-// Enhanced outer component observing floor plans
 const enhanceOuter = withObservables([], () => ({
   floorPlans: database.get<FloorPlan>('floor_plans').query(),
 }));

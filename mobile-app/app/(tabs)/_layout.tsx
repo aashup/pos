@@ -30,6 +30,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="tables" options={{ title: 'Tables', tabBarLabel: 'Tables' }} />
       <Tabs.Screen name="billing" options={{ title: 'Billing', tabBarLabel: 'Billing' }} />
       <Tabs.Screen name="orders" options={{ title: 'Orders', tabBarLabel: 'Orders' }} />
+      <Tabs.Screen name="kitchen" options={{ title: 'Kitchen', tabBarLabel: 'Kitchen' }} />
       <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarLabel: 'Settings' }} />
     </Tabs>
   );

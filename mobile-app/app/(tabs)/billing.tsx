@@ -6,7 +6,6 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -15,24 +14,38 @@ import { Q } from '@nozbe/watermelondb';
 import { useDatabase } from '@nozbe/watermelondb/react';
 import { useCartStore } from '@/store/cartStore';
 import { sendKot, checkout, holdOrder } from '@/lib/orderActions';
+import type { PaymentData } from '@/lib/orderActions';
 import { BarcodeScanner } from '@/components/scanner/BarcodeScanner';
 import { ItemCard } from '@/components/pos/ItemCard';
+import { ChefNoteInput } from '@/components/pos/ChefNoteInput';
+import { PaymentModal } from '@/components/pos/PaymentModal';
+import { VariantModifierModal } from '@/components/pos/VariantModifierModal';
 import { formatCurrency } from '@/lib/utils';
 import { database } from '@/db';
 import type Item from '@/db/models/Item';
 import type ItemGroup from '@/db/models/ItemGroup';
+import type { SelectedModifier } from '@/store/cartStore';
 
-// ─── Inner screen (receives reactive WatermelonDB data) ───────────────────────
+type OrderType = 'dine_in' | 'takeaway' | 'delivery';
+const ORDER_TYPES: { key: OrderType; label: string }[] = [
+  { key: 'dine_in', label: 'Dine In' },
+  { key: 'takeaway', label: 'Takeaway' },
+  { key: 'delivery', label: 'Delivery' },
+];
 
 function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemGroup[] }) {
   const [search, setSearch] = useState('');
   const [activeGroupId, setActiveGroupId] = useState<string>('all');
   const [scanning, setScanning] = useState(false);
   const [checkingOut, setCheckingOut] = useState(false);
+  const [paymentVisible, setPaymentVisible] = useState(false);
+  const [variantItem, setVariantItem] = useState<Item | null>(null);
   const db = useDatabase();
 
-  const { table, lines, addItem, incrementQty, decrementQty, computeTotals } = useCartStore();
-  const { subtotal, total, unsentCount } = computeTotals();
+  const {
+    table, lines, orderType, setOrderType, addItem, incrementQty, decrementQty, computeTotals,
+  } = useCartStore();
+  const { subtotal, cgstTotal, sgstTotal, netPayable, unsentCount } = computeTotals();
 
   const filteredItems = items.filter((item) => {
     const matchesGroup = activeGroupId === 'all' || item.itemGroupId === activeGroupId;
@@ -46,50 +59,76 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
       const results = await db.get<Item>('items').query(Q.where('barcode', value)).fetch();
       if (results.length) {
         const item = results[0];
-        addItem({ itemId: item.serverId, itemName: item.name, price: item.price });
+        if (item.hasVariants || item.hasModifiers) {
+          setVariantItem(item);
+        } else {
+          addItem({
+            itemId: item.serverId,
+            itemName: item.name,
+            price: item.price,
+            cgstPct: item.cgstPct ?? 0,
+            sgstPct: item.sgstPct ?? 0,
+          });
+        }
       }
     },
     [db, addItem],
   );
 
-  const handleSendKot = async () => {
-    if (unsentCount === 0) {
-      Alert.alert('Nothing to send', 'Add items before sending a KOT.');
-      return;
-    }
-    try {
-      await sendKot();
-    } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'Failed to send KOT.');
+  const handleItemPress = (item: Item) => {
+    if (item.hasVariants || item.hasModifiers) {
+      setVariantItem(item);
+    } else {
+      addItem({
+        itemId: item.serverId,
+        itemName: item.name,
+        price: item.price,
+        cgstPct: item.cgstPct ?? 0,
+        sgstPct: item.sgstPct ?? 0,
+      });
     }
   };
 
-  const handleCheckout = async () => {
-    if (lines.length === 0) {
-      Alert.alert('Empty cart', 'Add items before checkout.');
-      return;
+  const handleVariantAdd = (opts: {
+    price: number;
+    variantId: string | null;
+    variantName: string | null;
+    selectedModifiers: SelectedModifier[];
+  }) => {
+    if (!variantItem) return;
+    addItem({
+      itemId: variantItem.serverId,
+      itemName: variantItem.name,
+      price: opts.price,
+      cgstPct: variantItem.cgstPct ?? 0,
+      sgstPct: variantItem.sgstPct ?? 0,
+      variantId: opts.variantId,
+      variantName: opts.variantName,
+      selectedModifiers: opts.selectedModifiers,
+    });
+    setVariantItem(null);
+  };
+
+  const handleSendKot = async () => {
+    if (unsentCount === 0) return;
+    try {
+      await sendKot();
+    } catch (err: any) {
+      console.warn(err.message);
     }
-    if (unsentCount > 0) {
-      Alert.alert('Unsent items', 'Please send KOT before checkout.');
-      return;
+  };
+
+  const handleCheckout = async (paymentData: PaymentData) => {
+    setPaymentVisible(false);
+    setCheckingOut(true);
+    try {
+      await checkout(paymentData);
+      router.replace('/(tabs)/tables');
+    } catch (err: any) {
+      console.warn(err.message);
+    } finally {
+      setCheckingOut(false);
     }
-    Alert.alert('Checkout', `Collect ₹${total.toFixed(2)}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Confirm',
-        onPress: async () => {
-          setCheckingOut(true);
-          try {
-            await checkout(total);
-            router.replace('/(tabs)/tables');
-          } catch (err: any) {
-            Alert.alert('Error', err.message);
-          } finally {
-            setCheckingOut(false);
-          }
-        },
-      },
-    ]);
   };
 
   const handleHold = async () => {
@@ -97,7 +136,10 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
     router.replace('/(tabs)/tables');
   };
 
-  if (!table) {
+  // Takeaway/delivery don't require a table
+  const noTable = !table && orderType === 'dine_in';
+
+  if (noTable) {
     return (
       <View className="flex-1 items-center justify-center bg-gray-50">
         <Text className="text-gray-500">No table selected.</Text>
@@ -118,6 +160,31 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
         />
       )}
 
+      {variantItem && (
+        <VariantModifierModal
+          visible={!!variantItem}
+          itemServerId={variantItem.serverId}
+          itemName={variantItem.name}
+          basePrice={variantItem.price}
+          cgstPct={variantItem.cgstPct ?? 0}
+          sgstPct={variantItem.sgstPct ?? 0}
+          hasVariants={variantItem.hasVariants}
+          hasModifiers={variantItem.hasModifiers}
+          onAdd={handleVariantAdd}
+          onClose={() => setVariantItem(null)}
+        />
+      )}
+
+      <PaymentModal
+        visible={paymentVisible}
+        netPayable={netPayable}
+        cgstTotal={cgstTotal}
+        sgstTotal={sgstTotal}
+        subtotal={subtotal}
+        onConfirm={handleCheckout}
+        onClose={() => setPaymentVisible(false)}
+      />
+
       {/* ── Left: Item grid ── */}
       <View className="flex-1">
         {/* Top bar */}
@@ -126,11 +193,27 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
             <TouchableOpacity onPress={() => router.back()}>
               <Text className="text-amber-600 text-sm">← Back</Text>
             </TouchableOpacity>
-            <Text className="font-semibold text-gray-800">{table.name}</Text>
+            <Text className="font-semibold text-gray-800">{table?.name ?? orderType}</Text>
             <TouchableOpacity onPress={() => setScanning(true)}>
               <Text className="text-amber-600 text-sm">Scan</Text>
             </TouchableOpacity>
           </View>
+
+          {/* Order type selector */}
+          <View className="flex-row gap-1 mb-2">
+            {ORDER_TYPES.map((t) => (
+              <TouchableOpacity
+                key={t.key}
+                onPress={() => setOrderType(t.key)}
+                className={`flex-1 py-1.5 rounded-lg items-center ${orderType === t.key ? 'bg-amber-500' : 'bg-gray-100'}`}
+              >
+                <Text className={`text-xs font-medium ${orderType === t.key ? 'text-white' : 'text-gray-500'}`}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           <TextInput
             className="bg-gray-100 rounded-lg px-3 py-2 text-sm text-gray-700"
             placeholder="Search items…"
@@ -172,10 +255,7 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
           numColumns={2}
           contentContainerStyle={{ padding: 4 }}
           renderItem={({ item }) => (
-            <ItemCard
-              item={item}
-              onPress={() => addItem({ itemId: item.serverId, itemName: item.name, price: item.price })}
-            />
+            <ItemCard item={item} onPress={() => handleItemPress(item)} />
           )}
           ListEmptyComponent={
             <View className="items-center py-12">
@@ -186,27 +266,38 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
       </View>
 
       {/* ── Right: Cart ── */}
-      <View className="w-56 bg-white border-l border-gray-200 flex-col">
+      <View className="w-60 bg-white border-l border-gray-200 flex-col">
         <View className="border-b border-gray-100 px-3 py-3 pt-12">
           <Text className="font-bold text-gray-800 text-base">Cart</Text>
-          <Text className="text-gray-400 text-xs">{table.name}</Text>
+          <Text className="text-gray-400 text-xs">{table?.name ?? orderType}</Text>
         </View>
 
         <ScrollView className="flex-1 px-2 py-1">
           {lines.length === 0 && (
             <Text className="text-gray-400 text-xs text-center mt-8">Cart is empty</Text>
           )}
-          {lines.map((line, idx) => (
-            <View key={`${line.itemId}-${idx}`} className="py-2 border-b border-gray-50">
-              <Text className="text-gray-800 text-xs font-medium" numberOfLines={2}>
-                {line.itemName}
-                {line.sent ? ' ✓' : ''}
-              </Text>
+          {lines.map((line) => (
+            <View key={line.lineId} className="py-2 border-b border-gray-50">
+              <View className="flex-row justify-between items-start">
+                <View className="flex-1 mr-1">
+                  <Text className="text-gray-800 text-xs font-medium" numberOfLines={2}>
+                    {line.itemName}
+                    {line.variantName ? ` (${line.variantName})` : ''}
+                    {line.sent ? ' ✓' : ''}
+                  </Text>
+                </View>
+                <Text className="text-amber-600 text-xs font-semibold">
+                  {formatCurrency(line.price * line.quantity)}
+                </Text>
+              </View>
+
+              <ChefNoteInput lineId={line.lineId} note={line.note} sent={line.sent} />
+
               <View className="flex-row items-center justify-between mt-1">
                 <View className="flex-row items-center">
                   {!line.sent && (
                     <TouchableOpacity
-                      onPress={() => decrementQty(line.itemId)}
+                      onPress={() => decrementQty(line.lineId)}
                       className="w-6 h-6 bg-gray-100 rounded items-center justify-center"
                     >
                       <Text className="text-gray-600 font-bold">−</Text>
@@ -215,16 +306,13 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
                   <Text className="text-gray-700 text-xs mx-2">{line.quantity}</Text>
                   {!line.sent && (
                     <TouchableOpacity
-                      onPress={() => incrementQty(line.itemId)}
+                      onPress={() => incrementQty(line.lineId)}
                       className="w-6 h-6 bg-gray-100 rounded items-center justify-center"
                     >
                       <Text className="text-gray-600 font-bold">+</Text>
                     </TouchableOpacity>
                   )}
                 </View>
-                <Text className="text-amber-600 text-xs font-semibold">
-                  {formatCurrency(line.price * line.quantity)}
-                </Text>
               </View>
             </View>
           ))}
@@ -232,9 +320,25 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
 
         {/* Totals + actions */}
         <View className="px-3 pb-6 pt-2 border-t border-gray-100">
-          <View className="flex-row justify-between mb-3">
-            <Text className="text-gray-500 text-sm">Total</Text>
-            <Text className="font-bold text-gray-800">{formatCurrency(total)}</Text>
+          <View className="flex-row justify-between mb-0.5">
+            <Text className="text-gray-400 text-xs">Subtotal</Text>
+            <Text className="text-gray-600 text-xs">{formatCurrency(subtotal)}</Text>
+          </View>
+          {cgstTotal > 0 && (
+            <>
+              <View className="flex-row justify-between mb-0.5">
+                <Text className="text-gray-400 text-xs">CGST</Text>
+                <Text className="text-gray-600 text-xs">{formatCurrency(cgstTotal)}</Text>
+              </View>
+              <View className="flex-row justify-between mb-0.5">
+                <Text className="text-gray-400 text-xs">SGST</Text>
+                <Text className="text-gray-600 text-xs">{formatCurrency(sgstTotal)}</Text>
+              </View>
+            </>
+          )}
+          <View className="flex-row justify-between mb-3 mt-1 border-t border-gray-100 pt-1">
+            <Text className="text-gray-700 text-sm font-semibold">Total</Text>
+            <Text className="font-bold text-gray-800">{formatCurrency(netPayable)}</Text>
           </View>
 
           <TouchableOpacity
@@ -249,8 +353,8 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
 
           <TouchableOpacity
             className="bg-green-500 py-3 rounded-lg items-center mb-2"
-            onPress={handleCheckout}
-            disabled={checkingOut}
+            onPress={() => setPaymentVisible(true)}
+            disabled={checkingOut || lines.length === 0}
           >
             {checkingOut ? (
               <ActivityIndicator color="#fff" />
@@ -267,8 +371,6 @@ function BillingScreen({ items, itemGroups }: { items: Item[]; itemGroups: ItemG
     </View>
   );
 }
-
-// ─── WatermelonDB reactive enhancement ────────────────────────────────────────
 
 const enhance = withObservables([], () => ({
   items: database.get<Item>('items').query(Q.where('is_active', true)),

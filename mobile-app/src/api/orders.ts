@@ -39,6 +39,11 @@ export async function cancelOrder(serverOrderId: string) {
   return data;
 }
 
+export async function unholdOrder(serverOrderId: string) {
+  const { data } = await apiClient.post(`/restaurant/orders/${serverOrderId}/unhold`);
+  return data;
+}
+
 export async function fetchOrders(page = 1) {
   const { data } = await apiClient.get('/restaurant/orders', { params: { per_page: 50, page } });
   return data;

@@ -310,6 +310,8 @@ declare global {
       window: {
         openKitchen(): Promise<void>
         closeKitchen(): Promise<void>
+        toggleFullscreen(): Promise<void>
+        isFullscreen(): Promise<boolean>
       }
       updater: {
         installNow(): Promise<void>
@@ -432,8 +434,10 @@ export const ipc = {
       window.electronAPI.kots.onStatusChange(cb as (data: unknown) => void),
   },
   window: {
-    openKitchen:  () => window.electronAPI.window.openKitchen(),
-    closeKitchen: () => window.electronAPI.window.closeKitchen(),
+    openKitchen:      () => window.electronAPI.window.openKitchen(),
+    closeKitchen:     () => window.electronAPI.window.closeKitchen(),
+    toggleFullscreen: () => window.electronAPI.window.toggleFullscreen(),
+    isFullscreen:     () => window.electronAPI.window.isFullscreen(),
   },
   updater: {
     installNow:         () => window.electronAPI.updater.installNow(),

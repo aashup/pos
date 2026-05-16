@@ -39,6 +39,9 @@ export function useItemsSync() {
         const result = await fetchItems(page);
         await db.write(async () => {
           for (const item of result.data) {
+            const cgstPct = item.cgst ?? null;
+            const sgstPct = item.sgst ?? null;
+            const gstRate = cgstPct != null && sgstPct != null ? cgstPct + sgstPct : null;
             const existing = await db
               .get<Item>('items')
               .query(Q.where('server_id', item.id))
@@ -49,6 +52,13 @@ export function useItemsSync() {
                 r.price = item.sale_price;
                 r.barcode = item.barcode ?? null;
                 r.isActive = item.is_active;
+                r.cgstPct = cgstPct;
+                r.sgstPct = sgstPct;
+                r.gstRate = gstRate;
+                r.unit = item.unit ?? null;
+                r.sku = item.sku ?? null;
+                r.hasVariants = (item.has_variants ?? 0) > 0;
+                r.hasModifiers = (item.has_modifiers ?? 0) > 0;
                 r.syncedAt = Date.now();
               });
             } else {
@@ -59,6 +69,13 @@ export function useItemsSync() {
                 r.barcode = item.barcode ?? null;
                 r.itemGroupId = item.item_group_id;
                 r.isActive = item.is_active;
+                r.cgstPct = cgstPct;
+                r.sgstPct = sgstPct;
+                r.gstRate = gstRate;
+                r.unit = item.unit ?? null;
+                r.sku = item.sku ?? null;
+                r.hasVariants = (item.has_variants ?? 0) > 0;
+                r.hasModifiers = (item.has_modifiers ?? 0) > 0;
                 r.syncedAt = Date.now();
               });
             }
