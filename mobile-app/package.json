@@ -6,12 +6,13 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "node -e \"const fs=require('fs');const d='node_modules/react-native-worklets';fs.mkdirSync(d,{recursive:true});fs.writeFileSync(d+'/plugin.js','module.exports=require(\\\"react-native-worklets-core/plugin\\\");');fs.writeFileSync(d+'/index.js','module.exports=require(\\\"react-native-worklets-core\\\");');fs.writeFileSync(d+'/package.json',JSON.stringify({name:'react-native-worklets',version:'0.0.0',main:'index.js'}));\""
   },
   "dependencies": {
     "@nozbe/watermelondb": "^0.28.0",
     "@nozbe/with-observables": "^1.6.0",
-    "@react-native-community/netinfo": "^12.0.1",
+    "@react-native-community/netinfo": "^11.4.1",
     "@tanstack/react-query": "^5.100.10",
     "axios": "^1.16.1",
     "clsx": "^2.1.1",
@@ -31,6 +32,7 @@
     "react-native-gesture-handler": "~2.28.0",
     "react-native-mmkv": "^4.3.1",
     "react-native-nitro-modules": "^0.35.6",
+    "react-native-reanimated": "~4.1.1",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
     "react-native-toast-message": "^2.3.3",
@@ -46,6 +48,7 @@
     "@babel/plugin-proposal-decorators": "^7.29.0",
     "@types/react": "~19.1.0",
     "@types/uuid": "^10.0.0",
+    "babel-preset-expo": "~54.0.10",
     "typescript": "~5.9.2"
   },
   "private": true

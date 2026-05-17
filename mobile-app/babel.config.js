@@ -8,10 +8,10 @@ module.exports = function (api) {
           jsxImportSource: 'nativewind',
         },
       ],
+      'nativewind/babel',
     ],
     plugins: [
       ['@babel/plugin-proposal-decorators', { legacy: true }],
-      'nativewind/babel',
     ],
   };
 };

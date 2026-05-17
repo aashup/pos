@@ -8,6 +8,7 @@ Restaurant POS system. Electron desktop client + React Native mobile client, bot
 D:\erp\pos\
 ├── electron-app/    # Electron 32 + React 19 + Vite + TypeScript (desktop POS)
 ├── mobile-app/      # Expo SDK 54 + React Native (waitstaff mobile POS)
+├── desktop-react/   # React Native Windows 0.76 (Windows-native desktop POS)
 ├── api/             # Laravel — own MySQL via Docker (api/docker-compose.yml)
 └── Makefile         # COMPOSE points to api/docker-compose.yml
 ```
@@ -15,6 +16,7 @@ D:\erp\pos\
 > Each sub-project has its own `CLAUDE.md` with full details:
 > - [`electron-app/CLAUDE.md`](electron-app/CLAUDE.md) — Electron desktop app
 > - [`mobile-app/CLAUDE.md`](mobile-app/CLAUDE.md) — React Native mobile app
+> - [`desktop-react/CLAUDE.md`](desktop-react/CLAUDE.md) — React Native Windows desktop app
 
 ## How to Run
 

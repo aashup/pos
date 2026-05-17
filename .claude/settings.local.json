@@ -25,7 +25,20 @@
       "Bash(dir \"D:\\\\erp\\\\pos\\\\electron-app\\\\node_modules\")",
       "Bash(findstr /i \"printer\")",
       "Bash(npx prebuild-install *)",
-      "mcp__Claude_in_Chrome__navigate"
+      "mcp__Claude_in_Chrome__navigate",
+      "Bash(node -e \"const p = require\\('./node_modules/expo/package.json'\\); console.log\\(JSON.stringify\\(p.peerDependencies, null, 2\\)\\)\")",
+      "Bash(node -e \"const p = require\\('./node_modules/expo/package.json'\\); const bpeDep = \\(p.dependencies || {}\\)['babel-preset-expo'] || \\(p.peerDependencies || {}\\)['babel-preset-expo']; console.log\\('expo expects babel-preset-expo:', bpeDep\\)\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/babel-preset-expo/package.json'\\).version\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(Select-String \"worklets\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/react-native-worklets-core/package.json'\\).version\\)\")",
+      "PowerShell(New-Item -ItemType Directory -Path \"D:\\\\erp\\\\pos\\\\mobile-app\\\\node_modules\\\\react-native-worklets\" -Force)",
+      "Bash(node -e \"require\\('react-native-worklets/plugin'\\); console.log\\('OK'\\)\")",
+      "Bash(Test-f \"D:\\\\erp\\\\pos\\\\mobile-app\\\\.npmrc\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/react-native-reanimated/package.json'\\).version\\)\")",
+      "Bash(Get-ChildItem \"D:/erp/pos/\" -Directory)",
+      "Bash(Select-Object Name)",
+      "PowerShell(node --version)"
     ]
   }
 }
