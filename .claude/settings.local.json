@@ -1,6 +1,11 @@
 {
   "permissions": {
     "allow": [
+      "Bash(*)",
+      "PowerShell(*)",
+      "Read(//**)",
+      "Edit(//**)",
+      "Write(//**)",
       "Bash(npm i *)",
       "Bash(npm install *)",
       "Bash(npm run *)",
@@ -38,7 +43,12 @@
       "Bash(node -e \"console.log\\(require\\('./node_modules/react-native-reanimated/package.json'\\).version\\)\")",
       "Bash(Get-ChildItem \"D:/erp/pos/\" -Directory)",
       "Bash(Select-Object Name)",
-      "PowerShell(node --version)"
+      "PowerShell(node --version)",
+      "Bash(ls ~/.claude/projects/ | head -20)",
+      "Bash(awk '{print $2}')",
+      "Bash(python3)",
+      "Bash(dir \"D:\\\\erp\\\\pos\\\\desktop-react\\\\screens\" /s /b)",
+      "Bash(findstr \"\\\\.tsx$\")"
     ]
   }
 }

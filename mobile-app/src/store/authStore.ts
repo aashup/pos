@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 
-const storage = new MMKV({ id: 'auth-store' });
+const storage = createMMKV({ id: 'auth-store' });
 
 interface AuthState {
   token: string | null;

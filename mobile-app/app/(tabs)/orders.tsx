@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
 import { router } from 'expo-router';
-import { withObservables } from '@nozbe/with-observables';
+import withObservables from '@nozbe/with-observables';
 import { Q } from '@nozbe/watermelondb';
 import { useOrdersSync } from '@/hooks/useOrdersSync';
 import { SyncStatusBar } from '@/components/ui/SyncStatusBar';

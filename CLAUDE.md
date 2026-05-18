@@ -79,30 +79,122 @@ The `api/` is a standalone Laravel app with its own MySQL database (`zazzy_pos`)
 
 ## Backend API Endpoints in Use
 
-All under `/api/v1/` (Laravel sanctum auth required).
+All under `/api/v1/` (Laravel sanctum auth required unless marked public).
 
+### Auth (public)
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `POST /login` | AuthController@login | public |
+| `POST /register` | AuthController@register | public |
+| `GET /health` | inline | `{ ok: true, app: 'Zazzy POS' }` |
+| `GET /public/invoices/{token}` | PublicInvoiceController@show | public invoice view |
+
+### Auth (authenticated)
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `GET /me` | AuthController@me | current user |
+| `PUT /auth/profile` | AuthController@updateProfile | |
+| `POST /auth/profile/avatar` | AuthController@uploadAvatar | multipart |
+| `PUT /auth/password` | AuthController@updatePassword | |
+| `POST /logout`, `POST /logout-all` | AuthController | session termination |
+
+### Dashboard
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `GET /dashboard/stats` | DashboardController@stats | |
+| `GET /dashboard/chart` | DashboardController@chart | |
+| `GET /dashboard/collection` | DashboardController@collection | |
+
+### Sync (used by SyncWorker)
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `POST /sync/push` | SyncController@push | |
+| `GET /sync/pull` | SyncController@pull | |
+
+### Items / Units / Groups
 | Endpoint | Controller | Notes |
 |----------|-----------|-------|
 | `GET /items` | ItemController@index | `?per_page`, `?search`, `?is_active`, `?item_group_id` |
 | `POST /items` | ItemController@store | requires `name`, `unit`; CGST/SGST/IGST optional |
 | `GET /items/{id}` | ItemController@show | returns item with batches + alternate units |
-| `PATCH /items/{id}` | ItemController@update | partial update via 'sometimes' validation |
+| `PATCH /items/{id}` | ItemController@update | partial update via 'sometimes' |
 | `DELETE /items/{id}` | ItemController@destroy | soft delete |
 | `GET /item-groups` | ItemGroupController | flat list |
 | `GET /units` | UnitController@index | `?status=active&per_page=500` |
 | `GET/POST/PATCH/DELETE /item-variants` | ItemVariantController | scoped by `item_id` |
+| `GET /item-modifier-groups` | ItemModifierGroupController@index | junction data |
 | `GET/POST/PATCH/DELETE /modifier-groups` | ModifierGroupController | |
+| `POST /modifier-groups/{id}/modifiers` | ModifierGroupController@storeModifier | nested modifier CRUD |
+| `PATCH /modifier-groups/{id}/modifiers/{modifier}` | ModifierGroupController@updateModifier | |
+| `DELETE /modifier-groups/{id}/modifiers/{modifier}` | ModifierGroupController@destroyModifier | |
+| `GET/POST/PATCH/DELETE /combos` | ComboController | |
+| `GET/POST/PATCH/DELETE /recipes` | RecipeController | |
+
+### Stock / Batches
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `GET /stock-ledger` | StockLedgerController@index | |
+| `GET /stock-summary` | StockLedgerController@summary | |
+| `POST /stock-ledger/opening` | StockLedgerController@opening | |
+| `POST /stock-ledger/adjustment` | StockLedgerController@adjustment | |
+| `POST /stock-ledger/transfer` | StockLedgerController@transfer | |
+| `GET /stock-ledger/reorder-alerts` | StockLedgerController@reorderAlerts | |
+| `GET /items/{id}/movements` | StockLedgerController@itemMovements | |
+| `GET /batches`, `GET /batches/expiring` | BatchController | |
+| `GET/POST /items/{id}/batches` | BatchController | |
+| `PUT/DELETE /batches/{batch}` | BatchController | |
+
+### Media
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
 | `POST /media` | MediaController@store | multipart; `entity_type`, `entity_id`, `is_primary` as `'1'`/`'0'` |
-| `GET /media` | MediaController@index | `?entity_type=&entity_id=` — **both required** (use for single-entity fetch) |
+| `GET /media` | MediaController@index | `?entity_type=&entity_id=` — **both required** (single-entity fetch) |
 | `GET /media/sync` | MediaController@sync | `?entity_type=item&per_page=200` — bulk paginated, **no entity_id** (POS sync only) |
 | `DELETE /media/{id}` | MediaController@destroy | |
+| `PATCH /media/{id}/set-primary` | MediaController@setPrimary | |
+
+### Restaurant Orders / Tables
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
 | `GET/POST /restaurant/orders` | RestaurantOrderController | GET supports `?per_page`, `?page` |
-| `POST /restaurant/orders/{id}/lines` | RestaurantOrderController | |
-| `POST /restaurant/orders/{id}/kot` | RestaurantOrderController | |
-| `POST /restaurant/orders/{id}/checkout` | RestaurantOrderController | |
-| `POST /restaurant/orders/{id}/hold` | RestaurantOrderController | |
-| `POST /restaurant/orders/{id}/unhold` | RestaurantOrderController | |
-| `POST /restaurant/orders/{id}/cancel` | RestaurantOrderController | |
-| `GET /floor-plans` | FloorPlanController | |
-| `GET /dining-tables` | DiningTableController | `?is_active=1` |
-| `GET /godowns` | GodownController | |
+| `GET /restaurant/orders/{id}` | RestaurantOrderController@show | |
+| `POST /restaurant/orders/{id}/lines` | RestaurantOrderController@addLines | |
+| `DELETE /restaurant/orders/{id}/lines/{line}` | RestaurantOrderController@removeLine | |
+| `POST /restaurant/orders/{id}/kot` | RestaurantOrderController@generateKot | |
+| `POST /restaurant/orders/{id}/checkout` | RestaurantOrderController@checkout | |
+| `POST /restaurant/orders/{id}/hold` | RestaurantOrderController@hold | |
+| `POST /restaurant/orders/{id}/unhold` | RestaurantOrderController@unhold | |
+| `POST /restaurant/orders/{id}/cancel` | RestaurantOrderController@cancel | |
+| `POST /restaurant/orders/{id}/transfer-table` | RestaurantOrderController@transferTable | |
+| `GET /floor-plans` (+ apiResource CRUD) | FloorPlanController | |
+| `GET /dining-tables` (+ apiResource CRUD) | DiningTableController | `?is_active=1` |
+| `PATCH /dining-tables/{id}/status` | DiningTableController@updateStatus | |
+| `POST /dining-tables/{id}/merge` | DiningTableController@merge | |
+| `GET /godowns` (+ apiResource CRUD) | GodownController | |
+
+### KOTs
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `GET /kots`, `GET /kots/{id}` | KotController | |
+| `PATCH /kots/{id}/status` | KotController@updateStatus | |
+| `PATCH /kots/{id}/lines/{line}/status` | KotController@updateLineStatus | |
+| `POST /kots/{id}/reprint` | KotController@reprint | |
+
+### Reports — POS (Restaurant)
+> ⚠️ These restaurant report routes **must appear BEFORE** the generic ERP report routes in `routes/api.php`.
+
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `GET /reports/sales-summary` | RestaurantReportController@salesSummary | |
+| `GET /reports/item-wise` | RestaurantReportController@itemWise | |
+| `GET /reports/day-close` | RestaurantReportController@dayClose | |
+| `GET /reports/gst-summary` | RestaurantReportController@gstSummary | |
+| `GET /reports/payment-mode` | RestaurantReportController@paymentMode | |
+
+### Parties (customers/suppliers)
+| Endpoint | Controller | Notes |
+|----------|-----------|-------|
+| `GET/POST/PATCH/DELETE /parties` | PartyController | electron-app pushes local customers here via `POST /parties` (`type: 'customer'`) |
+| `GET /parties/{id}/balance` | PartyController@balance | |
+
+> Other ERP routes (purchase/sales invoices, payroll, accounting, finance, branches/users/roles, etc.) are also mounted under `/api/v1/` but are not consumed by the POS clients. See `api/routes/api.php` for the full list.

@@ -38,15 +38,20 @@ src/
 │   │   ├── database.ts       # better-sqlite3 singleton (getDb, initDatabase)
 │   │   ├── schema.sql        # CREATE TABLE IF NOT EXISTS (idempotent, runs every startup)
 │   │   └── repositories/
-│   │       ├── ItemRepository.ts   # search(), getGroups(), getAll(), getAllForPOS(), upsert(), upsertGroup()
-│   │       ├── TableRepository.ts  # getAll(), getFloorPlans(), upsert(), upsertFloorPlan(), updateStatus()
-│   │       ├── UnitRepository.ts   # getAll(), upsert()
-│   │       ├── KotRepository.ts    # listActive(), updateStatus(), updateLineStatus(), setServerId(), getServerId(), markSynced(), upsertFromServer()
-│   │       └── OrderRepository.ts  # createOrder(), addLine(), updateLineQty(), updateLineNotes(), removeLine(), createKot(),
-│   │                               # setServerId(), markLinesSynced(), markConfirmed(), findActiveByTableId(),
-│   │                               # getOrder(), getPendingLines(),
-│   │                               # list(filters?), getById(), listHeld(), hold(), unhold(), cancel(),
-│   │                               # checkout(), upsertFromServer()
+│   │       ├── ItemRepository.ts        # search(), getGroups(), getAll(), getAllForPOS(), getVariants(), getModifierGroupsForItem(), upsert(), upsertGroup()
+│   │       ├── ComboRepository.ts       # getAll() with media image URLs (combos for POS)
+│   │       ├── TableRepository.ts       # getAll(), getFloorPlans(), upsert(), upsertFloorPlan(), updateStatus()
+│   │       ├── UnitRepository.ts        # getAll(), upsert()
+│   │       ├── KotRepository.ts         # listActive(), updateStatus(), updateLineStatus(), setServerId(), getServerId(), markSynced(), upsertFromServer()
+│   │       ├── CustomerRepository.ts    # search(), create(), markSynced(), upsertFromServer()  (pos_customers, offline-first)
+│   │       ├── PrintTemplateRepository.ts  # getAll(), getActiveByType('kot'|'invoice'), upsert(), bulkUpsert()
+│   │       ├── ReportRepository.ts      # salesSummary(), itemWise(), dayClose(), gstSummary()  (offline-first reports from SQLite)
+│   │       └── OrderRepository.ts       # createOrder(), addLine(), updateLineQty(), updateLineNotes(), updateNotes(), removeLine(), createKot(),
+│   │                                    # setServerId(), markLinesSynced(), markConfirmed(),
+│   │                                    # findActiveByTableId(), findByServerId(),
+│   │                                    # getOrder(), getPendingLines(),
+│   │                                    # list(filters?), getById(), listHeld(), hold(), unhold(), cancel(),
+│   │                                    # checkout(), upsertFromServer()
 │   ├── sync/
 │   │   ├── SyncEngine.ts     # orchestrates push+pull, broadcasts sync:status-changed
 │   │   ├── SyncScheduler.ts  # 30-minute foreground / re-syncs on network online
@@ -79,7 +84,11 @@ src/
     ├── store/
     │   ├── authStore.ts      # user, token, isAuthenticated, serverUrl (persisted localStorage)
     │   ├── cartStore.ts      # lines, orderId, orderType, tableId, totals (renderer-only)
-    │   └── syncStore.ts      # status: 'idle'|'syncing', lastSyncAt, errors
+    │   ├── syncStore.ts      # status: 'idle'|'syncing', lastSyncAt, errors
+    │   ├── themeStore.ts     # theme: 'light'|'dark', toggleTheme(), applyTheme() (persisted, applies to DOM)
+    │   ├── tablesStore.ts    # tables[], loadTables(), updateTableStatus(), setTables()
+    │   ├── ordersStore.ts    # orders[], heldOrders[], loadOrders(), loadHeldOrders(), upsertOrder(), removeOrder()
+    │   └── kotsStore.ts      # kots[], loadKots(), updateKotStatus(), updateLineStatus()
     └── pages/
         ├── auth/Login.tsx
         ├── setup/SetupWizard.tsx
@@ -94,8 +103,7 @@ src/
         │   ├── ItemList.tsx           # paginated item list, search, New Item button
         │   ├── ItemDetail.tsx         # create/edit item: name, unit, price, CGST/SGST, variants table, images
         │   ├── ModifierGroupManager.tsx
-        │   ├── ComboManager.tsx
-        │   └── StockSummary.tsx       # low-stock filter, search, color-coded rows
+        │   └── ComboManager.tsx
         ├── reports/
         │   ├── SalesSummary.tsx       # date presets, KPI cards, by_order_type, daily table
         │   ├── DayClose.tsx           # single date, cash drawer, top 10 items
@@ -106,6 +114,23 @@ src/
             ├── TableManager.tsx      # manage dining tables
             └── DeviceInfo.tsx        # serverUrl, deviceId, sync status, version
 ```
+
+---
+
+## Local SQLite Tables (`src/main/db/schema.sql`)
+
+Created idempotently on every startup. Key tables:
+
+- `device_config` — single-row config (deviceId, etc.)
+- `item_groups`, `items`, `item_variants`, `modifier_groups`, `modifiers`, `item_modifier_groups` — catalog
+- `combos`, `combo_modifier_groups`, `combo_items` — combo definitions
+- `media` — image metadata + `local_path` for cached files (see Media Image Cache)
+- `units`, `godowns`, `floor_plans`, `dining_tables` — reference data
+- `sales_invoices`, `sales_invoice_lines`, `sales_invoice_line_modifiers` — orders
+- `kots`, `kot_lines` — kitchen tickets
+- `print_templates` — KOT + invoice template layouts (`type`, `layout`, `is_active`, `server_id`) — managed by PrintTemplateRepository
+- `pos_customers` — local customer table (`name`, `phone`, `server_id`, `sync_status`) — offline-first, SyncWorker pushes pending rows to `POST /parties`
+- `sync_queue` — pending background-sync items
 
 ---
 
@@ -126,8 +151,11 @@ settings:delete (key)     → TokenStore.deleteSetting()
 items:search (q, groupId)    → ItemRepository.search()                (SQLite FTS, LIMIT 80)
 items:groups                 → ItemRepository.getGroups()
 items:get-all                → ItemRepository.getAllForPOS()           (LIMIT 500, used by POS grid; includes has_variants + has_modifiers counts)
+items:get-all-inventory      → ItemRepository.getAll()                 (full fields, used by inventory pages)
 items:get-variants (itemId)  → ItemRepository.getVariants()           (active variants for item)
 items:get-modifier-groups (itemId) → ItemRepository.getModifierGroupsForItem()  (groups + modifiers, for VariantModifierModal)
+
+combos:get-all            → ComboRepository.getAll()    (with media image URLs)
 
 units:get-all             → UnitRepository.getAll()     (active units only)
 
@@ -138,11 +166,13 @@ tables:update-status (id, status, orderId) → TableRepository.updateStatus()
 order:create (data)       → OrderRepository.createOrder()   returns local UUID
 order:add-line (invoiceId, line)            → OrderRepository.addLine()
 order:update-line-notes (lineId, notes)     → OrderRepository.updateLineNotes()   persists chef notes to SQLite
+order:update-notes (id, notes)              → OrderRepository.updateNotes()       order-level notes
 order:update-line-qty (lineId, qty)         → OrderRepository.updateLineQty()
 order:remove-line (lineId)                  → OrderRepository.removeLine()
 order:send-kot (localOrderId)               → OrderRepository.createKot() + print + fire-and-forget server push
 order:mark-confirmed (localId, serverId?)   → OrderRepository.markConfirmed()
 order:find-by-table (tableId)              → OrderRepository.findActiveByTableId()  (used by TableSelection resume)
+order:find-by-server-id (serverId)         → OrderRepository.findByServerId()
 order:list (filters?)     → OrderRepository.list()          offline-first
 order:get (id)            → OrderRepository.getById()       offline-first
 order:list-held           → OrderRepository.listHeld()      offline-first
@@ -155,17 +185,36 @@ kots:list                         → KotRepository.listActive()
 kots:update-status (id, status)   → KotRepository.updateStatus() + fire-and-forget server PATCH
 kots:update-line-status (kotId, lineId, status) → KotRepository.updateLineStatus() + fire-and-forget
 kots:upsert-from-server (kot)     → KotRepository.upsertFromServer()
+kots:status-changed               ← broadcast to all windows when a KOT status changes (table-card badge refresh)
+
+customer:search (q)         → CustomerRepository.search()
+customer:create (name,phone) → CustomerRepository.create() + fire-and-forget POST /parties (type=customer)
+
+reports:sales-summary (from, to) → ReportRepository.salesSummary()     offline-first
+reports:item-wise (from, to)     → ReportRepository.itemWise()         offline-first
+reports:day-close (date)         → ReportRepository.dayClose()         offline-first
+reports:gst-summary (from, to)   → ReportRepository.gstSummary()       offline-first
+
+templates:list                       → PrintTemplateRepository.getAll()
+templates:get-active (type)          → PrintTemplateRepository.getActiveByType('kot'|'invoice')
+templates:upsert (template)          → PrintTemplateRepository.upsert()
+templates:bulk-upsert (templates[])  → PrintTemplateRepository.bulkUpsert()
 
 sync:trigger              → SyncEngine.runSync()
 sync:status               → SyncEngine.getSyncStatus()
 sync:status-changed       ← broadcast from SyncEngine to all windows (ipcMain.emit)
 
-print:receipt (data)      → ThermalPrinter.printReceipt()
-print:kot (data)          → KotPrinter.printKOT()
-print:list-printers       → ThermalPrinter.listPrinters()
+print:receipt (data)             → ThermalPrinter.printReceipt()
+print:kot (data)                 → KotPrinter.printKOT()
+print:kot-from-template (data, layout) → ThermalPrinter.printKotFromTemplate()
+print:html-invoice (html, silent?) → HtmlInvoicePrinter.printHtmlInvoice()
+print:html-kot (html, silent?)     → HtmlInvoicePrinter.printHtmlKot()
+print:list-printers              → wc.getPrintersAsync() (via renderer webContents)
 
 window:open-kitchen       → creates KitchenWindow (secondary display, fullscreen)
 window:close-kitchen      → closes KitchenWindow
+window:toggle-fullscreen  → BrowserWindow.setFullScreen(toggle)
+window:is-fullscreen      → BrowserWindow.isFullScreen()
 
 updater:install-now       → autoUpdater.quitAndInstall()
 updater:update-available  ← broadcast from autoUpdater
@@ -195,7 +244,6 @@ All use **HashRouter** (Electron file:// URLs).
 /inventory/items/:id      ItemDetail           RequireAuth  ← id='new' for create
 /inventory/modifiers      ModifierGroupManager RequireAuth
 /inventory/combos         ComboManager         RequireAuth
-/inventory/stock          StockSummary         RequireAuth
 /settings/device          DeviceInfo           RequireAuth
 /settings/printer         PrinterSettings      RequireAuth
 /settings/tables          TableManager         RequireAuth
@@ -285,8 +333,8 @@ function calcRoundOff(amount: number) {
 - Receives `{ dbPath, token, serverUrl }` via `workerData`
 - Uses `db.transaction()` for every batch upsert (atomic, avoids lock contention)
 - Sets `busy_timeout = 5000` so concurrent reads from main thread don't cause SQLITE_BUSY
-- **PUSH** — `sales_invoices` where `sync_status='pending'` (LIMIT 50); marks `'synced'` or `'failed'`
-- **PULL** — in order: `units`, `item_groups`, `items` (paginated), `media` (paginated + image download), `floor_plans`, `dining_tables`, `godowns`, `orders` (paginated)
+- **PUSH** — `sales_invoices` where `sync_status='pending'` (LIMIT 50); also pushes `pos_customers` with `sync_status='pending'` via `POST /parties` (type=customer); marks `'synced'` or `'failed'`
+- **PULL** — in order: `units`, `item_groups`, `items` (paginated), `item_variants`, `modifier_groups` + `modifiers`, `item_modifier_groups` (junction), `combos`, `media` (paginated + image download), `floor_plans`, `dining_tables`, `godowns`, `orders` (paginated)
 - Orders pull skips any row where local `sync_status='pending'` to avoid overwriting unsynced local changes
 - Posts `{ pushed, pulled, errors }` via `parentPort.postMessage()` then exits
 
@@ -445,6 +493,16 @@ linux:
 ```
 
 `asarUnpack` is required for native modules — they can't run from inside the asar archive.
+
+---
+
+## POS Components (`src/renderer/src/components/pos/`)
+
+Beyond `ItemGrid`, `Cart`, `VariantModifierModal`, `GridDisplaySelection`, and `PaymentModal` covered elsewhere:
+
+- `PosHeader.tsx` — top bar (sync status, theme toggle, fullscreen, user menu)
+- `CustomerModal.tsx` — create/select a customer for the current order (uses `customer:search` + `customer:create` IPC)
+- `CustomerDropdown.tsx` — inline customer picker used inside the cart / billing flow
 
 ---
 

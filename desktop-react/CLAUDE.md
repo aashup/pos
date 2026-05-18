@@ -33,7 +33,7 @@ Layer 3: Master DB → Laravel API    (server source of truth; sync target)
 | QR scan for tables | Camera-based | Removed (click table directly) |
 | DB name | `zazzy_mobile` | `zazzy_windows` |
 | `pt-12` status bar offset | Present | Removed (no iOS status bar) |
-| Native layer | Expo SDK 54 | react-native-windows 0.76 |
+| Native layer | Expo SDK 54 | react-native-windows 0.75.20 |
 
 ---
 
@@ -162,7 +162,7 @@ npx react-native run-windows
 
 | Package | Version | Why |
 |---------|---------|-----|
-| `react-native` | 0.76.x | Maximum version supported by react-native-windows |
+| `react-native` | 0.75.5 | Maximum version supported by react-native-windows-init |
 | `nativewind` | ^4.2.3 | v4 uses `withNativeWind()` metro wrapper |
 | `tailwindcss` | ^3.4.x | NativeWind v4 requires Tailwind v3, NOT v4 |
 | `@babel/plugin-proposal-decorators` | `{ legacy: true }` | WatermelonDB `@field()` decorators |

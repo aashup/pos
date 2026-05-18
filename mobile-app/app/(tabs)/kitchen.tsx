@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { View, Text, ScrollView, RefreshControl } from 'react-native';
-import { withObservables } from '@nozbe/with-observables';
+import withObservables from '@nozbe/with-observables';
 import { Q } from '@nozbe/watermelondb';
 import { database } from '@/db';
 import { KotCard } from '@/components/kitchen/KotCard';

@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
-import { withObservables } from '@nozbe/with-observables';
+import withObservables from '@nozbe/with-observables';
 import { Q } from '@nozbe/watermelondb';
 import { useDatabase } from '@nozbe/watermelondb/react';
 import { useCartStore } from '@/store/cartStore';
