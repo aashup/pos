@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  VS 2026 / MSVC 14.51 compatibility for react-native-windows 0.75 and all
+  autolinked community modules (async-storage, watermelondb, screens, etc.).
+
+  RNW 0.75 and its ecosystem were authored against VS 2022 (MSVC 14.3x).
+  VS 2026 introduces new warnings that RNW's Warnings.props escalates to hard
+  errors via TreatWarningAsError=true, breaking the build.
+
+  Fixes applied:
+    /Wv:17  — caps emitted warnings to the VS 2022 set; any warning first
+               introduced in VS 2026 (including W4-level deprecation notices
+               in OriginPolicyHttpFilter.cpp) will not be emitted or treated
+               as an error.
+
+    _SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS
+             — keeps <experimental/coroutine> usable while RNW migrates to
+               the C++20 <coroutine> header.
+
+  This file is automatically imported by MSBuild for every .vcxproj in this
+  tree, including all packages under node_modules\*\windows\*.
+  Remove once react-native-windows is upgraded to a version that supports VS 2026.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemDefinitionGroup Condition="'$(MSBuildProjectExtension)' == '.vcxproj'">
+    <ClCompile>
+      <AdditionalOptions>/Wv:17 %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+</Project>
