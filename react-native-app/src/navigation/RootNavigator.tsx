@@ -9,6 +9,7 @@ import ItemsScreen from '@/src/screens/ItemsScreen';
 import LoginScreen from '@/src/screens/auth/LoginScreen';
 import OrderDetailScreen from '@/src/screens/order/OrderDetailScreen';
 import PrinterScreen from '@/src/screens/settings/PrinterScreen';
+import TableManagerScreen from '@/src/screens/settings/TableManagerScreen';
 import {useAuthStore} from '@/src/store/authStore';
 
 // Inventory screens
@@ -65,6 +66,11 @@ export default function RootNavigator() {
               name="PrinterSettings"
               component={PrinterScreen}
               options={{title: 'Printer Settings', ...sharedHeaderOptions}}
+            />
+            <Stack.Screen
+              name="TableManager"
+              component={TableManagerScreen}
+              options={{title: 'Table Manager', ...sharedHeaderOptions}}
             />
             {/* Inventory */}
             <Stack.Screen

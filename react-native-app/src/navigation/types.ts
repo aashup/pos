@@ -16,6 +16,7 @@ export type RootStackParamList = {
   OrderDetail: {orderId: string};
   Items: undefined;
   PrinterSettings: undefined;
+  TableManager: undefined;
   // Inventory
   InventoryMenu: undefined;
   InventoryItems: undefined;

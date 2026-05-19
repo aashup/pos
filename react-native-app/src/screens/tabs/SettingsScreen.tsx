@@ -111,6 +111,21 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.navRow}>
+          <TouchableOpacity
+            style={[styles.navBtn, {backgroundColor: theme.surface, borderColor: theme.border}]}
+            onPress={() => nav.navigate('TableManager')}>
+            <Text style={styles.navBtnEmoji}>🪑</Text>
+            <View style={{flex: 1}}>
+              <Text style={[styles.navBtnLabel, {color: theme.textPrimary}]}>Tables</Text>
+              <Text style={[styles.navBtnSub, {color: theme.textSecondary}]}>
+                Floor plans &amp; dining tables
+              </Text>
+            </View>
+            <Text style={[styles.navBtnArrow, {color: theme.textMuted}]}>›</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={[styles.section, {backgroundColor: theme.surface, borderColor: theme.border}]}>
           <Text style={[styles.sectionTitle, {color: theme.textSecondary}]}>Appearance</Text>
           <View style={styles.themeRow}>
