@@ -24,11 +24,11 @@ A fully offline-capable restaurant point-of-sale application built with React Na
 
 ## Overview
 
-Zazzy POS (`rc/`) is the Android client for the Zazzy POS restaurant management system. It shares the same Laravel API backend as the Electron desktop app (`electron-app/`) and the Expo mobile app (`mobile-app/`).
+Zazzy POS (`react-native-app/`) is the Android client for the Zazzy POS restaurant management system. It shares the same Laravel API backend as the Electron desktop app (`electron-app/`) and the Expo mobile app (`mobile-app/`).
 
 | App | Platform | Path |
 |-----|----------|------|
-| `rc/` | Android (React Native 0.75) | `D:\erp\pos\rc` |
+| `react-native-app/` | Android (React Native 0.75) | `D:\erp\pos\rc` |
 | `electron-app/` | Windows desktop (Electron 32) | `D:\erp\pos\electron-app` |
 | `mobile-app/` | Android / iOS (Expo SDK 54) | `D:\erp\pos\mobile-app` |
 | `api/` | Laravel + MySQL (Docker) | `D:\erp\pos\api` |
@@ -149,7 +149,7 @@ All tables include `server_id` (nullable until synced) and `sync_state` (`pendin
 ## Project Structure
 
 ```
-rc/
+react-native-app/
 ├── android/                   # Android native project (Gradle)
 ├── src/
 │   ├── api/                   # Axios API wrappers
