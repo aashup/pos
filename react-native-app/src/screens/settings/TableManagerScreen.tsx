@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useNavigation} from '@react-navigation/native';
 
 import {useTheme} from '@/src/store/themeStore';
 import {
@@ -22,15 +23,10 @@ import {
   RemoteFloorPlan,
   RemoteDiningTable,
 } from '@/src/api/tables';
-import Header from '@/src/components/Header';
 
-type Shape = 'square' | 'round' | 'rectangle';
-const SHAPES: Shape[] = ['square', 'round', 'rectangle'];
-const SHAPE_EMOJI: Record<Shape, string> = {
-  square: '⬛',
-  round: '⭕',
-  rectangle: '▬',
-};
+
+type ViewState = 'root' | 'floor';
+type Tab = 'tables' | 'floors';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main screen
@@ -38,13 +34,15 @@ const SHAPE_EMOJI: Record<Shape, string> = {
 
 export default function TableManagerScreen() {
   const theme = useTheme();
+  const navigation = useNavigation();
 
+  const [viewState, setViewState] = useState<ViewState>('root');
+  const [activeTab, setActiveTab] = useState<Tab>('tables');
   const [floors, setFloors] = useState<RemoteFloorPlan[]>([]);
   const [tables, setTables] = useState<RemoteDiningTable[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeFloorId, setActiveFloorId] = useState<string | null>(null);
+  const [selectedFloorId, setSelectedFloorId] = useState<string | null>(null);
 
-  // modal state
   const [floorModal, setFloorModal] = useState<{
     visible: boolean;
     floor?: RemoteFloorPlan;
@@ -55,32 +53,44 @@ export default function TableManagerScreen() {
   }>({visible: false});
   const [bulkModal, setBulkModal] = useState(false);
 
-  const activeFloor = floors.find(f => f.id === activeFloorId) ?? floors[0] ?? null;
-  const floorTables = tables.filter(
-    t => t.floor_plan_id === activeFloor?.id,
-  );
+  const selectedFloor = floors.find(f => f.id === selectedFloorId) ?? null;
+  const floorTables = tables.filter(t => t.floor_plan_id === selectedFloorId);
 
-  // ── load ──
   const reload = useCallback(async () => {
     setLoading(true);
     try {
       const [f, t] = await Promise.all([floorPlansApi.list(), diningTablesApi.list()]);
       setFloors(f);
       setTables(t);
-      if (!activeFloorId && f.length > 0) setActiveFloorId(f[0].id);
     } catch {
       Alert.alert('Error', 'Failed to load tables. Check server connection.');
     } finally {
       setLoading(false);
     }
-  }, [activeFloorId]);
+  }, []);
 
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── floor delete ──
+  function openFloor(floor: RemoteFloorPlan) {
+    setSelectedFloorId(floor.id);
+    setViewState('floor');
+  }
+
+  function handleFloorMenu(floor: RemoteFloorPlan) {
+    Alert.alert(floor.name, undefined, [
+      {text: 'Edit Name', onPress: () => setFloorModal({visible: true, floor})},
+      {
+        text: 'Delete Floor',
+        style: 'destructive',
+        onPress: () => confirmDeleteFloor(floor),
+      },
+      {text: 'Cancel', style: 'cancel'},
+    ]);
+  }
+
   function confirmDeleteFloor(floor: RemoteFloorPlan) {
     Alert.alert(
       `Delete "${floor.name}"?`,
@@ -93,7 +103,10 @@ export default function TableManagerScreen() {
           onPress: async () => {
             try {
               await floorPlansApi.delete(floor.id);
-              if (activeFloorId === floor.id) setActiveFloorId(null);
+              if (selectedFloorId === floor.id) {
+                setViewState('root');
+                setSelectedFloorId(null);
+              }
               reload();
             } catch (err: any) {
               Alert.alert(
@@ -107,7 +120,6 @@ export default function TableManagerScreen() {
     );
   }
 
-  // ── table delete ──
   function confirmDeleteTable(table: RemoteDiningTable) {
     Alert.alert(`Delete table "${table.name}"?`, undefined, [
       {text: 'Cancel', style: 'cancel'},
@@ -129,278 +141,397 @@ export default function TableManagerScreen() {
     ]);
   }
 
-  return (
-    <SafeAreaView style={[styles.screen, {backgroundColor: theme.bg}]} edges={['top', 'left', 'right']}>
-    <KeyboardAvoidingView
-      style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <Header title="Table Manager" />
+  // ── Floor detail view ────────────────────────────────────────────────────────
 
+  if (viewState === 'floor' && selectedFloor) {
+    return (
+      <SafeAreaView
+        style={[styles.screen, {backgroundColor: theme.bg}]}
+        edges={['top', 'left', 'right']}>
+        {/* Header */}
+        <View
+          style={[
+            styles.header,
+            {backgroundColor: theme.surface, borderBottomColor: theme.border},
+          ]}>
+          <TouchableOpacity
+            style={styles.headerBack}
+            onPress={() => setViewState('root')}>
+            <Text style={[styles.headerBackArrow, {color: theme.textPrimary}]}>
+              ←
+            </Text>
+          </TouchableOpacity>
+          <Text
+            style={[styles.headerTitle, {color: theme.textPrimary}]}
+            numberOfLines={1}>
+            {selectedFloor.name}
+          </Text>
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() =>
+                setFloorModal({visible: true, floor: selectedFloor})
+              }>
+              <Text style={[styles.headerIcon, {color: theme.textPrimary}]}>
+                ✏
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconBtn}
+              onPress={() => handleFloorMenu(selectedFloor)}>
+              <Text style={[styles.headerDots, {color: theme.textPrimary}]}>
+                •••
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Table grid */}
+        <FlatList
+          data={floorTables}
+          keyExtractor={t => t.id}
+          numColumns={3}
+          contentContainerStyle={
+            floorTables.length === 0 ? styles.floorGridEmpty : styles.floorGrid
+          }
+          columnWrapperStyle={
+            floorTables.length > 0 ? styles.floorGridRow : undefined
+          }
+          renderItem={({item: table}) => (
+            <FloorTableCard
+              table={table}
+              theme={theme}
+              onPress={() => setTableModal({visible: true, table})}
+            />
+          )}
+          ListEmptyComponent={
+            <View style={styles.center}>
+              <Text style={[styles.emptyBig, {color: theme.textMuted}]}>
+                🪑
+              </Text>
+              <Text style={[styles.emptyHint, {color: theme.textSecondary}]}>
+                No tables on this floor.{'\n'}Tap "Add Table" to create one.
+              </Text>
+            </View>
+          }
+        />
+
+        {/* Footer buttons */}
+        <View
+          style={[
+            styles.floorFooter,
+            {
+              backgroundColor: theme.surface,
+              borderTopColor: theme.border,
+            },
+          ]}>
+          <TouchableOpacity
+            style={[styles.bulkOutlineBtn, {borderColor: theme.primary}]}
+            onPress={() => setBulkModal(true)}>
+            <Text style={[styles.bulkOutlineBtnText, {color: theme.primary}]}>
+              ⚡ Bulk
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.addTablePill, {backgroundColor: theme.primary}]}
+            onPress={() => setTableModal({visible: true})}>
+            <Text style={styles.addTablePillText}>+ Add Table</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Modals */}
+        {tableModal.visible && (
+          <TableModal
+            table={tableModal.table}
+            floorPlanId={selectedFloor.id}
+            theme={theme}
+            onClose={() => setTableModal({visible: false})}
+            onSaved={() => {
+              setTableModal({visible: false});
+              reload();
+            }}
+            onDelete={
+              tableModal.table
+                ? () => {
+                    const t = tableModal.table!;
+                    setTableModal({visible: false});
+                    confirmDeleteTable(t);
+                  }
+                : undefined
+            }
+          />
+        )}
+        {bulkModal && (
+          <BulkCreateModal
+            floorPlanId={selectedFloor.id}
+            theme={theme}
+            onClose={() => setBulkModal(false)}
+            onSaved={() => {
+              setBulkModal(false);
+              reload();
+            }}
+          />
+        )}
+        {floorModal.visible && (
+          <FloorPlanModal
+            floor={floorModal.floor}
+            theme={theme}
+            onClose={() => setFloorModal({visible: false})}
+            onSaved={() => {
+              setFloorModal({visible: false});
+              reload();
+            }}
+          />
+        )}
+      </SafeAreaView>
+    );
+  }
+
+  // ── Root view ────────────────────────────────────────────────────────────────
+
+  const tableSections = floors
+    .map(floor => ({
+      floor,
+      data: tables.filter(t => t.floor_plan_id === floor.id),
+    }))
+    .filter(s => s.data.length > 0);
+
+  const orphanTables = tables.filter(
+    t => !floors.some(f => f.id === t.floor_plan_id),
+  );
+  if (orphanTables.length > 0) {
+    tableSections.push({
+      floor: {id: '__other__', name: 'Other Tables'} as RemoteFloorPlan,
+      data: orphanTables,
+    });
+  }
+
+  return (
+    <SafeAreaView
+      style={[styles.screen, {backgroundColor: theme.bg}]}
+      edges={['top', 'left', 'right']}>
+      {/* Header */}
+      <View
+        style={[
+          styles.header,
+          {backgroundColor: theme.surface, borderBottomColor: theme.border},
+        ]}>
+        <TouchableOpacity
+          style={styles.headerBack}
+          onPress={() => navigation.goBack()}>
+          <Text style={[styles.headerBackArrow, {color: theme.textPrimary}]}>
+            ←
+          </Text>
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, {color: theme.textPrimary}]}>
+          Table & Floor
+        </Text>
+        <View style={styles.headerRight} />
+      </View>
+
+      {/* Tab bar */}
+      <View
+        style={[
+          styles.tabBar,
+          {backgroundColor: theme.surface, borderBottomColor: theme.border},
+        ]}>
+        {(['tables', 'floors'] as Tab[]).map(tab => {
+          const isActive = activeTab === tab;
+          const label =
+            tab === 'tables'
+              ? `Table (${tables.length})`
+              : `Floor (${floors.length})`;
+          return (
+            <TouchableOpacity
+              key={tab}
+              style={styles.tab}
+              onPress={() => setActiveTab(tab)}>
+              <Text
+                style={[
+                  styles.tabText,
+                  {
+                    color: isActive ? theme.primary : theme.textSecondary,
+                    fontWeight: isActive ? '700' : '500',
+                  },
+                ]}>
+                {label}
+              </Text>
+              {isActive && (
+                <View
+                  style={[
+                    styles.tabIndicator,
+                    {backgroundColor: theme.primary},
+                  ]}
+                />
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Content */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={theme.primary} />
         </View>
-      ) : (
-        <View style={styles.body}>
-          {/* ── Left sidebar: floor plans ── */}
-          <View
-            style={[
-              styles.sidebar,
-              {backgroundColor: theme.surface, borderColor: theme.border},
-            ]}>
-            {/* sidebar header */}
-            <View
-              style={[
-                styles.sidebarHeader,
-                {borderColor: theme.border},
-              ]}>
-              <Text
-                style={[styles.sidebarHeaderText, {color: theme.textSecondary}]}>
-                FLOORS
-              </Text>
-              <TouchableOpacity
-                style={styles.addFloorBtn}
-                onPress={() => setFloorModal({visible: true})}>
-                <Text style={styles.addFloorBtnText}>＋</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* floor list */}
-            <FlatList
-              data={floors}
-              keyExtractor={f => f.id}
-              renderItem={({item: floor}) => {
-                const active = activeFloor?.id === floor.id;
-                return (
-                  <TouchableOpacity
-                    style={[
-                      styles.floorRow,
-                      active && {
-                        backgroundColor: '#fef3c7',
-                        borderLeftColor: '#f59e0b',
-                        borderLeftWidth: 3,
-                      },
-                    ]}
-                    onPress={() => setActiveFloorId(floor.id)}>
-                    <Text
-                      style={[
-                        styles.floorRowText,
-                        {color: active ? '#92400e' : theme.textPrimary},
-                        active && {fontWeight: '700'},
-                      ]}
-                      numberOfLines={1}>
-                      🏢 {floor.name}
-                    </Text>
-                    {active && (
-                      <View style={styles.floorRowActions}>
-                        <TouchableOpacity
-                          style={styles.iconBtn}
-                          onPress={() =>
-                            setFloorModal({visible: true, floor})
-                          }>
-                          <Text style={styles.iconBtnText}>✏️</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.iconBtn}
-                          onPress={() => confirmDeleteFloor(floor)}>
-                          <Text style={styles.iconBtnText}>🗑️</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              }}
-              ListEmptyComponent={
-                <Text style={[styles.emptyText, {color: theme.textMuted}]}>
-                  No floor plans.{'\n'}Tap ＋ to add one.
-                </Text>
-              }
-            />
+      ) : activeTab === 'tables' ? (
+        tableSections.length === 0 ? (
+          <View style={styles.center}>
+            <Text style={[styles.emptyBig, {color: theme.textMuted}]}>🪑</Text>
+            <Text style={[styles.emptyHint, {color: theme.textSecondary}]}>
+              No tables yet.{'\n'}Add a floor first, then create tables.
+            </Text>
           </View>
-
-          {/* ── Right panel: tables ── */}
-          <View style={styles.panel}>
-            {!activeFloor ? (
-              <View style={styles.center}>
-                <Text style={[styles.emptyBig, {color: theme.textMuted}]}>
-                  🏢
-                </Text>
-                <Text style={[styles.emptyHint, {color: theme.textSecondary}]}>
-                  Select or create a floor plan
-                </Text>
-              </View>
-            ) : (
-              <>
-                {/* panel header */}
-                <View
+        ) : (
+          <ScrollView contentContainerStyle={styles.tableTabContent}>
+            {tableSections.map(section => (
+              <View key={section.floor.id}>
+                <Text
                   style={[
-                    styles.panelHeader,
-                    {
-                      backgroundColor: theme.surface,
-                      borderColor: theme.border,
-                    },
+                    styles.sectionHeader,
+                    {color: theme.textSecondary},
                   ]}>
-                  <View>
-                    <Text
-                      style={[styles.panelTitle, {color: theme.textPrimary}]}>
-                      {activeFloor.name}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.panelSubtitle,
-                        {color: theme.textSecondary},
-                      ]}>
-                      {floorTables.length} table
-                      {floorTables.length !== 1 ? 's' : ''}
-                    </Text>
-                  </View>
-                  <View style={styles.panelHeaderBtns}>
-                    <TouchableOpacity
-                      style={[styles.addTableBtn, styles.bulkBtn]}
-                      onPress={() => setBulkModal(true)}>
-                      <Text style={styles.addTableBtnText}>⚡ Bulk</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.addTableBtn}
-                      onPress={() => setTableModal({visible: true})}>
-                      <Text style={styles.addTableBtnText}>＋ Add</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* table grid */}
-                <FlatList
-                  data={floorTables}
-                  keyExtractor={t => t.id}
-                  numColumns={2}
-                  contentContainerStyle={styles.tableGrid}
-                  columnWrapperStyle={styles.tableGridRow}
-                  renderItem={({item: table}) => (
-                    <TableCard
+                  {section.floor.name}
+                </Text>
+                <View style={styles.tableGrid}>
+                  {section.data.map(table => (
+                    <RootTableCard
+                      key={table.id}
                       table={table}
                       theme={theme}
-                      onEdit={() => setTableModal({visible: true, table})}
-                      onDelete={() => confirmDeleteTable(table)}
                     />
-                  )}
-                  ListEmptyComponent={
-                    <View style={styles.center}>
-                      <Text
-                        style={[styles.emptyBig, {color: theme.textMuted}]}>
-                        🪑
-                      </Text>
-                      <Text
-                        style={[
-                          styles.emptyHint,
-                          {color: theme.textSecondary},
-                        ]}>
-                        No tables on this floor.{'\n'}Tap "＋ Add Table" to
-                        create one.
-                      </Text>
-                    </View>
-                  }
-                />
-              </>
-            )}
-          </View>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        )
+      ) : floors.length === 0 ? (
+        <View style={styles.center}>
+          <Text style={[styles.emptyBig, {color: theme.textMuted}]}>🏢</Text>
+          <Text style={[styles.emptyHint, {color: theme.textSecondary}]}>
+            No floor plans yet.{'\n'}Tap + to add one.
+          </Text>
         </View>
-      )}
-
-      {/* ── Bulk create modal ── */}
-      {bulkModal && activeFloor && (
-        <BulkCreateModal
-          floorPlanId={activeFloor.id}
-          theme={theme}
-          onClose={() => setBulkModal(false)}
-          onSaved={() => {
-            setBulkModal(false);
-            reload();
-          }}
+      ) : (
+        <FlatList
+          data={floors}
+          keyExtractor={f => f.id}
+          contentContainerStyle={styles.floorListContent}
+          renderItem={({item: floor}) => (
+            <TouchableOpacity
+              style={[
+                styles.floorListRow,
+                {
+                  backgroundColor: theme.surface,
+                  borderColor: theme.border,
+                },
+              ]}
+              onPress={() => openFloor(floor)}>
+              <View style={styles.floorListInfo}>
+                <Text
+                  style={[styles.floorListName, {color: theme.textPrimary}]}>
+                  {floor.name}
+                </Text>
+                <Text
+                  style={[
+                    styles.floorListCount,
+                    {color: theme.textSecondary},
+                  ]}>
+                  {tables.filter(t => t.floor_plan_id === floor.id).length}{' '}
+                  tables
+                </Text>
+              </View>
+              <Text style={[styles.floorListChevron, {color: theme.textMuted}]}>
+                ›
+              </Text>
+            </TouchableOpacity>
+          )}
         />
       )}
 
-      {/* ── Floor plan modal ── */}
+      {/* FAB */}
+      <TouchableOpacity
+        style={[styles.fab, {backgroundColor: theme.primary}]}
+        onPress={() => setFloorModal({visible: true})}>
+        <Text style={styles.fabIcon}>+</Text>
+      </TouchableOpacity>
+
+      {/* Floor modal */}
       {floorModal.visible && (
         <FloorPlanModal
           floor={floorModal.floor}
           theme={theme}
           onClose={() => setFloorModal({visible: false})}
-          onSaved={newFloor => {
-            setFloorModal({visible: false});
-            setActiveFloorId(newFloor.id);
-            reload();
-          }}
-        />
-      )}
-
-      {/* ── Table modal ── */}
-      {tableModal.visible && activeFloor && (
-        <TableModal
-          table={tableModal.table}
-          floorPlanId={activeFloor.id}
-          theme={theme}
-          onClose={() => setTableModal({visible: false})}
           onSaved={() => {
-            setTableModal({visible: false});
+            setFloorModal({visible: false});
             reload();
           }}
         />
       )}
-    </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// TableCard
+// FloorTableCard — tappable, used inside floor detail
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TableCard({
+function FloorTableCard({
   table,
   theme,
-  onEdit,
-  onDelete,
+  onPress,
 }: {
   table: RemoteDiningTable;
   theme: any;
-  onEdit: () => void;
-  onDelete: () => void;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.tableCard,
+        {backgroundColor: theme.surface, borderColor: theme.border},
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}>
+      <Text style={[styles.tableCardName, {color: theme.textPrimary}]}>
+        {table.name}
+      </Text>
+      <Text style={[styles.tableCardMeta, {color: theme.textSecondary}]}>
+        {table.capacity} Seaters
+      </Text>
+      {!table.is_active && (
+        <View style={styles.inactiveBadge}>
+          <Text style={styles.inactiveBadgeText}>Inactive</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RootTableCard — display only, used in Table tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+function RootTableCard({
+  table,
+  theme,
+}: {
+  table: RemoteDiningTable;
+  theme: any;
 }) {
   return (
     <View
       style={[
         styles.tableCard,
-        {
-          backgroundColor: table.is_active ? theme.surface : theme.surfaceAlt,
-          borderColor: theme.border,
-        },
+        {backgroundColor: theme.surface, borderColor: theme.border},
       ]}>
-      <View style={styles.tableCardTop}>
-        <Text style={[styles.tableName, {color: theme.textPrimary}]}>
-          {table.name}
-        </Text>
-        {!table.is_active && (
-          <View style={styles.inactiveBadge}>
-            <Text style={styles.inactiveBadgeText}>Inactive</Text>
-          </View>
-        )}
-      </View>
-      <Text style={[styles.tableMeta, {color: theme.textSecondary}]}>
-        {SHAPE_EMOJI[table.shape] ?? '⬛'} {table.shape} · {table.capacity}{' '}
-        seats
+      <Text style={[styles.tableCardName, {color: theme.textPrimary}]}>
+        {table.name}
       </Text>
-      <View style={styles.tableCardActions}>
-        <TouchableOpacity style={styles.cardActionBtn} onPress={onEdit}>
-          <Text style={[styles.cardActionText, {color: theme.primary}]}>
-            Edit
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.cardActionBtn} onPress={onDelete}>
-          <Text style={[styles.cardActionText, {color: '#dc2626'}]}>
-            Delete
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <Text style={[styles.tableCardMeta, {color: theme.textSecondary}]}>
+        {table.capacity} Seaters
+      </Text>
     </View>
   );
 }
@@ -418,7 +549,7 @@ function FloorPlanModal({
   floor?: RemoteFloorPlan;
   theme: any;
   onClose: () => void;
-  onSaved: (f: RemoteFloorPlan) => void;
+  onSaved: () => void;
 }) {
   const [name, setName] = useState(floor?.name ?? '');
   const [saving, setSaving] = useState(false);
@@ -427,10 +558,12 @@ function FloorPlanModal({
     if (!name.trim()) return;
     setSaving(true);
     try {
-      const result = floor
-        ? await floorPlansApi.update(floor.id, {name: name.trim()})
-        : await floorPlansApi.create({name: name.trim()});
-      onSaved(result);
+      if (floor) {
+        await floorPlansApi.update(floor.id, {name: name.trim()});
+      } else {
+        await floorPlansApi.create({name: name.trim()});
+      }
+      onSaved();
     } catch (err: any) {
       Alert.alert(
         'Failed to save',
@@ -473,7 +606,11 @@ function FloorPlanModal({
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.saveBtn, (!name.trim() || saving) && {opacity: 0.5}]}
+          style={[
+            styles.saveBtn,
+            {backgroundColor: theme.primary},
+            (!name.trim() || saving) && {opacity: 0.5},
+          ]}
           disabled={!name.trim() || saving}
           onPress={handleSave}>
           {saving ? (
@@ -499,16 +636,17 @@ function TableModal({
   theme,
   onClose,
   onSaved,
+  onDelete,
 }: {
   table?: RemoteDiningTable;
   floorPlanId: string;
   theme: any;
   onClose: () => void;
   onSaved: () => void;
+  onDelete?: () => void;
 }) {
   const [name, setName] = useState(table?.name ?? '');
   const [capacity, setCapacity] = useState(String(table?.capacity ?? '4'));
-  const [shape, setShape] = useState<Shape>(table?.shape ?? 'square');
   const [isActive, setIsActive] = useState(table?.is_active ?? true);
   const [saving, setSaving] = useState(false);
 
@@ -524,7 +662,6 @@ function TableModal({
         await diningTablesApi.update(table.id, {
           name: name.trim(),
           capacity: cap,
-          shape,
           is_active: isActive,
         });
       } else {
@@ -532,7 +669,6 @@ function TableModal({
           floor_plan_id: floorPlanId,
           name: name.trim(),
           capacity: cap,
-          shape,
         });
       }
       onSaved();
@@ -574,7 +710,10 @@ function TableModal({
 
         {/* Capacity */}
         <Text
-          style={[styles.fieldLabel, {color: theme.textSecondary, marginTop: 12}]}>
+          style={[
+            styles.fieldLabel,
+            {color: theme.textSecondary, marginTop: 12},
+          ]}>
           Capacity (seats)
         </Text>
         <TextInput
@@ -593,39 +732,6 @@ function TableModal({
           placeholderTextColor={theme.textMuted}
         />
 
-        {/* Shape */}
-        <Text
-          style={[styles.fieldLabel, {color: theme.textSecondary, marginTop: 12}]}>
-          Shape
-        </Text>
-        <View style={styles.shapeRow}>
-          {SHAPES.map(s => {
-            const active = shape === s;
-            return (
-              <TouchableOpacity
-                key={s}
-                style={[
-                  styles.shapeBtn,
-                  {
-                    backgroundColor: active ? '#fef3c7' : theme.surface,
-                    borderColor: active ? '#f59e0b' : theme.border,
-                  },
-                ]}
-                onPress={() => setShape(s)}>
-                <Text style={styles.shapeEmoji}>{SHAPE_EMOJI[s]}</Text>
-                <Text
-                  style={[
-                    styles.shapeLabel,
-                    {color: active ? '#92400e' : theme.textSecondary},
-                    active && {fontWeight: '700'},
-                  ]}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
         {/* Active toggle (edit only) */}
         {table && (
           <TouchableOpacity
@@ -635,15 +741,14 @@ function TableModal({
               <Text style={[styles.toggleLabel, {color: theme.textPrimary}]}>
                 Active
               </Text>
-              <Text
-                style={[styles.toggleSub, {color: theme.textSecondary}]}>
+              <Text style={[styles.toggleSub, {color: theme.textSecondary}]}>
                 Inactive tables are hidden from the POS floor view
               </Text>
             </View>
             <View
               style={[
                 styles.toggleTrack,
-                {backgroundColor: isActive ? '#22c55e' : theme.border},
+                {backgroundColor: isActive ? theme.primary : theme.border},
               ]}>
               <View
                 style={[
@@ -656,15 +761,22 @@ function TableModal({
         )}
 
         <View style={[styles.modalActions, {marginTop: 20}]}>
+          {onDelete && (
+            <TouchableOpacity
+              style={[styles.deleteBtn]}
+              onPress={onDelete}>
+              <Text style={styles.deleteBtnText}>Delete</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-            <Text
-              style={[styles.cancelBtnText, {color: theme.textSecondary}]}>
+            <Text style={[styles.cancelBtnText, {color: theme.textSecondary}]}>
               Cancel
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[
               styles.saveBtn,
+              {backgroundColor: theme.primary},
               (!name.trim() || saving) && {opacity: 0.5},
             ]}
             disabled={!name.trim() || saving}
@@ -684,7 +796,7 @@ function TableModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// BulkCreateModal — prefix + range → auto-create tables
+// BulkCreateModal
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BulkCreateModal({
@@ -702,7 +814,6 @@ function BulkCreateModal({
   const [from, setFrom] = useState('1');
   const [to, setTo] = useState('10');
   const [capacity, setCapacity] = useState('4');
-  const [shape, setShape] = useState<Shape>('square');
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -710,10 +821,8 @@ function BulkCreateModal({
   const toN = Math.max(fromN, parseInt(to, 10) || fromN);
   const count = toN - fromN + 1;
 
-  // live preview of names
   const preview = Array.from({length: Math.min(count, 5)}, (_, i) => {
-    const n = fromN + i;
-    return `${prefix.trim()}${n}`;
+    return `${prefix.trim()}${fromN + i}`;
   });
   if (count > 5) preview.push(`… (${count} total)`);
 
@@ -736,7 +845,6 @@ function BulkCreateModal({
           floor_plan_id: floorPlanId,
           name: `${prefix.trim()}${n}`,
           capacity: cap,
-          shape,
         });
         created++;
         setProgress(created);
@@ -756,12 +864,18 @@ function BulkCreateModal({
   return (
     <ModalSheet title="Bulk Create Tables" theme={theme} onClose={onClose}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Prefix */}
         <Text style={[styles.fieldLabel, {color: theme.textSecondary}]}>
           Prefix
         </Text>
         <TextInput
-          style={[styles.input, {backgroundColor: theme.bg, borderColor: theme.border, color: theme.textPrimary}]}
+          style={[
+            styles.input,
+            {
+              backgroundColor: theme.bg,
+              borderColor: theme.border,
+              color: theme.textPrimary,
+            },
+          ]}
           value={prefix}
           onChangeText={setPrefix}
           placeholder="e.g. T, Table , A"
@@ -770,15 +884,27 @@ function BulkCreateModal({
           autoCapitalize="characters"
         />
 
-        {/* Range */}
-        <Text style={[styles.fieldLabel, {color: theme.textSecondary, marginTop: 12}]}>
+        <Text
+          style={[
+            styles.fieldLabel,
+            {color: theme.textSecondary, marginTop: 12},
+          ]}>
           Number range
         </Text>
         <View style={styles.rangeRow}>
           <View style={styles.rangeField}>
-            <Text style={[styles.rangeLabel, {color: theme.textMuted}]}>From</Text>
+            <Text style={[styles.rangeLabel, {color: theme.textMuted}]}>
+              From
+            </Text>
             <TextInput
-              style={[styles.input, {backgroundColor: theme.bg, borderColor: theme.border, color: theme.textPrimary}]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.bg,
+                  borderColor: theme.border,
+                  color: theme.textPrimary,
+                },
+              ]}
               value={from}
               onChangeText={setFrom}
               keyboardType="number-pad"
@@ -788,9 +914,18 @@ function BulkCreateModal({
           </View>
           <Text style={[styles.rangeDash, {color: theme.textMuted}]}>—</Text>
           <View style={styles.rangeField}>
-            <Text style={[styles.rangeLabel, {color: theme.textMuted}]}>To</Text>
+            <Text style={[styles.rangeLabel, {color: theme.textMuted}]}>
+              To
+            </Text>
             <TextInput
-              style={[styles.input, {backgroundColor: theme.bg, borderColor: theme.border, color: theme.textPrimary}]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.bg,
+                  borderColor: theme.border,
+                  color: theme.textPrimary,
+                },
+              ]}
               value={to}
               onChangeText={setTo}
               keyboardType="number-pad"
@@ -799,9 +934,18 @@ function BulkCreateModal({
             />
           </View>
           <View style={styles.rangeField}>
-            <Text style={[styles.rangeLabel, {color: theme.textMuted}]}>Seats</Text>
+            <Text style={[styles.rangeLabel, {color: theme.textMuted}]}>
+              Seats
+            </Text>
             <TextInput
-              style={[styles.input, {backgroundColor: theme.bg, borderColor: theme.border, color: theme.textPrimary}]}
+              style={[
+                styles.input,
+                {
+                  backgroundColor: theme.bg,
+                  borderColor: theme.border,
+                  color: theme.textPrimary,
+                },
+              ]}
               value={capacity}
               onChangeText={setCapacity}
               keyboardType="number-pad"
@@ -811,31 +955,14 @@ function BulkCreateModal({
           </View>
         </View>
 
-        {/* Shape */}
-        <Text style={[styles.fieldLabel, {color: theme.textSecondary, marginTop: 12}]}>
-          Shape
-        </Text>
-        <View style={styles.shapeRow}>
-          {SHAPES.map(s => {
-            const active = shape === s;
-            return (
-              <TouchableOpacity
-                key={s}
-                style={[styles.shapeBtn, {backgroundColor: active ? '#fef3c7' : theme.surface, borderColor: active ? '#f59e0b' : theme.border}]}
-                onPress={() => setShape(s)}>
-                <Text style={styles.shapeEmoji}>{SHAPE_EMOJI[s]}</Text>
-                <Text style={[styles.shapeLabel, {color: active ? '#92400e' : theme.textSecondary}, active && {fontWeight: '700'}]}>
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Preview */}
         {prefix.trim().length > 0 && count > 0 && (
-          <View style={[styles.previewBox, {backgroundColor: theme.bg, borderColor: theme.border}]}>
-            <Text style={[styles.previewLabel, {color: theme.textSecondary}]}>
+          <View
+            style={[
+              styles.previewBox,
+              {backgroundColor: theme.bg, borderColor: theme.border},
+            ]}>
+            <Text
+              style={[styles.previewLabel, {color: theme.textSecondary}]}>
               Preview — {count} table{count !== 1 ? 's' : ''}
             </Text>
             <Text style={[styles.previewNames, {color: theme.textPrimary}]}>
@@ -844,29 +971,41 @@ function BulkCreateModal({
           </View>
         )}
 
-        {/* Progress bar while saving */}
         {saving && (
-          <View style={[styles.progressWrap, {backgroundColor: theme.border}]}>
+          <View
+            style={[styles.progressWrap, {backgroundColor: theme.border}]}>
             <View
               style={[
                 styles.progressBar,
-                {width: `${Math.round((progress / count) * 100)}%`},
+                {
+                  width: `${Math.round((progress / count) * 100)}%`,
+                  backgroundColor: theme.primary,
+                },
               ]}
             />
-            <Text style={[styles.progressText, {color: theme.textPrimary}]}>
+            <Text
+              style={[styles.progressText, {color: theme.textPrimary}]}>
               Creating {progress}/{count}…
             </Text>
           </View>
         )}
 
         <View style={[styles.modalActions, {marginTop: 20}]}>
-          <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving}>
-            <Text style={[styles.cancelBtnText, {color: theme.textSecondary}]}>
+          <TouchableOpacity
+            style={styles.cancelBtn}
+            onPress={onClose}
+            disabled={saving}>
+            <Text
+              style={[styles.cancelBtnText, {color: theme.textSecondary}]}>
               Cancel
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.saveBtn, (saving || count < 1) && {opacity: 0.5}]}
+            style={[
+              styles.saveBtn,
+              {backgroundColor: theme.primary},
+              (saving || count < 1) && {opacity: 0.5},
+            ]}
             disabled={saving || count < 1}
             onPress={handleCreate}>
             {saving ? (
@@ -884,7 +1023,7 @@ function BulkCreateModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ModalSheet — reusable bottom-style modal wrapper
+// ModalSheet
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ModalSheet({
@@ -905,14 +1044,14 @@ function ModalSheet({
       transparent
       animationType="slide"
       onRequestClose={onClose}>
-      <TouchableOpacity
-        style={styles.scrim}
-        activeOpacity={1}
-        onPress={onClose}
-      />
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.sheetWrap}>
+        style={styles.sheetWrap}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFillObject}
+          activeOpacity={1}
+          onPress={onClose}
+        />
         <View
           style={[
             styles.sheet,
@@ -922,9 +1061,7 @@ function ModalSheet({
               paddingBottom: Math.max(insets.bottom, 16),
             },
           ]}>
-          {/* handle */}
           <View style={[styles.sheetHandle, {backgroundColor: theme.border}]} />
-          {/* title row */}
           <View style={[styles.sheetTitleRow, {borderColor: theme.border}]}>
             <Text style={[styles.sheetTitle, {color: theme.textPrimary}]}>
               {title}
@@ -949,143 +1086,171 @@ function ModalSheet({
 const styles = StyleSheet.create({
   screen: {flex: 1},
   flex: {flex: 1},
-  center: {flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24},
-  body: {flex: 1, flexDirection: 'row'},
-
-  // sidebar
-  sidebar: {
-    width: 160,
-    borderRightWidth: 1,
-    flexDirection: 'column',
-  },
-  sidebarHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  sidebarHeaderText: {fontSize: 11, fontWeight: '700', letterSpacing: 0.5},
-  addFloorBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 6,
-    backgroundColor: '#f59e0b',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addFloorBtnText: {color: '#fff', fontSize: 16, fontWeight: '700', lineHeight: 22},
-
-  floorRow: {
-    paddingHorizontal: 10,
-    paddingVertical: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: 'transparent',
-  },
-  floorRowText: {fontSize: 13, flex: 1},
-  floorRowActions: {flexDirection: 'row', marginTop: 6, gap: 4},
-  iconBtn: {padding: 4},
-  iconBtnText: {fontSize: 14},
-
-  // panel
-  panel: {flex: 1},
-  panelHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-  },
-  panelTitle: {fontSize: 15, fontWeight: '700'},
-  panelSubtitle: {fontSize: 12, marginTop: 1},
-  addTableBtn: {
-    backgroundColor: '#f59e0b',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  addTableBtnText: {color: '#fff', fontWeight: '700', fontSize: 13},
-  panelHeaderBtns: {flexDirection: 'row', gap: 8},
-  bulkBtn: {backgroundColor: '#7c3aed'},
-
-  // range row
-  rangeRow: {flexDirection: 'row', alignItems: 'flex-end', gap: 8},
-  rangeField: {flex: 1},
-  rangeLabel: {fontSize: 11, marginBottom: 4, fontWeight: '600'},
-  rangeDash: {fontSize: 18, paddingBottom: 10},
-
-  // preview
-  previewBox: {
-    marginTop: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 10,
-  },
-  previewLabel: {fontSize: 11, fontWeight: '700', marginBottom: 4},
-  previewNames: {fontSize: 13, lineHeight: 20},
-
-  // progress
-  progressWrap: {
-    marginTop: 12,
-    borderRadius: 6,
-    overflow: 'hidden',
-    height: 22,
-    justifyContent: 'center',
-  },
-  progressBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    backgroundColor: '#f59e0b',
-  },
-  progressText: {fontSize: 11, textAlign: 'center', fontWeight: '600', zIndex: 1},
-
-  tableGrid: {padding: 12, gap: 10},
-  tableGridRow: {gap: 10},
-  tableCard: {
+  center: {
     flex: 1,
-    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+
+  // header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+  },
+  headerBack: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerBackArrow: {fontSize: 22, fontWeight: '600'},
+  headerTitle: {flex: 1, fontSize: 17, fontWeight: '700'},
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 4,
+  },
+  headerIconBtn: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerIcon: {fontSize: 16},
+  headerDots: {fontSize: 12, letterSpacing: 1},
+
+  // tab bar
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 12,
+    position: 'relative',
+  },
+  tabText: {fontSize: 14},
+  tabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    left: 16,
+    right: 16,
+    height: 2,
+    borderRadius: 1,
+  },
+
+  // tables tab
+  tableTabContent: {paddingBottom: 100},
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '600',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+    letterSpacing: 0.2,
+  },
+  tableGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 12,
+    gap: 10,
+  },
+
+  // floors tab
+  floorListContent: {padding: 12, gap: 10},
+  floorListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  floorListInfo: {flex: 1},
+  floorListName: {fontSize: 15, fontWeight: '600'},
+  floorListCount: {fontSize: 12, marginTop: 2},
+  floorListChevron: {fontSize: 22, fontWeight: '300'},
+
+  // table cards (shared by both root and floor detail)
+  tableCard: {
+    width: '30.5%',
+    borderRadius: 12,
     borderWidth: 1,
     padding: 12,
-    minHeight: 100,
+    minHeight: 80,
+    justifyContent: 'center',
   },
-  tableCardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  tableName: {fontSize: 15, fontWeight: '700', flex: 1},
-  tableMeta: {fontSize: 12, marginBottom: 10},
+  tableCardName: {fontSize: 16, fontWeight: '700', marginBottom: 4},
+  tableCardMeta: {fontSize: 12},
   inactiveBadge: {
+    marginTop: 6,
     backgroundColor: '#f1f5f9',
     borderRadius: 4,
     paddingHorizontal: 6,
     paddingVertical: 2,
+    alignSelf: 'flex-start',
   },
   inactiveBadgeText: {fontSize: 10, color: '#64748b', fontWeight: '600'},
-  tableCardActions: {flexDirection: 'row', gap: 12},
-  cardActionBtn: {paddingVertical: 4},
-  cardActionText: {fontSize: 13, fontWeight: '600'},
 
-  // empty states
-  emptyText: {fontSize: 12, textAlign: 'center', padding: 16, lineHeight: 20},
+  // floor detail grid
+  floorGrid: {padding: 12, gap: 10},
+  floorGridEmpty: {flex: 1},
+  floorGridRow: {gap: 10},
+
+  // floor detail footer
+  floorFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+  },
+  bulkOutlineBtn: {
+    borderWidth: 1.5,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  bulkOutlineBtnText: {fontSize: 13, fontWeight: '700'},
+  addTablePill: {
+    flex: 1,
+    borderRadius: 24,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  addTablePillText: {color: '#fff', fontSize: 15, fontWeight: '700'},
+
+  // FAB
+  fab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: {width: 0, height: 3},
+  },
+  fabIcon: {color: '#fff', fontSize: 28, fontWeight: '400', lineHeight: 32},
+
+  // empty
   emptyBig: {fontSize: 48, marginBottom: 8},
   emptyHint: {fontSize: 13, textAlign: 'center', lineHeight: 20},
 
   // modal sheet
-  scrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
   sheetWrap: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    flex: 1,
     justifyContent: 'flex-end',
   },
   sheet: {
@@ -1124,18 +1289,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
   },
-  shapeRow: {flexDirection: 'row', gap: 8},
-  shapeBtn: {
-    flex: 1,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    paddingVertical: 10,
-    gap: 4,
-  },
-  shapeEmoji: {fontSize: 18},
-  shapeLabel: {fontSize: 12},
-
   toggleRow: {flexDirection: 'row', alignItems: 'center', gap: 12},
   toggleLabel: {fontSize: 14, fontWeight: '600'},
   toggleSub: {fontSize: 12, marginTop: 2},
@@ -1156,8 +1309,43 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
+  // range row (bulk modal)
+  rangeRow: {flexDirection: 'row', alignItems: 'flex-end', gap: 8},
+  rangeField: {flex: 1},
+  rangeLabel: {fontSize: 11, marginBottom: 4, fontWeight: '600'},
+  rangeDash: {fontSize: 18, paddingBottom: 10},
+
+  previewBox: {
+    marginTop: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 10,
+  },
+  previewLabel: {fontSize: 11, fontWeight: '700', marginBottom: 4},
+  previewNames: {fontSize: 13, lineHeight: 20},
+
+  progressWrap: {
+    marginTop: 12,
+    borderRadius: 6,
+    overflow: 'hidden',
+    height: 22,
+    justifyContent: 'center',
+  },
+  progressBar: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+  },
+  progressText: {
+    fontSize: 11,
+    textAlign: 'center',
+    fontWeight: '600',
+    zIndex: 1,
+  },
+
   // modal buttons
-  modalActions: {flexDirection: 'row', gap: 10, marginTop: 16},
+  modalActions: {flexDirection: 'row', gap: 8, marginTop: 16},
   cancelBtn: {
     flex: 1,
     paddingVertical: 12,
@@ -1167,11 +1355,19 @@ const styles = StyleSheet.create({
   cancelBtnText: {fontSize: 14, fontWeight: '600'},
   saveBtn: {
     flex: 2,
-    backgroundColor: '#f59e0b',
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   saveBtnText: {color: '#fff', fontSize: 14, fontWeight: '700'},
+  deleteBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#fef2f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteBtnText: {color: '#dc2626', fontSize: 14, fontWeight: '700'},
 });
