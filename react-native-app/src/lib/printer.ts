@@ -177,45 +177,54 @@ function buildReceiptText(
 
 // ── HTML builders for system print ───────────────────────────────────────────
 
-const HTML_STYLE = `
-  <style>
+/**
+ * Returns a <style> block sized for the given paper width.
+ * 58mm → narrow (body width 58mm, font 9px)
+ * 80mm → standard (body width 80mm, font 11px)
+ * The @media print rule sets the @page size so Android's print dialog
+ * defaults to the correct paper size automatically.
+ */
+function getHtmlStyle(paperWidth: 58 | 80): string {
+  const w = paperWidth === 58 ? '58mm' : '80mm';
+  const fontSize = paperWidth === 58 ? '9px' : '11px';
+  return `<style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Courier New', monospace;
-      font-size: 13px;
+      font-size: ${fontSize};
       color: #000;
-      max-width: 380px;
-      margin: 0 auto;
-      padding: 12px;
+      width: ${w};
+      padding: 8px;
     }
-    h1 { font-size: 18px; font-weight: bold; text-align: center; margin-bottom: 6px; }
-    h2 { font-size: 15px; font-weight: bold; text-align: center; margin-bottom: 4px; }
-    .hr { border-top: 1px solid #000; margin: 6px 0; }
-    .hr-double { border-top: 3px double #000; margin: 8px 0; }
-    .row { display: flex; justify-content: space-between; margin: 3px 0; }
+    h1 { font-size: ${paperWidth === 58 ? '14px' : '18px'}; font-weight: bold; text-align: center; margin-bottom: 6px; }
+    h2 { font-size: ${paperWidth === 58 ? '12px' : '15px'}; font-weight: bold; text-align: center; margin-bottom: 4px; }
+    .hr { border-top: 1px dashed #000; margin: 4px 0; }
+    .hr-double { border-top: 3px double #000; margin: 6px 0; }
+    .row { display: flex; justify-content: space-between; margin: 2px 0; }
     .row .label { flex: 1; }
-    .row .value { text-align: right; padding-left: 8px; white-space: nowrap; }
+    .row .value { text-align: right; padding-left: 6px; white-space: nowrap; }
     .bold { font-weight: bold; }
     .center { text-align: center; }
-    .small { font-size: 11px; color: #444; }
-    .indent { padding-left: 20px; font-size: 11px; color: #444; }
-    .item-row { display: flex; align-items: flex-start; margin: 2px 0; }
-    .item-qty { width: 32px; font-weight: bold; flex-shrink: 0; }
-    .item-name { flex: 1; }
-    .item-amt { text-align: right; padding-left: 8px; white-space: nowrap; }
+    .small { font-size: ${paperWidth === 58 ? '8px' : '10px'}; color: #444; }
+    .indent { padding-left: 16px; font-size: ${paperWidth === 58 ? '8px' : '10px'}; color: #444; }
     table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 3px 4px; text-align: left; }
+    th, td { padding: 2px 3px; text-align: left; }
     th { font-weight: bold; border-bottom: 1px solid #000; }
     .text-right { text-align: right; }
-    .total-row td { font-weight: bold; border-top: 1px solid #000; padding-top: 4px; }
-    .footer { text-align: center; margin-top: 12px; font-size: 12px; }
-  </style>
-`;
+    .total-row td { font-weight: bold; border-top: 1px solid #000; padding-top: 3px; }
+    .footer { text-align: center; margin-top: 10px; font-size: ${paperWidth === 58 ? '8px' : '10px'}; }
+    @media print {
+      @page { margin: 0; size: ${w} auto; }
+      body { width: auto; }
+    }
+  </style>`;
+}
 
 function buildKotHtml(
   kot: Kot,
   lines: OrderLine[],
   order: Order | null,
+  paperWidth: 58 | 80 = 80,
 ): string {
   const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   const date = new Date().toLocaleDateString();
@@ -235,7 +244,7 @@ function buildKotHtml(
     .join('');
 
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8">${HTML_STYLE}</head><body>
+<html><head><meta charset="utf-8">${getHtmlStyle(paperWidth)}</head><body>
   <h1>KITCHEN ORDER TICKET</h1>
   <div class="hr-double"></div>
   <div class="row">
@@ -257,7 +266,7 @@ function buildKotHtml(
 </body></html>`;
 }
 
-function buildReceiptHtml(order: Order, lines: OrderLine[]): string {
+function buildReceiptHtml(order: Order, lines: OrderLine[], paperWidth: 58 | 80 = 80): string {
   const time = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
   const date = new Date().toLocaleDateString();
   const subtotal = lines.reduce((s, l) => s + l.price * l.quantity + (l.modifiersTotal ?? 0), 0);
@@ -280,7 +289,7 @@ function buildReceiptHtml(order: Order, lines: OrderLine[]): string {
     .join('');
 
   return `<!DOCTYPE html>
-<html><head><meta charset="utf-8">${HTML_STYLE}</head><body>
+<html><head><meta charset="utf-8">${getHtmlStyle(paperWidth)}</head><body>
   <h1>Zazzy POS</h1>
   <div class="hr-double"></div>
   <div class="row">
@@ -417,7 +426,7 @@ export async function printKot(kotLocalId: string): Promise<void> {
   const {connectionType, paperWidth} = usePrinterStore.getState();
 
   if (connectionType === 'system') {
-    const html = buildKotHtml(kot, lines, order);
+    const html = buildKotHtml(kot, lines, order, paperWidth as 58 | 80);
     await connectAndPrintHtml(html, 'KOT');
   } else {
     const text = buildKotText(kot, lines, order, paperWidth as 58 | 80);
@@ -434,7 +443,7 @@ export async function printReceipt(orderLocalId: string): Promise<void> {
   const {connectionType, paperWidth} = usePrinterStore.getState();
 
   if (connectionType === 'system') {
-    const html = buildReceiptHtml(order, lines);
+    const html = buildReceiptHtml(order, lines, paperWidth as 58 | 80);
     await connectAndPrintHtml(html, 'Receipt');
   } else {
     const text = buildReceiptText(order, lines, paperWidth as 58 | 80);
@@ -446,16 +455,19 @@ export async function testPrint(): Promise<void> {
   const {connectionType, paperWidth} = usePrinterStore.getState();
 
   if (connectionType === 'system') {
+    const w = paperWidth as 58 | 80;
     const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8">${HTML_STYLE}</head><body>
+<html><head><meta charset="utf-8">${getHtmlStyle(w)}</head><body>
   <h1>TEST PRINT</h1>
   <div class="hr-double"></div>
-  <div class="center">Zazzy POS</div>
+  <div class="center">XPOS</div>
   <div class="center small">${new Date().toLocaleString()}</div>
+  <div class="hr"></div>
+  <div class="center small">Paper: ${w}mm</div>
   <div class="hr"></div>
   <div class="center bold">System print is working! ✓</div>
   <div class="hr-double"></div>
-  <div class="footer small">This page was printed via Android system print.</div>
+  <div class="footer small">Printed via Android system print.</div>
 </body></html>`;
     await connectAndPrintHtml(html, 'Test Print');
     return;

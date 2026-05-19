@@ -20,8 +20,6 @@ export default function Header({
   showToggle = true,
 }: HeaderProps) {
   const theme = useTheme();
-  const isDark = useThemeStore(s => s.isDark);
-  const toggle = useThemeStore(s => s.toggle);
   const {top} = useSafeAreaInsets();
 
   return (
@@ -45,16 +43,6 @@ export default function Header({
 
       <View style={styles.rightBlock}>
         {right}
-        {showToggle && (
-          <TouchableOpacity
-            onPress={toggle}
-            style={styles.toggleBtn}
-            hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-            <Text style={[styles.toggleIcon, {color: theme.textSecondary}]}>
-              {isDark ? '☀' : '☾'}
-            </Text>
-          </TouchableOpacity>
-        )}
       </View>
     </View>
   );

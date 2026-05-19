@@ -32,7 +32,7 @@ type PrinterState = PrinterSettings & {
 };
 
 const DEFAULTS: PrinterSettings = {
-  connectionType: 'bluetooth',
+  connectionType: 'system',
   btMac: null,
   btName: null,
   netIp: '',

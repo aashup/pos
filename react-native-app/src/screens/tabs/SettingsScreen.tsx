@@ -16,7 +16,8 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useAuthStore} from '@/src/store/authStore';
 import {useSyncStore} from '@/src/store/syncStore';
 import {usePrinterStore} from '@/src/store/printerStore';
-import {useTheme} from '@/src/store/themeStore';
+import {useTheme, useThemeStore} from '@/src/store/themeStore';
+import type {ThemeMode} from '@/src/store/themeStore';
 import {triggerSyncNow} from '@/src/lib/syncEngine';
 import type {RootStackParamList} from '@/src/navigation/types';
 import Header from '@/src/components/Header';
@@ -37,6 +38,9 @@ export default function SettingsScreen() {
     s.connectionType === 'network' ? !!s.netIp :
     !!s.usbVendorId,
   );
+
+  const themeMode = useThemeStore(s => s.themeMode);
+  const setThemeMode = useThemeStore(s => s.setThemeMode);
 
   const syncStatus = useSyncStore(s => s.status);
   const lastSyncAt = useSyncStore(s => s.lastSyncAt);
@@ -105,6 +109,46 @@ export default function SettingsScreen() {
             <Text style={[styles.navBtnLabel, {color: theme.textPrimary}]}>Reports</Text>
             <Text style={[styles.navBtnArrow, {color: theme.textMuted}]}>›</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={[styles.section, {backgroundColor: theme.surface, borderColor: theme.border}]}>
+          <Text style={[styles.sectionTitle, {color: theme.textSecondary}]}>Appearance</Text>
+          <View style={styles.themeRow}>
+            {(
+              [
+                {mode: 'system', icon: '🌐', label: 'System'},
+                {mode: 'light', icon: '☀', label: 'Light'},
+                {mode: 'dark', icon: '☾', label: 'Dark'},
+              ] as {mode: ThemeMode; icon: string; label: string}[]
+            ).map(({mode, icon, label}) => {
+              const active = themeMode === mode;
+              return (
+                <TouchableOpacity
+                  key={mode}
+                  style={[
+                    styles.themeBtn,
+                    {
+                      backgroundColor: active ? theme.surfaceAlt : theme.surface,
+                      borderColor: active ? theme.primary : theme.border,
+                      borderWidth: active ? 2 : 1,
+                    },
+                  ]}
+                  onPress={() => setThemeMode(mode)}>
+                  <Text style={styles.themeBtnIcon}>{icon}</Text>
+                  <Text
+                    style={[
+                      styles.themeBtnLabel,
+                      {
+                        color: active ? theme.primary : theme.textSecondary,
+                        fontWeight: active ? '700' : '400',
+                      },
+                    ]}>
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         <View style={[styles.section, {backgroundColor: theme.surface, borderColor: theme.border}]}>
@@ -198,6 +242,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
   },
+  themeRow: {flexDirection: 'row', gap: 8, marginTop: 4},
+  themeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    paddingVertical: 10,
+    minHeight: 56,
+    gap: 4,
+  },
+  themeBtnIcon: {fontSize: 20},
+  themeBtnLabel: {fontSize: 12},
   sectionTitle: {fontSize: 13, fontWeight: '700', marginBottom: 8},
   userName: {fontSize: 16, fontWeight: '700'},
   userMeta: {fontSize: 13, marginTop: 2},
