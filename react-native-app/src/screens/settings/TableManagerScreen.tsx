@@ -17,6 +17,7 @@ import {
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 
+import Icon from 'react-native-vector-icons/FontAwesome5';
 import {useTheme} from '@/src/store/themeStore';
 import {
   floorPlansApi,
@@ -53,6 +54,10 @@ export default function TableManagerScreen() {
     table?: RemoteDiningTable;
   }>({visible: false});
   const [bulkModal, setBulkModal] = useState(false);
+  const [menuSheet, setMenuSheet] = useState<{
+    visible: boolean;
+    floor?: RemoteFloorPlan;
+  }>({visible: false});
 
   const selectedFloor = floors.find(f => f.id === selectedFloorId) ?? null;
   const floorTables = tables.filter(t => t.floor_plan_id === selectedFloorId);
@@ -86,30 +91,23 @@ export default function TableManagerScreen() {
               setViewState('root');
               setSelectedFloorId(null);
             }}
-            style={{marginLeft: 4, padding: 8}}>
-            <Text style={{color: theme.textPrimary, fontSize: 17}}>←</Text>
+            style={{paddingHorizontal: 8, paddingVertical: 6}}>
+            <Icon name="arrow-left" size={18} color={theme.textPrimary} />
           </TouchableOpacity>
         ),
         headerRight: () => (
-          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+          <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
             <TouchableOpacity
               style={{padding: 8}}
               onPress={() =>
                 setFloorModal({visible: true, floor: selectedFloor})
               }>
-              <Text style={{color: theme.textPrimary, fontSize: 16}}>✏</Text>
+              <Icon name="pen" size={16} color={theme.textPrimary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={{padding: 8, marginRight: 4}}
               onPress={() => handleFloorMenu(selectedFloor)}>
-              <Text
-                style={{
-                  color: theme.textPrimary,
-                  fontSize: 12,
-                  letterSpacing: 1,
-                }}>
-                •••
-              </Text>
+              <Icon name="ellipsis-v" size={18} color={theme.textPrimary} />
             </TouchableOpacity>
           </View>
         ),
@@ -145,15 +143,7 @@ export default function TableManagerScreen() {
   }
 
   function handleFloorMenu(floor: RemoteFloorPlan) {
-    Alert.alert(floor.name, undefined, [
-      {text: 'Edit Name', onPress: () => setFloorModal({visible: true, floor})},
-      {
-        text: 'Delete Floor',
-        style: 'destructive',
-        onPress: () => confirmDeleteFloor(floor),
-      },
-      {text: 'Cancel', style: 'cancel'},
-    ]);
+    setMenuSheet({visible: true, floor});
   }
 
   function confirmDeleteFloor(floor: RemoteFloorPlan) {
@@ -243,29 +233,6 @@ export default function TableManagerScreen() {
           }
         />
 
-        {/* Footer buttons */}
-        <View
-          style={[
-            styles.floorFooter,
-            {
-              backgroundColor: theme.surface,
-              borderTopColor: theme.border,
-            },
-          ]}>
-          <TouchableOpacity
-            style={[styles.bulkOutlineBtn, {borderColor: theme.primary}]}
-            onPress={() => setBulkModal(true)}>
-            <Text style={[styles.bulkOutlineBtnText, {color: theme.primary}]}>
-              ⚡ Bulk
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.addTablePill, {backgroundColor: theme.primary}]}
-            onPress={() => setTableModal({visible: true})}>
-            <Text style={styles.addTablePillText}>+ Add Table</Text>
-          </TouchableOpacity>
-        </View>
-
         {/* Modals */}
         {tableModal.visible && (
           <TableModal
@@ -307,6 +274,29 @@ export default function TableManagerScreen() {
             onSaved={() => {
               setFloorModal({visible: false});
               reload();
+            }}
+          />
+        )}
+        {menuSheet.visible && menuSheet.floor && (
+          <FloorMenuSheet
+            floor={menuSheet.floor}
+            theme={theme}
+            onClose={() => setMenuSheet({visible: false})}
+            onAddTable={() => {
+              setMenuSheet({visible: false});
+              setTableModal({visible: true});
+            }}
+            onBulkTable={() => {
+              setMenuSheet({visible: false});
+              setBulkModal(true);
+            }}
+            onEdit={() => {
+              setMenuSheet({visible: false});
+              setFloorModal({visible: true, floor: menuSheet.floor});
+            }}
+            onDelete={() => {
+              setMenuSheet({visible: false});
+              confirmDeleteFloor(menuSheet.floor!);
             }}
           />
         )}
@@ -450,9 +440,7 @@ export default function TableManagerScreen() {
                   tables
                 </Text>
               </View>
-              <Text style={[styles.floorListChevron, {color: theme.textMuted}]}>
-                ›
-              </Text>
+              <Icon name="chevron-right" size={14} color={theme.textMuted} />
             </TouchableOpacity>
           )}
         />
@@ -462,7 +450,7 @@ export default function TableManagerScreen() {
       <TouchableOpacity
         style={[styles.fab, {backgroundColor: theme.primary}]}
         onPress={() => setFloorModal({visible: true})}>
-        <Text style={styles.fabIcon}>+</Text>
+        <Icon name="plus" size={22} color="#fff" />
       </TouchableOpacity>
 
       {/* Floor modal */}
@@ -541,6 +529,97 @@ function RootTableCard({
         {table.capacity} Seaters
       </Text>
     </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FloorMenuSheet — iOS-style ActionSheet
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FloorMenuSheet({
+  floor,
+  theme,
+  onClose,
+  onAddTable,
+  onBulkTable,
+  onEdit,
+  onDelete,
+}: {
+  floor: RemoteFloorPlan;
+  theme: any;
+  onClose: () => void;
+  onAddTable: () => void;
+  onBulkTable: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity
+        style={[styles.asScrim, {backgroundColor: theme.scrim}]}
+        activeOpacity={1}
+        onPress={onClose}
+      />
+      <View
+        style={[
+          styles.asWrap,
+          {paddingBottom: Math.max(insets.bottom, 12)},
+        ]}>
+        {/* Main sheet */}
+        <View style={[styles.asSheet, {backgroundColor: theme.surface}]}>
+          {/* Title */}
+          <View style={[styles.asTitleRow, {borderBottomColor: theme.border}]}>
+            <Text style={[styles.asTitle, {color: theme.textSecondary}]}>
+              {floor.name}
+            </Text>
+          </View>
+
+          {/* Add Table */}
+          <TouchableOpacity
+            style={[styles.asOption, {borderBottomColor: theme.border}]}
+            onPress={onAddTable}>
+            <Text style={[styles.asOptionText, {color: theme.primary}]}>
+              Add Table
+            </Text>
+          </TouchableOpacity>
+
+          {/* Bulk Table */}
+          <TouchableOpacity
+            style={[styles.asOption, {borderBottomColor: theme.border}]}
+            onPress={onBulkTable}>
+            <Text style={[styles.asOptionText, {color: theme.primary}]}>
+              Bulk Add Tables
+            </Text>
+          </TouchableOpacity>
+
+          {/* Edit Name */}
+          <TouchableOpacity
+            style={[styles.asOption, {borderBottomColor: theme.border}]}
+            onPress={onEdit}>
+            <Text style={[styles.asOptionText, {color: theme.primary}]}>
+              Edit Name
+            </Text>
+          </TouchableOpacity>
+
+          {/* Delete Floor */}
+          <TouchableOpacity style={styles.asOption} onPress={onDelete}>
+            <Text style={[styles.asOptionText, {color: '#dc2626'}]}>
+              Delete Floor
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Cancel — separate card */}
+        <TouchableOpacity
+          style={[styles.asCancel, {backgroundColor: theme.surface}]}
+          onPress={onClose}>
+          <Text style={[styles.asCancelText, {color: theme.primary}]}>
+            cancel
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
   );
 }
 
@@ -1152,7 +1231,6 @@ const styles = StyleSheet.create({
   floorListInfo: {flex: 1},
   floorListName: {fontSize: 15, fontWeight: '600'},
   floorListCount: {fontSize: 12, marginTop: 2},
-  floorListChevron: {fontSize: 22, fontWeight: '300'},
 
   // table cards (shared by both root and floor detail)
   tableCard: {
@@ -1200,7 +1278,9 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 24,
     paddingVertical: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
   },
   addTablePillText: {color: '#fff', fontSize: 15, fontWeight: '700'},
 
@@ -1220,7 +1300,6 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     shadowOffset: {width: 0, height: 3},
   },
-  fabIcon: {color: '#fff', fontSize: 28, fontWeight: '400', lineHeight: 32},
 
   // empty
   emptyBig: {fontSize: 48, marginBottom: 8},
@@ -1348,4 +1427,49 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   deleteBtnText: {color: '#dc2626', fontSize: 14, fontWeight: '700'},
+
+  // action sheet
+  asScrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  asWrap: {
+    position: 'absolute',
+    bottom: 0,
+    left: 12,
+    right: 12,
+    gap: 8,
+  },
+  asSheet: {
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  asTitleRow: {
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  asTitle: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  asOption: {
+    paddingVertical: 17,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  asOptionText: {
+    fontSize: 17,
+    fontWeight: '400',
+  },
+  asCancel: {
+    borderRadius: 14,
+    paddingVertical: 17,
+    alignItems: 'center',
+  },
+  asCancelText: {
+    fontSize: 17,
+    fontWeight: '600',
+  },
 });
