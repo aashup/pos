@@ -27,6 +27,29 @@ export const modifierGroupsApi = {
     );
     return res.data.data;
   },
+
+  create: async (data: {
+    name: string;
+    item_id?: string | null;
+    min_selections: number;
+    max_selections: number;
+    is_required: boolean;
+  }) => {
+    const res = await apiClient.post<{data: RemoteModifierGroup}>('/modifier-groups', data);
+    return res.data.data;
+  },
+
+  createModifier: async (
+    groupId: string,
+    data: {name: string; price: number; sort_order: number},
+  ) => {
+    const res = await apiClient.post<{data: RemoteModifier}>(
+      `/modifier-groups/${groupId}/modifiers`,
+      data,
+    );
+    return res.data.data;
+  },
+
   // Junction table — links item_id to modifier_group_id
   listItemLinks: async () => {
     const res = await apiClient.get<{data: Array<{item_id: string; modifier_group_id: string}>}>(

@@ -1,5 +1,5 @@
 import React from 'react';
-import {Text} from 'react-native';
+import {Image, StyleSheet} from 'react-native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 
 import type {TabParamList} from './types';
@@ -12,9 +12,21 @@ import SettingsScreen from '@/src/screens/tabs/SettingsScreen';
 
 const Tab = createBottomTabNavigator<TabParamList>();
 
-function tabIcon(label: string) {
-  return ({color}: {color: string}) => (
-    <Text style={{color, fontSize: 11, fontWeight: '700'}}>{label}</Text>
+const ICONS = {
+  Tables:   require('@/src/assets/icons/tab_tables.png'),
+  Billing:  require('@/src/assets/icons/tab_billing.png'),
+  Orders:   require('@/src/assets/icons/tab_orders.png'),
+  Kitchen:  require('@/src/assets/icons/tab_kitchen.png'),
+  Settings: require('@/src/assets/icons/tab_settings.png'),
+};
+
+function tabIcon(name: keyof typeof ICONS) {
+  return ({focused}: {focused: boolean}) => (
+    <Image
+      source={ICONS[name]}
+      style={[styles.icon, {opacity: focused ? 1 : 0.45}]}
+      resizeMode="contain"
+    />
   );
 }
 
@@ -27,17 +39,25 @@ export default function TabNavigator() {
         headerShown: false,
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.textSecondary,
+        tabBarShowLabel: true,
         tabBarStyle: {
           backgroundColor: theme.surface,
           borderTopColor: theme.border,
-          elevation: 0,
+          elevation: 5,
+          height: 62,
+          paddingBottom: 4,
+          paddingTop: 4,
         },
       }}>
-      <Tab.Screen name="Tables" component={TablesScreen} options={{tabBarIcon: tabIcon('TBL')}} />
-      <Tab.Screen name="Billing" component={BillingScreen} options={{tabBarIcon: tabIcon('BIL')}} />
-      <Tab.Screen name="Orders" component={OrdersScreen} options={{tabBarIcon: tabIcon('ORD')}} />
-      <Tab.Screen name="Kitchen" component={KitchenScreen} options={{tabBarIcon: tabIcon('KIT')}} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{tabBarIcon: tabIcon('SET')}} />
+      <Tab.Screen name="Tables"   component={TablesScreen}   options={{tabBarIcon: tabIcon('Tables')}} />
+      <Tab.Screen name="Billing"  component={BillingScreen}  options={{tabBarIcon: tabIcon('Billing')}} />
+      <Tab.Screen name="Orders"   component={OrdersScreen}   options={{tabBarIcon: tabIcon('Orders')}} />
+      <Tab.Screen name="Kitchen"  component={KitchenScreen}  options={{tabBarIcon: tabIcon('Kitchen')}} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{tabBarIcon: tabIcon('Settings')}} />
     </Tab.Navigator>
   );
 }
+
+const styles = StyleSheet.create({
+  icon: {width: 30, height: 30},
+});

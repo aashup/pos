@@ -108,7 +108,7 @@ function TablesScreenInner({tables, floorPlans}: Props) {
       <FlatList
         data={filtered}
         keyExtractor={t => t.id}
-        renderItem={({item}) => <TableCard table={item} onPress={handlePress} />}
+        renderItem={({item, index}) => <TableCard table={item} onPress={handlePress} index={index} />}
         numColumns={3}
         contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : styles.grid}
         ListEmptyComponent={

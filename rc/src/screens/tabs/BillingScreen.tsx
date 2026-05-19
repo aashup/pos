@@ -207,22 +207,21 @@ function BillingScreenInner({items, groups}: Props) {
         style={{flex: 1}}
       />
 
-      {/* Sticky cart summary bar — intentionally dark in both themes */}
       <TouchableOpacity
         activeOpacity={0.85}
-        style={styles.summaryBar}
+        style={[styles.summaryBar, {backgroundColor: theme.surfaceAlt, borderTopColor: theme.border}]}
         onPress={() => setCartOpen(true)}>
         <View style={{flex: 1}}>
-          <Text style={styles.summaryLabel}>
+          <Text style={[styles.summaryLabel, {color: theme.textSecondary}]}>
             {lines.length === 0
               ? 'Cart empty'
               : `${lines.length} line${lines.length === 1 ? '' : 's'} · ${
                   totals.unsentCount
                 } pending`}
           </Text>
-          <Text style={styles.summaryAmount}>{formatCurrency(totals.netPayable)}</Text>
+          <Text style={[styles.summaryAmount, {color: theme.textPrimary}]}>{formatCurrency(totals.netPayable)}</Text>
         </View>
-        <Text style={styles.summaryCta}>View cart ›</Text>
+        <Text style={[styles.summaryCta, {color: theme.primary}]}>View cart ›</Text>
       </TouchableOpacity>
 
       {/* Cart drawer */}
@@ -325,19 +324,16 @@ const styles = StyleSheet.create({
   empty: {textAlign: 'center', padding: 24, fontSize: 13},
   emptyContainer: {flex: 1, justifyContent: 'center'},
 
-  // Intentionally always dark — it's a branded action strip
   summaryBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#1e293b',
-    backgroundColor: '#0f172a',
   },
-  summaryLabel: {fontSize: 11, color: '#94a3b8', textTransform: 'uppercase'},
-  summaryAmount: {fontSize: 18, fontWeight: '800', color: '#fff', marginTop: 2},
-  summaryCta: {color: '#0ea5e9', fontWeight: '700', fontSize: 13},
+  summaryLabel: {fontSize: 11, textTransform: 'uppercase'},
+  summaryAmount: {fontSize: 18, fontWeight: '800', marginTop: 2},
+  summaryCta: {fontWeight: '700', fontSize: 13},
 
   cartBackdrop: {flex: 1},
   cartSheet: {
