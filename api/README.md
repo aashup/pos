@@ -1,58 +1,224 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Zazzy POS — API Backend
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel 11 REST API backing the Zazzy POS desktop and mobile clients. Runs in Docker with MySQL.
 
-## About Laravel
+## Stack
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Laravel 11** + Sanctum (token auth)
+- **MySQL** (`zazzy_pos` database) via Docker
+- **DomPDF** (`barryvdh/laravel-dompdf`) for payslip PDFs
+- UUID primary keys everywhere (no integer IDs)
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Quick Start
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+Run all commands from the repo root (`D:\erp\pos\`), not from `api/`.
 
 ```bash
-composer require laravel/boost --dev
+# First time
+make start              # start api + mysql containers
+make install            # composer install inside container
+make migrate-fresh-seed # run migrations + seed data
 
-php artisan boost:install
+# Day-to-day
+make start              # bring containers up
+make logs               # tail api logs
+make down               # stop containers
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+> All `php artisan` commands run **inside** the Docker `api` container.
+> Use `docker compose exec api php artisan <command>` or the Make targets.
 
-## Contributing
+## Directory Layout
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```
+api/
+├── app/
+│   ├── Http/Controllers/Api/V1/   # All API controllers
+│   ├── Models/                    # Eloquent models (27+)
+│   ├── Observers/                 # PartyObserver, CompanyObserver
+│   ├── Policies/                  # 17 authorization policies
+│   ├── Services/                  # AccountingService, InventoryDeductionService, PayrollService, InvoicePdfService
+│   └── Traits/                    # HasUuid, HasSyncColumns, BelongsToCompany, FiltersByFinancialYear
+├── database/
+│   ├── migrations/                # 31 ordered migration files
+│   └── seeders/
+├── routes/api.php                 # All routes under /api/v1
+├── Dockerfile
+└── docker-compose.yml
+```
 
-## Code of Conduct
+## Migration Policy
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+**Do NOT create new migrations.** The project is in initial phase — always edit the original migration file directly, then rebuild:
 
-## Security Vulnerabilities
+```bash
+make migrate-fresh-seed
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## API Endpoints
 
-## License
+All routes are under `/api/v1/`. Most require `auth:sanctum` (Bearer token).
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+### Public
+
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/login` | Returns token + user + permissions |
+| POST | `/register` | |
+| GET | `/health` | `{ ok: true, app: 'Zazzy POS' }` |
+| GET | `/public/invoices/{token}` | Public invoice view |
+
+### Auth / Profile
+
+| Method | Path |
+|--------|------|
+| GET | `/me` |
+| PUT | `/auth/profile` |
+| POST | `/auth/profile/avatar` |
+| PUT | `/auth/password` |
+| POST | `/logout` / `/logout-all` |
+
+### Restaurant Orders
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET/POST | `/restaurant/orders` | |
+| GET | `/restaurant/orders/{id}` | |
+| POST | `/restaurant/orders/{id}/lines` | Add items |
+| DELETE | `/restaurant/orders/{id}/lines/{line}` | |
+| POST | `/restaurant/orders/{id}/kot` | Generate KOT |
+| POST | `/restaurant/orders/{id}/checkout` | Finalize + post accounting |
+| POST | `/restaurant/orders/{id}/hold` / `/unhold` | |
+| POST | `/restaurant/orders/{id}/cancel` | |
+| POST | `/restaurant/orders/{id}/transfer-table` | |
+
+### Tables & Floor Plans
+
+| Method | Path |
+|--------|------|
+| GET/POST/PATCH/DELETE | `/floor-plans` |
+| GET/POST/PATCH/DELETE | `/dining-tables` |
+| PATCH | `/dining-tables/{id}/status` |
+| POST | `/dining-tables/{id}/merge` |
+
+### KOTs (Kitchen Order Tickets)
+
+| Method | Path |
+|--------|------|
+| GET | `/kots` / `/kots/{id}` |
+| PATCH | `/kots/{id}/status` |
+| PATCH | `/kots/{id}/lines/{line}/status` |
+| POST | `/kots/{id}/reprint` |
+
+### Items / Inventory
+
+| Method | Path | Notes |
+|--------|------|-------|
+| GET | `/items` | `?per_page`, `?search`, `?is_active`, `?item_group_id` |
+| POST | `/items` | requires `name`, `unit` |
+| GET/PATCH/DELETE | `/items/{id}` | |
+| GET | `/item-groups` | flat list |
+| GET | `/units` | `?status=active&per_page=500` |
+| CRUD | `/item-variants` | scoped by `item_id` |
+| CRUD | `/modifier-groups` | + nested modifier CRUD |
+| CRUD | `/combos` | |
+| CRUD | `/recipes` | |
+
+### Stock
+
+| Method | Path |
+|--------|------|
+| GET | `/stock-ledger`, `/stock-summary` |
+| POST | `/stock-ledger/opening`, `/stock-ledger/adjustment`, `/stock-ledger/transfer` |
+| GET | `/stock-ledger/reorder-alerts` |
+| GET | `/items/{id}/movements` |
+| GET | `/batches`, `/batches/expiring` |
+
+### Media
+
+| Method | Path | Notes |
+|--------|------|-------|
+| POST | `/media` | multipart upload |
+| GET | `/media` | requires `entity_type` + `entity_id` |
+| GET | `/media/sync` | bulk paginated (POS sync worker) — no `entity_id` |
+| DELETE | `/media/{id}` | |
+| PATCH | `/media/{id}/set-primary` | |
+
+> ⚠️ `GET /media/sync` must be registered **before** `GET /media/{medium}` in `routes/api.php`.
+
+### Reports — POS (Restaurant)
+
+> ⚠️ These routes **must appear before** the generic ERP report routes in `routes/api.php`.
+
+| Method | Path |
+|--------|------|
+| GET | `/reports/sales-summary` |
+| GET | `/reports/item-wise` |
+| GET | `/reports/day-close` |
+| GET | `/reports/gst-summary` |
+| GET | `/reports/payment-mode` |
+
+### Parties
+
+| Method | Path | Notes |
+|--------|------|-------|
+| CRUD | `/parties` | `type: 'customer'` or `'vendor'` or `'both'` |
+| GET | `/parties/{id}/balance` | |
+
+> Creating a Party auto-creates accounting ledger(s) via `PartyObserver`.
+
+### Dashboard & Sync
+
+| Method | Path |
+|--------|------|
+| GET | `/dashboard/stats`, `/dashboard/chart`, `/dashboard/collection` |
+| POST | `/sync/push` |
+| GET | `/sync/pull` |
+
+## Key Architecture
+
+### Authentication
+Sanctum token auth. Login returns `{ token, user, permissions[] }`. Permissions are flat strings like `inventory.view`.
+
+### UUID Primary Keys
+All tables use UUID PKs. No integer IDs. Roles/permissions also use `uuid` (not `id`) as the primary key field.
+
+### Accounting (Double-Entry)
+Every checkout posts a balanced journal voucher via `AccountingService::postPOSSale()`. Vouchers are append-only — no edits or deletes, only reversals.
+
+### Financial Year
+FY is always resolved **server-side** from the document date. The frontend never sends `financial_year_id`.
+
+### Multi-tenant
+`BelongsToCompany` trait auto-sets `company_id` on create and applies a global scope — all queries are automatically scoped to the authenticated user's company.
+
+### Offline Sync
+`HasSyncColumns` trait adds `sync_status`, `device_id`, `synced_at` to every model. The electron app's `SyncWorker` calls individual resource endpoints directly (not the `/sync/push` / `/sync/pull` endpoints).
+
+## Payslip PDF
+
+```bash
+GET /api/v1/payroll-runs/{id}/payslip/{employeeId}
+```
+
+Uses DomPDF + `resources/views/payroll/payslip.blade.php`. After editing the template, clear the view cache:
+
+```bash
+docker compose exec api php artisan view:clear
+```
+
+> ⚠️ Use `Rs.` instead of `₹` in the blade template — the default DomPDF font lacks the rupee glyph in regular weight.
+
+## Tally Import
+
+| Method | Path |
+|--------|------|
+| GET | `/tally/test-connection` |
+| GET | `/tally/test-odbc-connection` |
+| GET | `/tally/fetch-ledgers?connection_method=xml\|odbc` |
+| POST | `/tally/import-ledgers` |
+| GET | `/tally/fetch-stock-items?connection_method=xml\|odbc` |
+| POST | `/tally/import-stock-items` |
+| POST | `/tally/import-vouchers` |
+
+Supports both XML-over-HTTP (port 9000) and ODBC connection methods.
