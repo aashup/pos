@@ -2,7 +2,9 @@ import React, {useMemo, useState} from 'react';
 import {
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -120,7 +122,7 @@ function BillingScreenInner({items, groups}: Props) {
   );
 
   return (
-    <View style={[styles.screen, {backgroundColor: theme.bg}]}>
+    <KeyboardAvoidingView style={[styles.screen, {backgroundColor: theme.bg}]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Header
         title={headerLabel}
         subtitle={orderTypeSub}
@@ -269,7 +271,7 @@ function BillingScreenInner({items, groups}: Props) {
         onClose={() => setPaymentOpen(false)}
         onConfirm={handleConfirmPayment}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

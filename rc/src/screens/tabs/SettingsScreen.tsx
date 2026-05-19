@@ -1,6 +1,8 @@
 import React, {useEffect, useState} from 'react';
 import {
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -66,10 +68,10 @@ export default function SettingsScreen() {
   }
 
   return (
-    <View style={[styles.screen, {backgroundColor: theme.bg}]}>
+    <KeyboardAvoidingView style={[styles.screen, {backgroundColor: theme.bg}]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <Header title="Settings" />
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Quick nav */}
         <View style={styles.navRow}>
           <TouchableOpacity
@@ -91,14 +93,14 @@ export default function SettingsScreen() {
         <View style={styles.navRow}>
           <TouchableOpacity
             style={[styles.navBtn, {backgroundColor: theme.surface, borderColor: theme.border}]}
-            onPress={() => Alert.alert('Inventory', 'Coming in the next update.')}>
+            onPress={() => nav.navigate('InventoryMenu')}>
             <Text style={styles.navBtnEmoji}>📦</Text>
             <Text style={[styles.navBtnLabel, {color: theme.textPrimary}]}>Inventory</Text>
             <Text style={[styles.navBtnArrow, {color: theme.textMuted}]}>›</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.navBtn, {backgroundColor: theme.surface, borderColor: theme.border}]}
-            onPress={() => Alert.alert('Reports', 'Coming in the next update.')}>
+            onPress={() => nav.navigate('ReportsMenu')}>
             <Text style={styles.navBtnEmoji}>📊</Text>
             <Text style={[styles.navBtnLabel, {color: theme.textPrimary}]}>Reports</Text>
             <Text style={[styles.navBtnArrow, {color: theme.textMuted}]}>›</Text>
@@ -166,7 +168,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

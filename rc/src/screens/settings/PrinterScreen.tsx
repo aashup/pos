@@ -2,6 +2,8 @@ import React, {useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -217,8 +219,9 @@ export default function PrinterScreen() {
   const inputStyle = [styles.input, {backgroundColor: theme.bg, borderColor: theme.border, color: theme.textPrimary}];
 
   return (
+    <KeyboardAvoidingView style={[styles.screen, {backgroundColor: theme.bg}]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <ScrollView
-      style={[styles.screen, {backgroundColor: theme.bg}]}
+      style={{flex: 1}}
       contentContainerStyle={styles.content}>
 
       {/* Connection type */}
@@ -581,6 +584,7 @@ export default function PrinterScreen() {
         </Text>
       )}
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

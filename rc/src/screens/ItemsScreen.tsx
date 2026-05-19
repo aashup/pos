@@ -7,6 +7,8 @@ import {
   FlatList,
   StyleSheet,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import withObservables from '@nozbe/with-observables';
 
@@ -87,7 +89,7 @@ export default function ItemsScreen() {
   }
 
   return (
-    <View style={[styles.screen, {backgroundColor: theme.bg}]}>
+    <KeyboardAvoidingView style={[styles.screen, {backgroundColor: theme.bg}]} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={[styles.syncBar, {backgroundColor: theme.surface, borderBottomColor: theme.border}]}>
         <Text style={[styles.syncState, {color: theme.textSecondary}]}>
           sync: {status}
@@ -120,7 +122,7 @@ export default function ItemsScreen() {
       </View>
 
       <ObservableItemsList />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

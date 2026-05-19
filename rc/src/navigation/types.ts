@@ -16,6 +16,18 @@ export type RootStackParamList = {
   OrderDetail: {orderId: string};
   Items: undefined;
   PrinterSettings: undefined;
+  // Inventory
+  InventoryMenu: undefined;
+  InventoryItems: undefined;
+  InventoryItemForm: {id: string};
+  InventoryModifiers: undefined;
+  InventoryCombos: undefined;
+  // Reports
+  ReportsMenu: undefined;
+  ReportsSales: undefined;
+  ReportsDayClose: undefined;
+  ReportsItemWise: undefined;
+  ReportsGst: undefined;
 };
 
 export type RootStackScreenProps<T extends keyof RootStackParamList> =
