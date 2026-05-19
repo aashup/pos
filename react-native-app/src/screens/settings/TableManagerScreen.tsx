@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -14,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 
 import {useTheme} from '@/src/store/themeStore';
 import {
@@ -73,6 +74,70 @@ export default function TableManagerScreen() {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync native header title + right buttons with internal view state
+  useEffect(() => {
+    if (viewState === 'floor' && selectedFloor) {
+      navigation.setOptions({
+        title: selectedFloor.name,
+        headerLeft: () => (
+          <TouchableOpacity
+            onPress={() => {
+              setViewState('root');
+              setSelectedFloorId(null);
+            }}
+            style={{marginLeft: 4, padding: 8}}>
+            <Text style={{color: theme.textPrimary, fontSize: 17}}>←</Text>
+          </TouchableOpacity>
+        ),
+        headerRight: () => (
+          <View style={{flexDirection: 'row', alignItems: 'center'}}>
+            <TouchableOpacity
+              style={{padding: 8}}
+              onPress={() =>
+                setFloorModal({visible: true, floor: selectedFloor})
+              }>
+              <Text style={{color: theme.textPrimary, fontSize: 16}}>✏</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{padding: 8, marginRight: 4}}
+              onPress={() => handleFloorMenu(selectedFloor)}>
+              <Text
+                style={{
+                  color: theme.textPrimary,
+                  fontSize: 12,
+                  letterSpacing: 1,
+                }}>
+                •••
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ),
+      });
+    } else {
+      navigation.setOptions({
+        title: 'Table & Floor',
+        headerLeft: undefined,
+        headerRight: undefined,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewState, selectedFloor?.id, selectedFloor?.name, theme.textPrimary]);
+
+  // Intercept Android hardware back when inside floor detail
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (viewState === 'floor') {
+          setViewState('root');
+          setSelectedFloorId(null);
+          return true;
+        }
+        return false;
+      });
+      return () => sub.remove();
+    }, [viewState]),
+  );
 
   function openFloor(floor: RemoteFloorPlan) {
     setSelectedFloorId(floor.id);
@@ -147,45 +212,7 @@ export default function TableManagerScreen() {
     return (
       <SafeAreaView
         style={[styles.screen, {backgroundColor: theme.bg}]}
-        edges={['top', 'left', 'right']}>
-        {/* Header */}
-        <View
-          style={[
-            styles.header,
-            {backgroundColor: theme.surface, borderBottomColor: theme.border},
-          ]}>
-          <TouchableOpacity
-            style={styles.headerBack}
-            onPress={() => setViewState('root')}>
-            <Text style={[styles.headerBackArrow, {color: theme.textPrimary}]}>
-              ←
-            </Text>
-          </TouchableOpacity>
-          <Text
-            style={[styles.headerTitle, {color: theme.textPrimary}]}
-            numberOfLines={1}>
-            {selectedFloor.name}
-          </Text>
-          <View style={styles.headerRight}>
-            <TouchableOpacity
-              style={styles.headerIconBtn}
-              onPress={() =>
-                setFloorModal({visible: true, floor: selectedFloor})
-              }>
-              <Text style={[styles.headerIcon, {color: theme.textPrimary}]}>
-                ✏
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerIconBtn}
-              onPress={() => handleFloorMenu(selectedFloor)}>
-              <Text style={[styles.headerDots, {color: theme.textPrimary}]}>
-                •••
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
+        edges={['left', 'right']}>
         {/* Table grid */}
         <FlatList
           data={floorTables}
@@ -309,26 +336,7 @@ export default function TableManagerScreen() {
   return (
     <SafeAreaView
       style={[styles.screen, {backgroundColor: theme.bg}]}
-      edges={['top', 'left', 'right']}>
-      {/* Header */}
-      <View
-        style={[
-          styles.header,
-          {backgroundColor: theme.surface, borderBottomColor: theme.border},
-        ]}>
-        <TouchableOpacity
-          style={styles.headerBack}
-          onPress={() => navigation.goBack()}>
-          <Text style={[styles.headerBackArrow, {color: theme.textPrimary}]}>
-            ←
-          </Text>
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, {color: theme.textPrimary}]}>
-          Table & Floor
-        </Text>
-        <View style={styles.headerRight} />
-      </View>
-
+      edges={['left', 'right']}>
       {/* Tab bar */}
       <View
         style={[
@@ -1092,36 +1100,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
-
-  // header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-  },
-  headerBack: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerBackArrow: {fontSize: 22, fontWeight: '600'},
-  headerTitle: {flex: 1, fontSize: 17, fontWeight: '700'},
-  headerRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: 4,
-  },
-  headerIconBtn: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerIcon: {fontSize: 16},
-  headerDots: {fontSize: 12, letterSpacing: 1},
 
   // tab bar
   tabBar: {

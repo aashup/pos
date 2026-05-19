@@ -70,7 +70,7 @@ export default function RootNavigator() {
             <Stack.Screen
               name="TableManager"
               component={TableManagerScreen}
-              options={{title: 'Table Manager', ...sharedHeaderOptions}}
+              options={{title: 'Table & Floor', ...sharedHeaderOptions}}
             />
             {/* Inventory */}
             <Stack.Screen
