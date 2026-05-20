@@ -16,4 +16,11 @@ export const itemVariantsApi = {
     );
     return res.data.data;
   },
+  create: async (data: {item_id: string; name: string; price: number}) => {
+    const res = await apiClient.post<{data: RemoteItemVariant}>('/item-variants', data);
+    return res.data.data;
+  },
+  delete: async (id: string) => {
+    await apiClient.delete(`/item-variants/${id}`);
+  },
 };

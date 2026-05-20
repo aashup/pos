@@ -1,7 +1,8 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   BackHandler,
   FlatList,
   KeyboardAvoidingView,
@@ -16,74 +17,71 @@ import {
 } from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import withObservables from '@nozbe/with-observables';
 
 import Icon from 'react-native-vector-icons/FontAwesome5';
+import {Q} from '@nozbe/watermelondb';
 import {useTheme} from '@/src/store/themeStore';
-import {
-  floorPlansApi,
-  diningTablesApi,
-  RemoteFloorPlan,
-  RemoteDiningTable,
-} from '@/src/api/tables';
+import {database, floorPlansCollection, diningTablesCollection} from '@/src/db';
+import FloorPlan from '@/src/db/models/FloorPlan';
+import DiningTable from '@/src/db/models/DiningTable';
+import {floorPlansApi, diningTablesApi} from '@/src/api/tables';
+import {triggerSyncNow} from '@/src/lib/syncEngine';
 
+function generateLocalId(): string {
+  return `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 type ViewState = 'root' | 'floor';
 type Tab = 'tables' | 'floors';
 
+const COLLAPSE_HEIGHT = 80;
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Main screen
+// Main screen (inner — receives reactive WatermelonDB props)
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function TableManagerScreen() {
+type Props = {floors: FloorPlan[]; tables: DiningTable[]};
+
+function TableManagerScreenInner({floors, tables}: Props) {
   const theme = useTheme();
   const navigation = useNavigation();
 
   const [viewState, setViewState] = useState<ViewState>('root');
   const [activeTab, setActiveTab] = useState<Tab>('tables');
-  const [floors, setFloors] = useState<RemoteFloorPlan[]>([]);
-  const [tables, setTables] = useState<RemoteDiningTable[]>([]);
-  const [loading, setLoading] = useState(true);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const [syncing, setSyncing] = useState(false);
+
+  // WatermelonDB local id of the selected floor
   const [selectedFloorId, setSelectedFloorId] = useState<string | null>(null);
 
-  const [floorModal, setFloorModal] = useState<{
-    visible: boolean;
-    floor?: RemoteFloorPlan;
-  }>({visible: false});
-  const [tableModal, setTableModal] = useState<{
-    visible: boolean;
-    table?: RemoteDiningTable;
-  }>({visible: false});
+  const [floorModal, setFloorModal] = useState<{visible: boolean; floor?: FloorPlan}>({
+    visible: false,
+  });
+  const [tableModal, setTableModal] = useState<{visible: boolean; table?: DiningTable}>({
+    visible: false,
+  });
   const [bulkModal, setBulkModal] = useState(false);
-  const [menuSheet, setMenuSheet] = useState<{
-    visible: boolean;
-    floor?: RemoteFloorPlan;
-  }>({visible: false});
+  const [menuSheet, setMenuSheet] = useState<{visible: boolean; floor?: FloorPlan}>({
+    visible: false,
+  });
 
   const selectedFloor = floors.find(f => f.id === selectedFloorId) ?? null;
-  const floorTables = tables.filter(t => t.floor_plan_id === selectedFloorId);
+  const floorTables = tables.filter(t => t.floorPlanServerId === selectedFloor?.serverId);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [f, t] = await Promise.all([floorPlansApi.list(), diningTablesApi.list()]);
-      setFloors(f);
-      setTables(t);
-    } catch {
-      Alert.alert('Error', 'Failed to load tables. Check server connection.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
+  // Trigger sync on mount so data is fresh
   useEffect(() => {
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setSyncing(true);
+    triggerSyncNow();
+    const t = setTimeout(() => setSyncing(false), 4000);
+    return () => clearTimeout(t);
   }, []);
 
-  // Sync native header title + right buttons with internal view state
+  // Sync native header with internal view state
   useEffect(() => {
     if (viewState === 'floor' && selectedFloor) {
       navigation.setOptions({
+        headerShown: true,
         title: selectedFloor.name,
         headerLeft: () => (
           <TouchableOpacity
@@ -99,14 +97,12 @@ export default function TableManagerScreen() {
           <View style={{flexDirection: 'row', alignItems: 'center', gap: 4}}>
             <TouchableOpacity
               style={{padding: 8}}
-              onPress={() =>
-                setFloorModal({visible: true, floor: selectedFloor})
-              }>
+              onPress={() => setFloorModal({visible: true, floor: selectedFloor})}>
               <Icon name="pen" size={16} color={theme.textPrimary} />
             </TouchableOpacity>
             <TouchableOpacity
               style={{padding: 8, marginRight: 4}}
-              onPress={() => handleFloorMenu(selectedFloor)}>
+              onPress={() => setMenuSheet({visible: true, floor: selectedFloor})}>
               <Icon name="ellipsis-v" size={18} color={theme.textPrimary} />
             </TouchableOpacity>
           </View>
@@ -114,6 +110,7 @@ export default function TableManagerScreen() {
       });
     } else {
       navigation.setOptions({
+        headerShown: false,
         title: 'Table & Floor',
         headerLeft: undefined,
         headerRight: undefined,
@@ -122,7 +119,7 @@ export default function TableManagerScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewState, selectedFloor?.id, selectedFloor?.name, theme.textPrimary]);
 
-  // Intercept Android hardware back when inside floor detail
+  // Android hardware back
   useFocusEffect(
     useCallback(() => {
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -137,16 +134,12 @@ export default function TableManagerScreen() {
     }, [viewState]),
   );
 
-  function openFloor(floor: RemoteFloorPlan) {
+  function openFloor(floor: FloorPlan) {
     setSelectedFloorId(floor.id);
     setViewState('floor');
   }
 
-  function handleFloorMenu(floor: RemoteFloorPlan) {
-    setMenuSheet({visible: true, floor});
-  }
-
-  function confirmDeleteFloor(floor: RemoteFloorPlan) {
+  async function confirmDeleteFloor(floor: FloorPlan) {
     Alert.alert(
       `Delete "${floor.name}"?`,
       'All tables on this floor will also be removed.',
@@ -157,17 +150,26 @@ export default function TableManagerScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await floorPlansApi.delete(floor.id);
+              // Delete locally first — UI updates immediately
+              const floorTbls = tables.filter(
+                t => t.floorPlanServerId === floor.serverId,
+              );
+              await database.write(async () => {
+                for (const t of floorTbls) {
+                  await t.markAsDeleted();
+                }
+                await floor.markAsDeleted();
+              });
               if (selectedFloorId === floor.id) {
                 setViewState('root');
                 setSelectedFloorId(null);
               }
-              reload();
+              // Fire-and-forget server delete
+              if (floor.serverId && !floor.serverId.startsWith('local_')) {
+                floorPlansApi.delete(floor.serverId).catch(() => {});
+              }
             } catch (err: any) {
-              Alert.alert(
-                'Cannot delete',
-                err?.response?.data?.message ?? 'Server error',
-              );
+              Alert.alert('Cannot delete', err?.message ?? 'Error');
             }
           },
         },
@@ -175,7 +177,7 @@ export default function TableManagerScreen() {
     );
   }
 
-  function confirmDeleteTable(table: RemoteDiningTable) {
+  async function confirmDeleteTable(table: DiningTable) {
     Alert.alert(`Delete table "${table.name}"?`, undefined, [
       {text: 'Cancel', style: 'cancel'},
       {
@@ -183,27 +185,29 @@ export default function TableManagerScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
-            await diningTablesApi.delete(table.id);
-            reload();
+            // Delete locally first — UI updates immediately
+            await database.write(async () => {
+              await table.markAsDeleted();
+            });
+            // Fire-and-forget server delete
+            if (table.serverId && !table.serverId.startsWith('local_')) {
+              diningTablesApi.delete(table.serverId).catch(() => {});
+            }
           } catch (err: any) {
-            Alert.alert(
-              'Cannot delete',
-              err?.response?.data?.message ?? 'Server error',
-            );
+            Alert.alert('Cannot delete', err?.message ?? 'Error');
           }
         },
       },
     ]);
   }
 
-  // ── Floor detail view ────────────────────────────────────────────────────────
+  // ── Floor detail view ──────────────────────────────────────────────────────
 
   if (viewState === 'floor' && selectedFloor) {
     return (
       <SafeAreaView
         style={[styles.screen, {backgroundColor: theme.bg}]}
         edges={['left', 'right']}>
-        {/* Table grid */}
         <FlatList
           data={floorTables}
           keyExtractor={t => t.id}
@@ -223,9 +227,7 @@ export default function TableManagerScreen() {
           )}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Text style={[styles.emptyBig, {color: theme.textMuted}]}>
-                🪑
-              </Text>
+              <Text style={[styles.emptyBig, {color: theme.textMuted}]}>🪑</Text>
               <Text style={[styles.emptyHint, {color: theme.textSecondary}]}>
                 No tables on this floor.{'\n'}Tap "Add Table" to create one.
               </Text>
@@ -233,17 +235,13 @@ export default function TableManagerScreen() {
           }
         />
 
-        {/* Modals */}
         {tableModal.visible && (
           <TableModal
             table={tableModal.table}
-            floorPlanId={selectedFloor.id}
+            floorPlan={selectedFloor}
             theme={theme}
             onClose={() => setTableModal({visible: false})}
-            onSaved={() => {
-              setTableModal({visible: false});
-              reload();
-            }}
+            onSaved={() => setTableModal({visible: false})}
             onDelete={
               tableModal.table
                 ? () => {
@@ -257,13 +255,10 @@ export default function TableManagerScreen() {
         )}
         {bulkModal && (
           <BulkCreateModal
-            floorPlanId={selectedFloor.id}
+            floorPlan={selectedFloor}
             theme={theme}
             onClose={() => setBulkModal(false)}
-            onSaved={() => {
-              setBulkModal(false);
-              reload();
-            }}
+            onSaved={() => setBulkModal(false)}
           />
         )}
         {floorModal.visible && (
@@ -271,10 +266,7 @@ export default function TableManagerScreen() {
             floor={floorModal.floor}
             theme={theme}
             onClose={() => setFloorModal({visible: false})}
-            onSaved={() => {
-              setFloorModal({visible: false});
-              reload();
-            }}
+            onSaved={() => setFloorModal({visible: false})}
           />
         )}
         {menuSheet.visible && menuSheet.floor && (
@@ -304,30 +296,60 @@ export default function TableManagerScreen() {
     );
   }
 
-  // ── Root view ────────────────────────────────────────────────────────────────
+  // ── Root view ──────────────────────────────────────────────────────────────
 
   const tableSections = floors
     .map(floor => ({
       floor,
-      data: tables.filter(t => t.floor_plan_id === floor.id),
+      data: tables.filter(t => t.floorPlanServerId === floor.serverId),
     }))
     .filter(s => s.data.length > 0);
 
-  const orphanTables = tables.filter(
-    t => !floors.some(f => f.id === t.floor_plan_id),
+  const headerHeight = scrollY.interpolate({
+    inputRange: [0, COLLAPSE_HEIGHT],
+    outputRange: [COLLAPSE_HEIGHT, 0],
+    extrapolate: 'clamp',
+  });
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, COLLAPSE_HEIGHT / 2],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  const onScroll = Animated.event(
+    [{nativeEvent: {contentOffset: {y: scrollY}}}],
+    {useNativeDriver: false},
   );
-  if (orphanTables.length > 0) {
-    tableSections.push({
-      floor: {id: '__other__', name: 'Other Tables'} as RemoteFloorPlan,
-      data: orphanTables,
-    });
+
+  function switchTab(tab: Tab) {
+    scrollY.setValue(0);
+    setActiveTab(tab);
   }
 
   return (
     <SafeAreaView
       style={[styles.screen, {backgroundColor: theme.bg}]}
-      edges={['left', 'right']}>
-      {/* Tab bar */}
+      edges={['top', 'left', 'right']}>
+      {/* Collapsible header */}
+      <Animated.View
+        style={[
+          styles.collapseHeader,
+          {
+            height: headerHeight,
+            opacity: headerOpacity,
+            backgroundColor: theme.surface,
+          },
+        ]}>
+        <Text style={[styles.collapseTitle, {color: theme.textPrimary}]}>
+          Table & Floor
+        </Text>
+        <Text style={[styles.collapseSub, {color: theme.textSecondary}]}>
+          {floors.length} floors · {tables.length} tables
+          {syncing ? '  ·  syncing…' : ''}
+        </Text>
+      </Animated.View>
+
+      {/* Sticky tab bar */}
       <View
         style={[
           styles.tabBar,
@@ -337,13 +359,13 @@ export default function TableManagerScreen() {
           const isActive = activeTab === tab;
           const label =
             tab === 'tables'
-              ? `Table (${tables.length})`
-              : `Floor (${floors.length})`;
+              ? `Tables (${tables.length})`
+              : `Floors (${floors.length})`;
           return (
             <TouchableOpacity
               key={tab}
               style={styles.tab}
-              onPress={() => setActiveTab(tab)}>
+              onPress={() => switchTab(tab)}>
               <Text
                 style={[
                   styles.tabText,
@@ -368,11 +390,7 @@ export default function TableManagerScreen() {
       </View>
 
       {/* Content */}
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={theme.primary} />
-        </View>
-      ) : activeTab === 'tables' ? (
+      {activeTab === 'tables' ? (
         tableSections.length === 0 ? (
           <View style={styles.center}>
             <Text style={[styles.emptyBig, {color: theme.textMuted}]}>🪑</Text>
@@ -381,28 +399,24 @@ export default function TableManagerScreen() {
             </Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={styles.tableTabContent}>
+          <Animated.ScrollView
+            contentContainerStyle={styles.tableTabContent}
+            onScroll={onScroll}
+            scrollEventThrottle={16}>
             {tableSections.map(section => (
               <View key={section.floor.id}>
                 <Text
-                  style={[
-                    styles.sectionHeader,
-                    {color: theme.textSecondary},
-                  ]}>
+                  style={[styles.sectionHeader, {color: theme.textSecondary}]}>
                   {section.floor.name}
                 </Text>
                 <View style={styles.tableGrid}>
                   {section.data.map(table => (
-                    <RootTableCard
-                      key={table.id}
-                      table={table}
-                      theme={theme}
-                    />
+                    <RootTableCard key={table.id} table={table} theme={theme} />
                   ))}
                 </View>
               </View>
             ))}
-          </ScrollView>
+          </Animated.ScrollView>
         )
       ) : floors.length === 0 ? (
         <View style={styles.center}>
@@ -412,18 +426,17 @@ export default function TableManagerScreen() {
           </Text>
         </View>
       ) : (
-        <FlatList
+        <Animated.FlatList
           data={floors}
-          keyExtractor={f => f.id}
+          keyExtractor={(f: any) => f.id}
           contentContainerStyle={styles.floorListContent}
-          renderItem={({item: floor}) => (
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          renderItem={({item: floor}: {item: FloorPlan}) => (
             <TouchableOpacity
               style={[
                 styles.floorListRow,
-                {
-                  backgroundColor: theme.surface,
-                  borderColor: theme.border,
-                },
+                {backgroundColor: theme.surface, borderColor: theme.border},
               ]}
               onPress={() => openFloor(floor)}>
               <View style={styles.floorListInfo}>
@@ -436,7 +449,8 @@ export default function TableManagerScreen() {
                     styles.floorListCount,
                     {color: theme.textSecondary},
                   ]}>
-                  {tables.filter(t => t.floor_plan_id === floor.id).length}{' '}
+                  {tables.filter(t => t.floorPlanServerId === floor.serverId)
+                    .length}{' '}
                   tables
                 </Text>
               </View>
@@ -459,18 +473,29 @@ export default function TableManagerScreen() {
           floor={floorModal.floor}
           theme={theme}
           onClose={() => setFloorModal({visible: false})}
-          onSaved={() => {
-            setFloorModal({visible: false});
-            reload();
-          }}
+          onSaved={() => setFloorModal({visible: false})}
         />
       )}
     </SafeAreaView>
   );
 }
 
+// withObservables wires up reactive WatermelonDB queries
+export default withObservables([], () => ({
+  floors: floorPlansCollection.query().observeWithColumns(['name']),
+  tables: diningTablesCollection
+    .query()
+    .observeWithColumns([
+      'name',
+      'capacity',
+      'is_active',
+      'floor_plan_server_id',
+      'status',
+    ]),
+}))(TableManagerScreenInner);
+
 // ─────────────────────────────────────────────────────────────────────────────
-// FloorTableCard — tappable, used inside floor detail
+// FloorTableCard
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FloorTableCard({
@@ -478,7 +503,7 @@ function FloorTableCard({
   theme,
   onPress,
 }: {
-  table: RemoteDiningTable;
+  table: DiningTable;
   theme: any;
   onPress: () => void;
 }) {
@@ -496,7 +521,7 @@ function FloorTableCard({
       <Text style={[styles.tableCardMeta, {color: theme.textSecondary}]}>
         {table.capacity} Seaters
       </Text>
-      {!table.is_active && (
+      {!table.isActive && (
         <View style={styles.inactiveBadge}>
           <Text style={styles.inactiveBadgeText}>Inactive</Text>
         </View>
@@ -506,16 +531,10 @@ function FloorTableCard({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// RootTableCard — display only, used in Table tab
+// RootTableCard
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RootTableCard({
-  table,
-  theme,
-}: {
-  table: RemoteDiningTable;
-  theme: any;
-}) {
+function RootTableCard({table, theme}: {table: DiningTable; theme: any}) {
   return (
     <View
       style={[
@@ -545,7 +564,7 @@ function FloorMenuSheet({
   onEdit,
   onDelete,
 }: {
-  floor: RemoteFloorPlan;
+  floor: FloorPlan;
   theme: any;
   onClose: () => void;
   onAddTable: () => void;
@@ -561,21 +580,13 @@ function FloorMenuSheet({
         activeOpacity={1}
         onPress={onClose}
       />
-      <View
-        style={[
-          styles.asWrap,
-          {paddingBottom: Math.max(insets.bottom, 12)},
-        ]}>
-        {/* Main sheet */}
+      <View style={[styles.asWrap, {paddingBottom: Math.max(insets.bottom, 12)}]}>
         <View style={[styles.asSheet, {backgroundColor: theme.surface}]}>
-          {/* Title */}
           <View style={[styles.asTitleRow, {borderBottomColor: theme.border}]}>
             <Text style={[styles.asTitle, {color: theme.textSecondary}]}>
               {floor.name}
             </Text>
           </View>
-
-          {/* Add Table */}
           <TouchableOpacity
             style={[styles.asOption, {borderBottomColor: theme.border}]}
             onPress={onAddTable}>
@@ -583,8 +594,6 @@ function FloorMenuSheet({
               Add Table
             </Text>
           </TouchableOpacity>
-
-          {/* Bulk Table */}
           <TouchableOpacity
             style={[styles.asOption, {borderBottomColor: theme.border}]}
             onPress={onBulkTable}>
@@ -592,8 +601,6 @@ function FloorMenuSheet({
               Bulk Add Tables
             </Text>
           </TouchableOpacity>
-
-          {/* Edit Name */}
           <TouchableOpacity
             style={[styles.asOption, {borderBottomColor: theme.border}]}
             onPress={onEdit}>
@@ -601,21 +608,17 @@ function FloorMenuSheet({
               Edit Name
             </Text>
           </TouchableOpacity>
-
-          {/* Delete Floor */}
           <TouchableOpacity style={styles.asOption} onPress={onDelete}>
             <Text style={[styles.asOptionText, {color: '#dc2626'}]}>
               Delete Floor
             </Text>
           </TouchableOpacity>
         </View>
-
-        {/* Cancel — separate card */}
         <TouchableOpacity
           style={[styles.asCancel, {backgroundColor: theme.surface}]}
           onPress={onClose}>
           <Text style={[styles.asCancelText, {color: theme.primary}]}>
-            cancel
+            Cancel
           </Text>
         </TouchableOpacity>
       </View>
@@ -624,7 +627,7 @@ function FloorMenuSheet({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Floor plan modal
+// FloorPlanModal — create or edit a floor plan
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FloorPlanModal({
@@ -633,7 +636,7 @@ function FloorPlanModal({
   onClose,
   onSaved,
 }: {
-  floor?: RemoteFloorPlan;
+  floor?: FloorPlan;
   theme: any;
   onClose: () => void;
   onSaved: () => void;
@@ -646,16 +649,54 @@ function FloorPlanModal({
     setSaving(true);
     try {
       if (floor) {
-        await floorPlansApi.update(floor.id, {name: name.trim()});
+        // Edit existing floor plan — write locally, push fire-and-forget
+        await database.write(async () => {
+          await floor.update(rec => {
+            rec.name = name.trim();
+            rec.syncState = 'pending';
+          });
+        });
+        if (floor.serverId && !floor.serverId.startsWith('local_')) {
+          floorPlansApi.update(floor.serverId, {name: name.trim()})
+            .then(async () => {
+              await database.write(async () => {
+                await floor.update(rec => {rec.syncState = 'synced';});
+              });
+            })
+            .catch(() => {});
+        }
       } else {
-        await floorPlansApi.create({name: name.trim()});
+        // Create new floor plan — write locally with placeholder, push fire-and-forget
+        const localId = generateLocalId();
+        let localRecord: any;
+        await database.write(async () => {
+          localRecord = await floorPlansCollection.create(rec => {
+            rec.serverId = localId;
+            rec.name = name.trim();
+            rec.syncState = 'pending';
+          });
+        });
+        floorPlansApi.create({name: name.trim()})
+          .then(async remote => {
+            await database.write(async () => {
+              await localRecord.update((rec: any) => {
+                rec.serverId = remote.id;
+                rec.syncState = 'synced';
+              });
+              // Fix any tables already created under this local placeholder
+              const related = await diningTablesCollection
+                .query(Q.where('floor_plan_server_id', localId))
+                .fetch();
+              for (const t of related) {
+                await t.update((rec: any) => {rec.floorPlanServerId = remote.id;});
+              }
+            });
+          })
+          .catch(() => {});
       }
       onSaved();
     } catch (err: any) {
-      Alert.alert(
-        'Failed to save',
-        err?.response?.data?.message ?? 'Server error',
-      );
+      Alert.alert('Failed to save', err?.message ?? 'Error');
     } finally {
       setSaving(false);
     }
@@ -703,9 +744,7 @@ function FloorPlanModal({
           {saving ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.saveBtnText}>
-              {floor ? 'Update' : 'Create'}
-            </Text>
+            <Text style={styles.saveBtnText}>{floor ? 'Update' : 'Create'}</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -714,19 +753,19 @@ function FloorPlanModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Table modal
+// TableModal — create or edit a dining table
 // ─────────────────────────────────────────────────────────────────────────────
 
 function TableModal({
   table,
-  floorPlanId,
+  floorPlan,
   theme,
   onClose,
   onSaved,
   onDelete,
 }: {
-  table?: RemoteDiningTable;
-  floorPlanId: string;
+  table?: DiningTable;
+  floorPlan: FloorPlan;
   theme: any;
   onClose: () => void;
   onSaved: () => void;
@@ -734,7 +773,7 @@ function TableModal({
 }) {
   const [name, setName] = useState(table?.name ?? '');
   const [capacity, setCapacity] = useState(String(table?.capacity ?? '4'));
-  const [isActive, setIsActive] = useState(table?.is_active ?? true);
+  const [isActive, setIsActive] = useState(table?.isActive ?? true);
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
@@ -746,24 +785,58 @@ function TableModal({
     try {
       const cap = Math.max(1, parseInt(capacity, 10) || 4);
       if (table) {
-        await diningTablesApi.update(table.id, {
-          name: name.trim(),
-          capacity: cap,
-          is_active: isActive,
+        // Edit existing table — write locally, push fire-and-forget
+        await database.write(async () => {
+          await table.update(rec => {
+            rec.name = name.trim();
+            rec.capacity = cap;
+            rec.isActive = isActive;
+            rec.syncState = 'pending';
+          });
         });
+        if (table.serverId && !table.serverId.startsWith('local_')) {
+          diningTablesApi.update(table.serverId, {name: name.trim(), capacity: cap, is_active: isActive})
+            .then(async () => {
+              await database.write(async () => {
+                await table.update(rec => {rec.syncState = 'synced';});
+              });
+            })
+            .catch(() => {});
+        }
       } else {
-        await diningTablesApi.create({
-          floor_plan_id: floorPlanId,
-          name: name.trim(),
-          capacity: cap,
+        // Create new table — write locally with placeholder, push fire-and-forget
+        const localId = generateLocalId();
+        let localRecord: any;
+        await database.write(async () => {
+          localRecord = await diningTablesCollection.create(rec => {
+            rec.serverId = localId;
+            rec.floorPlanServerId = floorPlan.serverId ?? floorPlan.id;
+            rec.name = name.trim();
+            rec.capacity = cap;
+            rec.isActive = true;
+            rec.status = 'vacant';
+            rec.currentOrderId = null;
+            rec.syncState = 'pending';
+          });
         });
+        // Fire-and-forget requires a real floor plan server ID
+        if (floorPlan.serverId && !floorPlan.serverId.startsWith('local_')) {
+          diningTablesApi.create({floor_plan_id: floorPlan.serverId, name: name.trim(), capacity: cap})
+            .then(async remote => {
+              await database.write(async () => {
+                await localRecord.update((rec: any) => {
+                  rec.serverId = remote.id;
+                  rec.status = remote.status;
+                  rec.syncState = 'synced';
+                });
+              });
+            })
+            .catch(() => {});
+        }
       }
       onSaved();
     } catch (err: any) {
-      Alert.alert(
-        'Failed to save',
-        err?.response?.data?.message ?? 'Server error',
-      );
+      Alert.alert('Failed to save', err?.message ?? 'Error');
     } finally {
       setSaving(false);
     }
@@ -775,7 +848,6 @@ function TableModal({
       theme={theme}
       onClose={onClose}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Name */}
         <Text style={[styles.fieldLabel, {color: theme.textSecondary}]}>
           Table Name *
         </Text>
@@ -795,7 +867,6 @@ function TableModal({
           autoFocus
         />
 
-        {/* Capacity */}
         <Text
           style={[
             styles.fieldLabel,
@@ -819,7 +890,6 @@ function TableModal({
           placeholderTextColor={theme.textMuted}
         />
 
-        {/* Active toggle (edit only) */}
         {table && (
           <TouchableOpacity
             style={[styles.toggleRow, {marginTop: 16}]}
@@ -849,9 +919,7 @@ function TableModal({
 
         <View style={[styles.modalActions, {marginTop: 20}]}>
           {onDelete && (
-            <TouchableOpacity
-              style={[styles.deleteBtn]}
-              onPress={onDelete}>
+            <TouchableOpacity style={styles.deleteBtn} onPress={onDelete}>
               <Text style={styles.deleteBtnText}>Delete</Text>
             </TouchableOpacity>
           )}
@@ -887,12 +955,12 @@ function TableModal({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BulkCreateModal({
-  floorPlanId,
+  floorPlan,
   theme,
   onClose,
   onSaved,
 }: {
-  floorPlanId: string;
+  floorPlan: FloorPlan;
   theme: any;
   onClose: () => void;
   onSaved: () => void;
@@ -911,7 +979,9 @@ function BulkCreateModal({
   const preview = Array.from({length: Math.min(count, 5)}, (_, i) => {
     return `${prefix.trim()}${fromN + i}`;
   });
-  if (count > 5) preview.push(`… (${count} total)`);
+  if (count > 5) {
+    preview.push(`… (${count} total)`);
+  }
 
   async function handleCreate() {
     if (!prefix.trim()) {
@@ -925,24 +995,50 @@ function BulkCreateModal({
     setSaving(true);
     setProgress(0);
     const cap = Math.max(1, parseInt(capacity, 10) || 4);
-    let created = 0;
+    const fpServerId = floorPlan.serverId ?? floorPlan.id;
+    const hasRealFloorId = !!(floorPlan.serverId && !floorPlan.serverId.startsWith('local_'));
+
     try {
-      for (let n = fromN; n <= toN; n++) {
-        await diningTablesApi.create({
-          floor_plan_id: floorPlanId,
-          name: `${prefix.trim()}${n}`,
-          capacity: cap,
-        });
-        created++;
-        setProgress(created);
-      }
-      Alert.alert('Done', `${created} table${created !== 1 ? 's' : ''} created.`);
+      // Write all tables locally first — instant feedback
+      const localRecords: any[] = [];
+      await database.write(async () => {
+        for (let n = fromN; n <= toN; n++) {
+          const localId = generateLocalId();
+          const rec = await diningTablesCollection.create((r: any) => {
+            r.serverId = localId;
+            r.floorPlanServerId = fpServerId;
+            r.name = `${prefix.trim()}${n}`;
+            r.capacity = cap;
+            r.isActive = true;
+            r.status = 'vacant';
+            r.currentOrderId = null;
+            r.syncState = 'pending';
+          });
+          localRecords.push({rec, localId, name: `${prefix.trim()}${n}`});
+        }
+      });
+      setProgress(localRecords.length);
+      Alert.alert('Done', `${localRecords.length} table${localRecords.length !== 1 ? 's' : ''} created.`);
       onSaved();
+
+      // Fire-and-forget server push for each table (only if floor plan is synced)
+      if (hasRealFloorId) {
+        for (const {rec, name: tName} of localRecords) {
+          diningTablesApi.create({floor_plan_id: floorPlan.serverId!, name: tName, capacity: cap})
+            .then(async remote => {
+              await database.write(async () => {
+                await rec.update((r: any) => {
+                  r.serverId = remote.id;
+                  r.status = remote.status;
+                  r.syncState = 'synced';
+                });
+              });
+            })
+            .catch(() => {});
+        }
+      }
     } catch (err: any) {
-      Alert.alert(
-        `Failed after ${created} tables`,
-        err?.response?.data?.message ?? 'Server error',
-      );
+      Alert.alert('Failed to create tables', err?.message ?? 'Error');
     } finally {
       setSaving(false);
     }
@@ -1048,8 +1144,7 @@ function BulkCreateModal({
               styles.previewBox,
               {backgroundColor: theme.bg, borderColor: theme.border},
             ]}>
-            <Text
-              style={[styles.previewLabel, {color: theme.textSecondary}]}>
+            <Text style={[styles.previewLabel, {color: theme.textSecondary}]}>
               Preview — {count} table{count !== 1 ? 's' : ''}
             </Text>
             <Text style={[styles.previewNames, {color: theme.textPrimary}]}>
@@ -1070,8 +1165,7 @@ function BulkCreateModal({
                 },
               ]}
             />
-            <Text
-              style={[styles.progressText, {color: theme.textPrimary}]}>
+            <Text style={[styles.progressText, {color: theme.textPrimary}]}>
               Creating {progress}/{count}…
             </Text>
           </View>
@@ -1126,11 +1220,7 @@ function ModalSheet({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <Modal
-      visible
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}>
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView
         style={styles.sheetWrap}
         behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}>
@@ -1172,7 +1262,6 @@ function ModalSheet({
 
 const styles = StyleSheet.create({
   screen: {flex: 1},
-  flex: {flex: 1},
   center: {
     flex: 1,
     alignItems: 'center',
@@ -1180,11 +1269,17 @@ const styles = StyleSheet.create({
     padding: 24,
   },
 
-  // tab bar
-  tabBar: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
+  // collapsible header
+  collapseHeader: {
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
+  collapseTitle: {fontSize: 20, fontWeight: '700', marginBottom: 2},
+  collapseSub: {fontSize: 13},
+
+  // tab bar
+  tabBar: {flexDirection: 'row', borderBottomWidth: 1},
   tab: {
     flex: 1,
     alignItems: 'center',
@@ -1232,7 +1327,7 @@ const styles = StyleSheet.create({
   floorListName: {fontSize: 15, fontWeight: '600'},
   floorListCount: {fontSize: 12, marginTop: 2},
 
-  // table cards (shared by both root and floor detail)
+  // table cards
   tableCard: {
     width: '30.5%',
     borderRadius: 12,
@@ -1258,32 +1353,6 @@ const styles = StyleSheet.create({
   floorGridEmpty: {flex: 1},
   floorGridRow: {gap: 10},
 
-  // floor detail footer
-  floorFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-  },
-  bulkOutlineBtn: {
-    borderWidth: 1.5,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  bulkOutlineBtnText: {fontSize: 13, fontWeight: '700'},
-  addTablePill: {
-    flex: 1,
-    borderRadius: 24,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  addTablePillText: {color: '#fff', fontSize: 15, fontWeight: '700'},
-
   // FAB
   fab: {
     position: 'absolute',
@@ -1306,10 +1375,7 @@ const styles = StyleSheet.create({
   emptyHint: {fontSize: 13, textAlign: 'center', lineHeight: 20},
 
   // modal sheet
-  sheetWrap: {
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
+  sheetWrap: {flex: 1, justifyContent: 'flex-end'},
   sheet: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -1337,7 +1403,7 @@ const styles = StyleSheet.create({
   closeBtnText: {fontSize: 18},
   sheetBody: {paddingHorizontal: 16, paddingTop: 16},
 
-  // form elements
+  // form
   fieldLabel: {fontSize: 12, fontWeight: '600', marginBottom: 6},
   input: {
     borderWidth: 1,
@@ -1366,21 +1432,14 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // range row (bulk modal)
+  // bulk modal
   rangeRow: {flexDirection: 'row', alignItems: 'flex-end', gap: 8},
   rangeField: {flex: 1},
   rangeLabel: {fontSize: 11, marginBottom: 4, fontWeight: '600'},
   rangeDash: {fontSize: 18, paddingBottom: 10},
-
-  previewBox: {
-    marginTop: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-    padding: 10,
-  },
+  previewBox: {marginTop: 14, borderRadius: 8, borderWidth: 1, padding: 10},
   previewLabel: {fontSize: 11, fontWeight: '700', marginBottom: 4},
   previewNames: {fontSize: 13, lineHeight: 20},
-
   progressWrap: {
     marginTop: 12,
     borderRadius: 6,
@@ -1388,27 +1447,12 @@ const styles = StyleSheet.create({
     height: 22,
     justifyContent: 'center',
   },
-  progressBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-  },
-  progressText: {
-    fontSize: 11,
-    textAlign: 'center',
-    fontWeight: '600',
-    zIndex: 1,
-  },
+  progressBar: {position: 'absolute', left: 0, top: 0, bottom: 0},
+  progressText: {fontSize: 11, textAlign: 'center', fontWeight: '600', zIndex: 1},
 
   // modal buttons
   modalActions: {flexDirection: 'row', gap: 8, marginTop: 16},
-  cancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
+  cancelBtn: {flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center'},
   cancelBtnText: {fontSize: 14, fontWeight: '600'},
   saveBtn: {
     flex: 2,
@@ -1429,47 +1473,23 @@ const styles = StyleSheet.create({
   deleteBtnText: {color: '#dc2626', fontSize: 14, fontWeight: '700'},
 
   // action sheet
-  asScrim: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  asWrap: {
-    position: 'absolute',
-    bottom: 0,
-    left: 12,
-    right: 12,
-    gap: 8,
-  },
-  asSheet: {
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
+  asScrim: {...StyleSheet.absoluteFillObject},
+  asWrap: {position: 'absolute', bottom: 0, left: 12, right: 12, gap: 8},
+  asSheet: {borderRadius: 14, overflow: 'hidden'},
   asTitleRow: {
     paddingVertical: 14,
     paddingHorizontal: 16,
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  asTitle: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  asTitle: {fontSize: 13, fontWeight: '500'},
   asOption: {
     paddingVertical: 17,
     paddingHorizontal: 16,
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  asOptionText: {
-    fontSize: 17,
-    fontWeight: '400',
-  },
-  asCancel: {
-    borderRadius: 14,
-    paddingVertical: 17,
-    alignItems: 'center',
-  },
-  asCancelText: {
-    fontSize: 17,
-    fontWeight: '600',
-  },
+  asOptionText: {fontSize: 17, fontWeight: '400'},
+  asCancel: {borderRadius: 14, paddingVertical: 17, alignItems: 'center'},
+  asCancelText: {fontSize: 17, fontWeight: '600'},
 });

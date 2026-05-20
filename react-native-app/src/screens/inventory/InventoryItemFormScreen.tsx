@@ -20,15 +20,11 @@ import type {
   RouteProp,
 } from '@react-navigation/native-stack';
 import {Q} from '@nozbe/watermelondb';
-import {database} from '@/src/db';
+import {database, unitsCollection, itemGroupsCollection, itemVariantsCollection} from '@/src/db';
 import {useTheme} from '@/src/store/themeStore';
-import {apiClient} from '@/src/api/client';
-import {
-  createItem,
-  updateItem,
-  createVariant,
-  deleteVariant,
-} from '@/src/api/inventory';
+import {itemsApi} from '@/src/api/items';
+import {itemVariantsApi} from '@/src/api/itemVariants';
+import {triggerSyncNow} from '@/src/lib/syncEngine';
 import type Item from '@/src/db/models/Item';
 import type ItemVariant from '@/src/db/models/ItemVariant';
 import type {RootStackParamList} from '@/src/navigation/types';
@@ -82,26 +78,24 @@ export default function InventoryItemFormScreen() {
   const [newVariantPrice, setNewVariantPrice] = useState('');
   const [savingVariant, setSavingVariant] = useState(false);
 
-  // Fetch units + groups from API
+  // Load units and groups from local WatermelonDB — works fully offline
   useEffect(() => {
-    apiClient
-      .get('/units?status=active&per_page=500')
-      .then(res => {
-        const data = res.data?.data ?? [];
-        if (data.length > 0) {
-          setUnits(data.map((u: any) => ({value: u.value ?? u.name, label: `${u.value ?? u.name} — ${u.label ?? u.name}`})));
-        } else {
-          setUnits(FALLBACK_UNITS.map(v => ({value: v, label: v})));
-        }
-      })
-      .catch(() => setUnits(FALLBACK_UNITS.map(v => ({value: v, label: v}))));
+    (async () => {
+      const [localUnits, localGroups] = await Promise.all([
+        unitsCollection.query(Q.where('status', 'active')).fetch(),
+        itemGroupsCollection.query().fetch(),
+      ]);
 
-    apiClient
-      .get('/item-groups')
-      .then(res => setGroups(res.data?.data ?? []))
-      .catch(() => {});
+      setUnits(
+        localUnits.length > 0
+          ? localUnits.map(u => ({value: u.value, label: `${u.value} — ${u.label}`}))
+          : FALLBACK_UNITS.map(v => ({value: v, label: v})),
+      );
+      setGroups(localGroups.map(g => ({id: g.serverId ?? g.id, name: g.name})));
+    })();
   }, []);
 
+  // Load existing item data when editing
   useEffect(() => {
     if (isNew) return;
     (async () => {
@@ -115,11 +109,10 @@ export default function InventoryItemFormScreen() {
       setIsActive(item.isActive ?? true);
       if (item.itemGroupServerId) {
         setItemGroupId(item.itemGroupServerId);
-        // Try to resolve name from groups list (async, best-effort)
-        apiClient.get('/item-groups').then(res => {
-          const g = (res.data?.data ?? []).find((x: any) => x.id === item.itemGroupServerId);
-          if (g) setItemGroupName(g.name);
-        }).catch(() => {});
+        // Resolve group name from local DB
+        const localGroups = await itemGroupsCollection.query().fetch();
+        const g = localGroups.find(lg => lg.serverId === item.itemGroupServerId);
+        if (g) setItemGroupName(g.name);
       }
       await refreshVariants(item);
       setLoading(false);
@@ -153,8 +146,18 @@ export default function InventoryItemFormScreen() {
     try {
       const cgst = cgstPct ? parseFloat(cgstPct) : 0;
       const sgst = sgstPct ? parseFloat(sgstPct) : 0;
+      const payload = {
+        name: name.trim(),
+        price: priceNum,
+        unit,
+        cgst_pct: cgst,
+        sgst_pct: sgst,
+        is_active: isActive,
+        item_group_id: itemGroupId ?? undefined,
+      };
 
       if (isNew) {
+        // Write locally — sync engine pushes when online
         await database.write(async () => {
           await database.get<Item>('items').create((r: any) => {
             r._raw.server_id = generateLocalId();
@@ -170,15 +173,6 @@ export default function InventoryItemFormScreen() {
             if (itemGroupId) r._raw.item_group_server_id = itemGroupId;
           });
         });
-        createItem({
-          name: name.trim(),
-          unit,
-          selling_price: priceNum,
-          cgst,
-          sgst,
-          is_active: isActive,
-          item_group_id: itemGroupId ?? undefined,
-        }).catch(() => {});
       } else if (localItem) {
         await database.write(async () => {
           await localItem.update((r: any) => {
@@ -192,18 +186,18 @@ export default function InventoryItemFormScreen() {
             r._raw.item_group_server_id = itemGroupId ?? null;
           });
         });
+        // Fire-and-forget for immediate push if item already has a real server ID
         if (localItem.serverId && !localItem.serverId.startsWith('local_')) {
-          updateItem(localItem.serverId, {
-            name: name.trim(),
-            unit,
-            selling_price: priceNum,
-            cgst,
-            sgst,
-            is_active: isActive,
-            item_group_id: itemGroupId ?? undefined,
-          }).catch(() => {});
+          itemsApi.update(localItem.serverId, payload)
+            .then(async () => {
+              await database.write(async () => {
+                await localItem.update((r: any) => {r._raw.sync_state = 'synced';});
+              });
+            })
+            .catch(() => {}); // pushPendingItems will retry
         }
       }
+      triggerSyncNow();
       nav.goBack();
     } catch {
       Alert.alert('Error', 'Failed to save item');
@@ -213,7 +207,7 @@ export default function InventoryItemFormScreen() {
   }
 
   async function handleAddVariant() {
-    if (!localItem?.serverId) return;
+    if (!localItem) return;
     if (!newVariantName.trim()) return;
     const variantPrice = parseFloat(newVariantPrice);
     if (isNaN(variantPrice)) {
@@ -225,7 +219,7 @@ export default function InventoryItemFormScreen() {
       await database.write(async () => {
         await database.get<ItemVariant>('item_variants').create((r: any) => {
           r._raw.server_id = generateLocalId();
-          r._raw.item_server_id = localItem.serverId;
+          r._raw.item_server_id = localItem.serverId ?? localItem.id;
           r._raw.name = newVariantName.trim();
           r._raw.price = variantPrice;
           r._raw.is_active = true;
@@ -233,11 +227,7 @@ export default function InventoryItemFormScreen() {
         });
         await localItem.update((r: any) => {r._raw.has_variants = true;});
       });
-      createVariant({
-        item_id: localItem.serverId!,
-        name: newVariantName.trim(),
-        price: variantPrice,
-      }).catch(() => {});
+      triggerSyncNow();
       setNewVariantName('');
       setNewVariantPrice('');
       await refreshVariants(localItem);
@@ -253,9 +243,7 @@ export default function InventoryItemFormScreen() {
         r._raw.is_active = false;
       });
     });
-    if (variant.serverId && !variant.serverId.startsWith('local_')) {
-      deleteVariant(variant.serverId).catch(() => {});
-    }
+    triggerSyncNow();
     setVariants(prev => prev.filter(v => v.id !== variant.id));
   }
 

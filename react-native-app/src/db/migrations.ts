@@ -3,6 +3,18 @@ import {schemaMigrations, createTable, addColumns} from '@nozbe/watermelondb/Sch
 export default schemaMigrations({
   migrations: [
     {
+      toVersion: 3,
+      steps: [
+        addColumns({
+          table: 'dining_tables',
+          columns: [
+            {name: 'capacity', type: 'number'},
+            {name: 'is_active', type: 'boolean'},
+          ],
+        }),
+      ],
+    },
+    {
       toVersion: 2,
       steps: [
         // Items: add full POS fields

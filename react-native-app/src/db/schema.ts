@@ -1,7 +1,7 @@
 import {appSchema, tableSchema} from '@nozbe/watermelondb';
 
 export default appSchema({
-  version: 2,
+  version: 3,
   tables: [
     tableSchema({
       name: 'items',
@@ -103,6 +103,8 @@ export default appSchema({
         {name: 'floor_plan_server_id', type: 'string', isIndexed: true},
         {name: 'name', type: 'string'},
         {name: 'status', type: 'string'}, // vacant | occupied | reserved | cleaning
+        {name: 'capacity', type: 'number'},
+        {name: 'is_active', type: 'boolean'},
         {name: 'current_order_id', type: 'string', isOptional: true},
         {name: 'sync_state', type: 'string', isIndexed: true},
         {name: 'created_at', type: 'number'},

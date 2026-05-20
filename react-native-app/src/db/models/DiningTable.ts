@@ -1,5 +1,5 @@
 import {Model} from '@nozbe/watermelondb';
-import {text, date, readonly} from '@nozbe/watermelondb/decorators';
+import {field, text, date, readonly} from '@nozbe/watermelondb/decorators';
 import type {SyncState} from './Item';
 
 export type TableStatus = 'vacant' | 'occupied' | 'reserved' | 'cleaning';
@@ -10,6 +10,8 @@ export default class DiningTable extends Model {
   @text('server_id') serverId!: string | null;
   @text('floor_plan_server_id') floorPlanServerId!: string;
   @text('name') name!: string;
+  @field('capacity') capacity!: number;
+  @field('is_active') isActive!: boolean;
   @text('status') status!: TableStatus;
   @text('current_order_id') currentOrderId!: string | null;
   @text('sync_state') syncState!: SyncState;

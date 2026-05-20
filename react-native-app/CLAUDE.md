@@ -175,3 +175,99 @@ Native stack headers (Items, OrderDetail, PrinterSettings) are themed via `share
 - **Layout** (flex, padding, borderRadius, fontSize) goes in `StyleSheet.create`
 - **Minimum touch target**: 44×44 px for all interactive elements
 - **Status / semantic colors** (amber, blue, green, red for KOT status, table status, sync badges) are hardcoded and do not change with theme
+
+---
+
+## Offline-First Architecture
+
+### What is offline-first
+
+WatermelonDB is the local SQLite store. All reads come from local DB via reactive `withObservables` queries. Writes use a **local-first + fire-and-forget** pattern: write locally first (instant), then push to server in a `setTimeout(async () => { ... }, 0)` block. The sync engine pulls data from the server every 30 minutes and on demand.
+
+### What is already offline-first ✓
+
+| Feature | Pattern |
+|---------|---------|
+| Billing / item browse | Reactive WatermelonDB — works fully offline |
+| Start order, add to cart | Zustand only — no DB writes until KOT/hold/checkout |
+| Send KOT | Local write first → fire-and-forget server push |
+| Hold / unhold / cancel order | Local write first → fire-and-forget server push |
+| Checkout / payment | Local write first → fire-and-forget server push |
+| KOT status advance (kitchen) | Local write first → fire-and-forget server push |
+| Tables / orders / kitchen display | Reactive WatermelonDB |
+| Reports (Sales, Day Close, Item-wise, GST) | All computed from local WatermelonDB — fully offline |
+| Item create/edit/delete (Inventory) | Local write first → fire-and-forget server push |
+
+### Known offline-first gaps ✗
+
+#### Critical — blocks the user if offline
+
+**1. `TableManagerScreen` — floor plan and table CRUD are server-first**
+- Files: `src/screens/settings/TableManagerScreen.tsx` — `FloorPlanModal.handleSave()`, `TableModal.handleSave()`, `BulkCreateModal.handleCreate()`, `confirmDeleteFloor()`, `confirmDeleteTable()`
+- Pattern: API call happens first and blocks; local DB write only happens after server responds. If offline, the modal shows "Server error" and the write is lost entirely.
+- Fix needed: write locally with `sync_state = 'pending'` first, then push to server fire-and-forget (same pattern as `orderActions.ts`).
+
+**2. `InventoryItemFormScreen` — units and item groups fetched from API on mount**
+- File: `src/screens/inventory/InventoryItemFormScreen.tsx` lines 86–103
+- `apiClient.get('/units?...')` and `apiClient.get('/item-groups')` are called directly. Units fall back to `FALLBACK_UNITS` if offline, but item groups become empty (group picker broken offline).
+- Also: item group name resolution when editing calls the API again (line 119).
+- Fix needed: read from local WatermelonDB `units` and `item_groups` tables instead — both are populated by the sync engine.
+
+#### Major — silent failures, data not synced
+
+**3. No push queue for pending orders/kots/holds/cancels**
+- File: `src/lib/syncEngine.ts` — `pushPendingItems()` only pushes items with `sync_state = 'pending'`
+- `holdOrder`, `unholdOrder`, `cancelOrder`, `advanceKotStatus` all set `sync_state = 'pending'` but there is no corresponding push pass for orders/kots (comment in code: `// retried on next sync push (not implemented yet)`).
+- Fire-and-forget failures for these operations are silently swallowed with empty `catch {}`.
+- Fix needed: add `pushPendingOrders()` and `pushPendingKots()` passes to `runAllSyncs()`.
+
+**4. Variants created for locally-pending items not pushed**
+- File: `src/screens/inventory/InventoryItemFormScreen.tsx` — `handleAddVariant()`
+- `createVariant({item_id: localItem.serverId!})` is called even when `serverId` is a `local_xxx` placeholder, causing a silent server error. `pushPendingItems` doesn't cover item variants.
+- Fix needed: check `serverId.startsWith('local_')` before API call; add `pushPendingItemVariants()` to sync engine.
+
+#### Minor — UX issues
+
+**5. No network status indicator / reconnect trigger**
+- There is no `NetInfo` usage. The app gives no visual feedback that it is offline, and the sync scheduler runs on a 30-minute timer only — it does not re-trigger on network reconnect.
+- Fix needed: integrate `@react-native-community/netinfo` to show an offline banner and call `triggerSyncNow()` on reconnect.
+
+**6. "Sync first" message on occupied table with no local order**
+- File: `src/screens/tabs/TablesScreen.tsx` line 63
+- `Alert.alert('No local order', 'No matching order found locally yet — sync first.')` — this surfaces when an occupied table's order was created on another device and not yet pulled locally. Poor offline UX.
+- Fix needed: trigger a sync automatically and retry, or at least offer a "Sync now" button in the alert.
+
+**7. Sync interval is 30 minutes**
+- File: `src/lib/syncEngine.ts` line 40 — `SYNC_INTERVAL_MS = 30 * 60 * 1000`
+- For a restaurant POS, 30 minutes is too long — orders from other devices (cashier, other waitstaff) will not appear on the kitchen screen for up to 30 minutes without a manual sync.
+- Fix needed: reduce to 60–90 seconds for orders/kots, keep 30 min for catalog (items/groups/units).
+
+### Pattern to follow for new server-first features
+
+Any write operation that currently blocks on the network should follow `orderActions.ts` as the reference implementation:
+
+```ts
+// 1. Local write — instant, always succeeds
+await database.write(async () => {
+  await collection.create(rec => {
+    rec.serverId = null;          // no server ID yet
+    rec.syncState = 'pending';    // marks it for the push queue
+    // ... other fields
+  });
+});
+
+// 2. Fire-and-forget — network optional
+setTimeout(async () => {
+  try {
+    const remote = await api.create({ ... });
+    await database.write(async () => {
+      await record.update(rec => {
+        rec.serverId = remote.id;
+        rec.syncState = 'synced';
+      });
+    });
+  } catch {
+    // will be retried by pushPending* on next sync
+  }
+}, 0);
+```

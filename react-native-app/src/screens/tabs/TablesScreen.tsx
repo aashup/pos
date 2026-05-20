@@ -24,6 +24,7 @@ import {
   findActiveOrderForTable,
   resumeOrder,
 } from '@/src/lib/orderActions';
+import {triggerSyncNow} from '@/src/lib/syncEngine';
 import type {RootStackParamList} from '@/src/navigation/types';
 
 type Props = {tables: DiningTable[]; floorPlans: FloorPlan[]};
@@ -60,7 +61,11 @@ function TablesScreenInner({tables, floorPlans}: Props) {
           await resumeOrder(existing.id);
           nav.navigate('Tabs' as any, {screen: 'Billing'} as any);
         } else {
-          Alert.alert('No local order', 'No matching order found locally yet — sync first.');
+          triggerSyncNow();
+          Alert.alert(
+            'Order not found locally',
+            'This table is occupied on the server. Syncing now — please try again in a moment.',
+          );
         }
       } else {
         Alert.alert(t.name, `Status: ${t.status}`);
