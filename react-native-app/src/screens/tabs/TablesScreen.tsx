@@ -135,7 +135,7 @@ export default withObservables([], () => ({
 
 const styles = StyleSheet.create({
   screen: {flex: 1},
-  fpRow: {maxHeight: 48, borderBottomWidth: 1},
+  fpRow: {maxHeight: 50, minHeight: 50, borderBottomWidth: 1},
   fpRowContent: {padding: 8, gap: 6, alignItems: 'center'},
   fpTab: {
     paddingHorizontal: 14,

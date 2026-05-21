@@ -31,6 +31,7 @@ import GSTReport from './pages/reports/GSTReport'
 import DeviceInfo from './pages/settings/DeviceInfo'
 import PrinterSettings from './pages/settings/PrinterSettings'
 import TableManager from './pages/settings/TableManager'
+import CustomerManager from './pages/settings/CustomerManager'
 import OrderList from './pages/orders/OrderList'
 import OrderDetail from './pages/orders/OrderDetail'
 import HoldOrders from './pages/orders/HoldOrders'
@@ -93,14 +94,15 @@ function AppRoutes() {
       <Route path="/pos/orders/:id"    element={<RequireAuth><OrderDetail /></RequireAuth>} />
       <Route path="/pos/hold"          element={<RequireAuth><HoldOrders /></RequireAuth>} />
 
-      <Route path="/inventory/items"         element={<RequireAuth><ItemList /></RequireAuth>} />
+      <Route path="/settings/items"           element={<RequireAuth><ItemList /></RequireAuth>} />
       <Route path="/inventory/items/:id"     element={<RequireAuth><ItemDetail /></RequireAuth>} />
       <Route path="/inventory/modifiers"     element={<RequireAuth><ModifierGroupManager /></RequireAuth>} />
       <Route path="/inventory/combos"        element={<RequireAuth><ComboManager /></RequireAuth>} />
 
-      <Route path="/settings/device"   element={<RequireAuth><DeviceInfo /></RequireAuth>} />
+      <Route path="/settings/device"    element={<RequireAuth><DeviceInfo /></RequireAuth>} />
       <Route path="/settings/printer"  element={<RequireAuth><PrinterSettings /></RequireAuth>} />
       <Route path="/settings/tables"   element={<RequireAuth><TableManager /></RequireAuth>} />
+      <Route path="/settings/customers" element={<RequireAuth><CustomerManager /></RequireAuth>} />
 
       <Route
         path="*"

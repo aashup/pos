@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { X, TableIcon, ChefHat, ClipboardList, PauseCircle, Package, BarChart2, FileText, Settings, Printer, Info } from 'lucide-react'
+import { X, TableIcon, ChefHat, ClipboardList, PauseCircle, Package, BarChart2, FileText, Settings, Printer, Info, Users } from 'lucide-react'
 import { ipc } from '../../bridge/ipc'
 import { cn } from '../../lib/utils'
 
@@ -32,13 +32,14 @@ export default function NavigationDrawer({ open, onClose, isDark }: NavigationDr
           <DrawerLink icon={ClipboardList} label="Order History"  onClick={() => go('/pos/orders')} isDark={isDark} />
           <DrawerLink icon={PauseCircle}  label="Held Orders"     onClick={() => go('/pos/hold')} isDark={isDark} />
           <div className={cn('my-2 border-t', isDark ? 'border-gray-800' : 'border-gray-200')} />
-          <DrawerLink icon={Package}  label="Items"           onClick={() => go('/inventory/items')} isDark={isDark} />
           <div className={cn('my-2 border-t', isDark ? 'border-gray-800' : 'border-gray-200')} />
           <DrawerLink icon={BarChart2} label="Sales Summary"  onClick={() => go('/reports/sales')} isDark={isDark} />
           <DrawerLink icon={FileText}  label="Item-Wise Sales" onClick={() => go('/reports/items')} isDark={isDark} />
           <DrawerLink icon={BarChart2} label="Day Close"      onClick={() => go('/reports/day-close')} isDark={isDark} />
           <DrawerLink icon={FileText}  label="GST Summary"    onClick={() => go('/reports/gst')} isDark={isDark} />
           <div className={cn('my-2 border-t', isDark ? 'border-gray-800' : 'border-gray-200')} />
+          <DrawerLink icon={Package}  label="Items"            onClick={() => go('/settings/items')} isDark={isDark} />
+          <DrawerLink icon={Users}    label="Customers"        onClick={() => go('/settings/customers')} isDark={isDark} />
           <DrawerLink icon={Settings} label="Table Manager"    onClick={() => go('/settings/tables')} isDark={isDark} />
           <DrawerLink icon={Printer}  label="Printer Settings" onClick={() => go('/settings/printer')} isDark={isDark} />
           <DrawerLink icon={Info}     label="Device Info"      onClick={() => go('/settings/device')} isDark={isDark} />
