@@ -61,10 +61,11 @@ export default function App() {
     () =>
       loaded
         ? {
-            blazeface: blazeface.model as any,
-            faceMesh: faceMesh.model as any,
-            embedding: facenet.model as any,
-            liveness: { branches: [spoof27.model as any, spoof40.model as any] },
+            blazeface:  blazeface.model as any,
+            faceMesh:   faceMesh.model as any,
+            embedding:  facenet.model as any,
+            liveness0:  spoof27.model as any,
+            liveness1:  spoof40.model as any,
           }
         : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps

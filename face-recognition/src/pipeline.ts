@@ -39,6 +39,16 @@ export interface PipelineModels {
   liveness: LivenessModels;
 }
 
+/** Pre-computed values from the worklet thread — skip JS-side model calls when set. */
+export interface PrecomputedFrameData {
+  /** Mean luma (0–255) of the face region; replaces frame-based brightness check. */
+  brightness?: number;
+  /** Passive-liveness score from the worklet (0 = spoof, 1 = live). */
+  livenessScore?: number;
+  /** L2-normalised FaceNet embedding from the worklet; null = not ready yet. */
+  embedding?: Float32Array | null;
+}
+
 export interface PipelineOptions {
   mode: AuthMode;
   personnelId?: string;
@@ -90,25 +100,33 @@ export class FaceAuthSession {
     return this.stage;
   }
 
-  /** Advance the session by one camera frame. Async because liveness/embedding
-   *  inference runs on fast-tflite's background thread (off the JS thread). */
-  async process(frame: RgbFrame, faces: DetectedFace[], now: number): Promise<Tick> {
+  /**
+   * Advance the session by one camera frame.
+   * `frame` is null in worklet mode (all inference is pre-computed).
+   * `pre` carries worklet-computed values; falls back to JS-side inference when absent.
+   */
+  async process(
+    frame: RgbFrame | null,
+    faces: DetectedFace[],
+    now: number,
+    pre?: PrecomputedFrameData,
+  ): Promise<Tick> {
     // Throttled tracking log (don't flood at high fps).
     if (now - this.lastLog > 700) {
       this.lastLog = now;
       const top = faces[0];
       dbg(
         `stage=${this.stage} faces=${faces.length}` +
-          (top ? ` score=${f2(top.score)} yaw=${top.headPose.yaw.toFixed(0)}` : ''),
+          (top ? ` score=${f2(top.score)} yaw2=${top.headPose.yaw.toFixed(0)}` : ''),
       );
     }
     switch (this.stage) {
       case 'gating':
-        return this.doGate(frame, faces);
+        return this.doGate(frame, faces, pre);
       case 'challenge':
         return this.doChallenge(faces, now);
       case 'analyzing':
-        return this.doAnalyzing(frame, faces);
+        return this.doAnalyzing(frame, faces, pre);
       case 'done':
         return { stage: 'done', guidance: { message: '' }, done: true };
     }
@@ -127,8 +145,11 @@ export class FaceAuthSession {
 
   // ── High-frequency tracking loop (lightweight: BlazeFace box only) ────────
 
-  private doGate(frame: RgbFrame, faces: DetectedFace[]): Tick {
-    const q = evaluateQuality({ faces, frame }, this.opts.thresholds);
+  private doGate(frame: RgbFrame | null, faces: DetectedFace[], pre?: PrecomputedFrameData): Tick {
+    const q = evaluateQuality(
+      { faces, frame: frame ?? undefined, brightness: pre?.brightness },
+      this.opts.thresholds,
+    );
     if (!q.ok) {
       this.goodGateFrames = 0;
       return { stage: 'gating', guidance: { message: q.guidance }, done: false };
@@ -183,12 +204,19 @@ export class FaceAuthSession {
 
   // ── Low-frequency analysis (heavy: MiniFASNet + embedding, run once) ──────
 
-  private async doAnalyzing(frame: RgbFrame, faces: DetectedFace[]): Promise<Tick> {
+  private async doAnalyzing(
+    frame: RgbFrame | null,
+    faces: DetectedFace[],
+    pre?: PrecomputedFrameData,
+  ): Promise<Tick> {
     if (faces.length === 0) {
       return { stage: 'analyzing', guidance: { message: 'Hold steady' }, done: false };
     }
     // Only spend the heavy models on a high-quality frame.
-    const q = evaluateQuality({ faces, frame }, this.opts.thresholds);
+    const q = evaluateQuality(
+      { faces, frame: frame ?? undefined, brightness: pre?.brightness },
+      this.opts.thresholds,
+    );
     if (!q.ok) {
       return { stage: 'analyzing', guidance: { message: q.guidance }, done: false };
     }
@@ -196,23 +224,43 @@ export class FaceAuthSession {
 
     // Passive liveness: run exactly once, after the challenge passed.
     if (!this.livenessChecked) {
-      const lv = await checkLiveness(frame, face, this.models.liveness, this.opts.thresholds.spoofReject);
+      let liveScore: number;
+      if (pre?.livenessScore !== undefined) {
+        // Precomputed by worklet — use directly.
+        liveScore = pre.livenessScore;
+        dbg(`liveness (worklet): live=${f2(liveScore)} spoof=${f2(1 - liveScore)}`);
+      } else if (frame) {
+        // Fallback: JS-side inference (tests / headless mode).
+        const lv = await checkLiveness(frame, face, this.models.liveness, this.opts.thresholds.spoofReject);
+        liveScore = lv.liveScore;
+        dbg(`liveness (JS): live=${f2(lv.liveScore)} spoof=${f2(lv.spoofScore)} isLive=${lv.isLive}`);
+      } else {
+        liveScore = 1; // no data available — assume live
+      }
       this.livenessChecked = true;
-      this.livenessScore = lv.liveScore;
-      dbg(`liveness: live=${f2(lv.liveScore)} spoof=${f2(lv.spoofScore)} isLive=${lv.isLive}`);
-      if (!lv.isLive) {
+      this.livenessScore   = liveScore;
+      const spoofScore = 1 - liveScore;
+      if (spoofScore >= this.opts.thresholds.spoofReject) {
         this.stage = 'done';
         return this.finish({
           ok: false,
           matchScore: 0,
-          livenessScore: lv.liveScore,
+          livenessScore: liveScore,
           challengePassed: true,
           failureReason: 'liveness_failed',
         });
       }
     }
 
-    this.embeddings.push(await computeEmbedding(frame, face, this.models.embedding));
+    // Embedding: use precomputed value or fall back to JS-side inference.
+    if (pre?.embedding) {
+      this.embeddings.push(pre.embedding);
+    } else if (frame) {
+      this.embeddings.push(await computeEmbedding(frame, face, this.models.embedding));
+    } else {
+      // Embedding not ready this frame (needsEmbedding not yet true) — wait.
+      return { stage: 'analyzing', guidance: { message: 'Verifying…' }, done: false };
+    }
     if (this.embeddings.length < this.embedFrames) {
       return { stage: 'analyzing', guidance: { message: 'Verifying…' }, done: false };
     }

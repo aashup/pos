@@ -39,8 +39,16 @@ const PRIORITY: QualityIssue[] = [
 export interface QualityInput {
   /** Faces detected this frame (0, 1, or many). */
   faces: DetectedFace[];
-  /** The frame pixels, used for brightness + sharpness. */
-  frame: RgbFrame;
+  /**
+   * The frame pixels, used for brightness + sharpness.
+   * Optional: when absent, pass `brightness` directly (worklet mode).
+   */
+  frame?: RgbFrame | null;
+  /**
+   * Pre-computed mean luma (0–255) from the worklet.
+   * Used only when `frame` is absent.
+   */
+  brightness?: number;
 }
 
 export function evaluateQuality(
@@ -56,7 +64,6 @@ export function evaluateQuality(
   if (faces.length > 1) {
     issues.push('multiple_faces');
   }
-
   const face = largestFace(faces);
   const area = face.box.width * face.box.height;
   if (area < t.minFaceArea) issues.push('face_too_small');
@@ -68,11 +75,13 @@ export function evaluateQuality(
     issues.push('bad_pose');
   }
 
-  const brightness = meanLuma(frame, face);
-  if (brightness < t.minBrightness) issues.push('too_dark');
-  else if (brightness > t.maxBrightness) issues.push('too_bright');
+  // Brightness: use precomputed value from worklet when frame is absent.
+  const luma = frame ? meanLuma(frame, face) : (input.brightness ?? 128);
+  if (luma < t.minBrightness) issues.push('too_dark');
+  else if (luma > t.maxBrightness) issues.push('too_bright');
 
-  if (sharpness(frame, face) < t.minSharpness) issues.push('blurry');
+  // Sharpness: only checkable with raw frame data; skip in worklet mode.
+  if (frame && sharpness(frame, face) < t.minSharpness) issues.push('blurry');
 
   return issues.length === 0
     ? { ok: true, issues: [], guidance: '' }

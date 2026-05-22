@@ -94,6 +94,7 @@ export function decodeBlazeFace(
   let best: { box: BoundingBox; score: number } | null = null;
   for (let i = 0; i + 5 <= boxesAndScores.length; i += 5) {
     const score = sigmoid(boxesAndScores[i + 4]!);
+    console.log("Detector score =>" + score + " minscore =>" + minScore)
     if (score < minScore || (best && score <= best.score)) continue;
     const cx = boxesAndScores[i]!;
     const cy = boxesAndScores[i + 1]!;

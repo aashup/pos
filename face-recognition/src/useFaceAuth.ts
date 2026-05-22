@@ -6,6 +6,7 @@ import { loadAll } from './secure/templateStore';
 import {
   FaceAuthSession,
   type PipelineModels,
+  type PrecomputedFrameData,
   type Stage,
   type Tick,
 } from './pipeline';
@@ -31,7 +32,11 @@ export interface UseFaceAuthArgs {
 export interface UseFaceAuth {
   start: () => void;
   cancel: () => void;
-  feed: (frame: RgbFrame, faces: DetectedFace[]) => Promise<void>;
+  /**
+   * Advance the pipeline with one frame's worth of data.
+   * `frame` is null in worklet mode; `pre` carries worklet-computed values.
+   */
+  feed: (frame: RgbFrame | null, faces: DetectedFace[], pre?: PrecomputedFrameData) => Promise<void>;
   active: boolean;
   guidance: Guidance;
   /** Current pipeline stage (ref, so reading it doesn't trigger re-renders). */
@@ -83,10 +88,10 @@ export function useFaceAuth(args: UseFaceAuthArgs): UseFaceAuth {
   }, [finish]);
 
   const feed = useCallback(
-    async (frame: RgbFrame, faces: DetectedFace[]) => {
+    async (frame: RgbFrame | null, faces: DetectedFace[], pre?: PrecomputedFrameData) => {
       const s = sessionRef.current;
       if (!s) return;
-      const tick = await s.process(frame, faces, Date.now());
+      const tick = await s.process(frame, faces, Date.now(), pre);
       // Session may have been cancelled/finished while awaiting inference.
       if (sessionRef.current !== s) return;
       stageRef.current = tick.stage;

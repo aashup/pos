@@ -29,7 +29,9 @@ export class SecureKV {
     const all = await AsyncStorage.getAllKeys();
     const mine = all.filter((k) => k.startsWith(this.prefix));
     if (mine.length === 0) return;
-    const pairs = await AsyncStorage.multiGet(mine);
+    // multiGet returns [key, value][] (AsyncStorage has no `getMany`).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pairs = await (AsyncStorage as any).multiGet(mine) as [string, string | null][];
     for (const [k, v] of pairs) {
       if (v != null) {
         try {

@@ -4,15 +4,17 @@ import {
   Camera,
   useCameraDevice,
   useCameraPermission,
-  useCameraFormat
+  useCameraFormat,
 } from 'react-native-vision-camera';
+import { useSharedValue } from 'react-native-worklets-core';
 
-import { detectFace, type DetectorModels, type RgbFrame } from './detector';
-import { useFrameSource } from './frameSource';
+import { estimateHeadPose, type DetectorModels } from './detector';
+import { useFrameSource, type FrameSourceModels, type WorkletFrameResult } from './frameSource';
 import { getConfig } from './runtime';
 import { useFaceAuth } from './useFaceAuth';
 import type { PipelineModels } from './pipeline';
-import type { AuthMode, AuthResult, Challenge, Guidance } from './types';
+import type { AuthMode, AuthResult, Challenge, DetectedFace, Guidance, Point } from './types';
+import { FaceMaskOverlay } from './FaceMaskOverlay';
 
 /** Big, glanceable instruction for the current challenge / state. */
 const CHALLENGE_PROMPT: Record<Challenge, { icon: string; title: string }> = {
@@ -21,8 +23,8 @@ const CHALLENGE_PROMPT: Record<Challenge, { icon: string; title: string }> = {
   turn_head: { icon: '↔️', title: 'Turn your head' },
 };
 
-/** All TFLite models the view needs: detector + pipeline. */
-export type FaceAuthModels = DetectorModels & PipelineModels;
+/** All TFLite models the view needs — matches FrameSourceModels exactly. */
+export type FaceAuthModels = FrameSourceModels;
 
 export interface FaceAuthViewProps {
   mode: AuthMode;
@@ -60,10 +62,9 @@ export function FaceAuthView({
 }: FaceAuthViewProps) {
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('front');
-  // 1. Ask for a specific resolution and FPS
   const format = useCameraFormat(device, [
-    { videoResolution: '1080p' }, // Forces a sharp 1920x1080 resolution
-    { fps: 30 }
+    { videoResolution: { width: 1920, height: 1080 } },
+    { fps: 30 },
   ]);
   const [hint, setHint] = useState<string>('Position your face in the frame');
   const [challenge, setChallenge] = useState<Challenge | undefined>();
@@ -73,13 +74,12 @@ export function FaceAuthView({
     throw new Error('[offline-face-auth] verify mode requires a personnelId prop.');
   }
 
-  const detectorModels: DetectorModels = useMemo(
-    () => ({ blazeface: models.blazeface, faceMesh: models.faceMesh }),
-    [models.blazeface, models.faceMesh],
-  );
   const pipelineModels: PipelineModels = useMemo(
-    () => ({ embedding: models.embedding, liveness: models.liveness }),
-    [models.embedding, models.liveness],
+    () => ({
+      embedding: models.embedding,
+      liveness: { branches: [models.liveness0, models.liveness1] },
+    }),
+    [models.embedding, models.liveness0, models.liveness1],
   );
 
   // Only re-render when the guidance text actually changes (avoids a setState
@@ -102,33 +102,74 @@ export function FaceAuthView({
     [onGuidance],
   );
 
+  // SharedValue flipped to true when pipeline enters 'analyzing' stage so the
+  // worklet runs FaceNet only on the frames where an embedding is needed.
+  const needsEmbedding = useSharedValue(false);
+
+  // Wrap handleGuidance: flip needsEmbedding when the 'Verifying…' message
+  // appears (that message is only shown in the 'analyzing' stage). This must
+  // be defined BEFORE useFaceAuth so it can be passed as onGuidance.
+  const handleGuidanceWithEmbedFlag = useCallback(
+    (g: Guidance) => {
+      // 'Verifying…' is the sole message emitted by the analyzing stage.
+      needsEmbedding.value = g.message === 'Verifying…';
+      handleGuidance(g);
+    },
+    [needsEmbedding, handleGuidance],
+  );
+
   const { start, cancel, feed, active, stageRef } = useFaceAuth({
     mode,
     personnelId,
     models: pipelineModels,
     onResult,
-    onGuidance: handleGuidance,
+    onGuidance: handleGuidanceWithEmbedFlag,
   });
 
-  // JS-thread: detect on the downsampled frame, then feed the session. Face Mesh
-  // (the heavy landmark model) only runs during the challenge/analyzing stages;
-  // gating uses the cheap BlazeFace box alone, keeping the tracking loop fast.
-  const onRgbFrame = useCallback(
-    async (frame: RgbFrame) => {
+  // Convert WorkletFrameResult → DetectedFace + PrecomputedFrameData, then
+  // advance the pipeline. All TFLite inference already happened in the worklet.
+  const onFrameResult = useCallback(
+    async (result: WorkletFrameResult) => {
       if (!active) return;
-      const minScore = getConfig().thresholds.detectScore;
-      const stage = stageRef.current;
-      const withLandmarks = stage === 'challenge' || stage === 'analyzing';
-      const face = await detectFace(frame, detectorModels, minScore, withLandmarks);
-      await feed(frame, face ? [face] : []);
+
+      if (!result.detected) {
+        await feed(null, []);
+        return;
+      }
+
+      // Reconstruct Point[] landmarks from flat [x0,y0,x1,y1,...] array.
+      const lms: Point[] = [];
+      for (let i = 0; i + 1 < result.landmarks.length; i += 2) {
+        lms.push({ x: result.landmarks[i]!, y: result.landmarks[i + 1]! });
+      }
+
+      const face: DetectedFace = {
+        box: {
+          x: result.bbox[0],
+          y: result.bbox[1],
+          width: result.bbox[2],
+          height: result.bbox[3],
+        },
+        score: result.bbox[4],
+        landmarks: lms,
+        headPose: estimateHeadPose(lms),
+      };
+
+      await feed(null, [face], {
+        brightness: result.brightness,
+        livenessScore: result.livenessScore,
+        embedding: result.embedding ? new Float32Array(result.embedding) : null,
+      });
     },
-    [active, feed, detectorModels, stageRef],
+    [active, feed],
   );
 
-  // No artificial throttle: the drop-if-busy guard already caps the rate at the
-  // inference speed, and the lightweight tracking loop needs high fps to catch
-  // a 100–150 ms blink.
-  const { frameProcessor } = useFrameSource({ onRgbFrame, minIntervalMs: 0 });
+  const { frameProcessor } = useFrameSource({
+    models,
+    onFrameResult,
+    minIntervalMs: 0,   // isBusy guard throttles to inference speed
+    needsEmbedding,
+  });
 
   useEffect(() => {
     if (!hasPermission) requestPermission();
@@ -182,13 +223,13 @@ export function FaceAuthView({
         format={format}
         fps={30}
         isActive={true}
-        pixelFormat="yuv"
         frameProcessor={frameProcessor}
         // photoHdr={true}
         // videoHdr={true}
       />
+      
       {BackButton}
-
+      <FaceMaskOverlay/>
       {/* Prominent centered prompt: the challenge instruction or "Verifying…" */}
       {(challenge || verifying) && (
         <View style={styles.promptCard} pointerEvents="none">

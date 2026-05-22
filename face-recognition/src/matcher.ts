@@ -44,7 +44,7 @@ export function verify(
   threshold: number,
 ): { ok: boolean; score: number } {
   let best = -Infinity;
-  for (const t of templates) {
+for (const t of templates) {
     if (t.personnelId !== personnelId) continue;
     best = Math.max(best, cosineSimilarity(probe, t.embedding));
   }
