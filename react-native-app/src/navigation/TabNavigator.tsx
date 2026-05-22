@@ -24,7 +24,7 @@ function tabIcon(name: keyof typeof ICONS) {
   return ({focused}: {focused: boolean}) => (
     <Image
       source={ICONS[name]}
-      style={[styles.icon, {opacity: focused ? 1 : 0.45}]}
+      style={[styles.icon, {opacity: focused ? 1 : 0.65}]}
       resizeMode="contain"
     />
   );
@@ -41,12 +41,20 @@ export default function TabNavigator() {
         tabBarInactiveTintColor: theme.textSecondary,
         tabBarShowLabel: true,
         tabBarStyle: {
-          backgroundColor: theme.surface,
-          borderTopColor: theme.border,
-          elevation: 5,
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          // 2. Add transparency (e.g., 85% opacity using hex alpha channel, or 'transparent')
+          backgroundColor: `${theme.surface}BF`, // Assuming theme.surface is a 6-digit hex (adds 85% opacity)
+          borderTopWidth: 0,
+          elevation: 0, 
+          shadowOpacity: 0, // For iOS support
+          
           height: 62,
           paddingBottom: 4,
           paddingTop: 4,
+
         },
       }}>
       <Tab.Screen name="Tables"   component={TablesScreen}   options={{tabBarIcon: tabIcon('Tables')}} />

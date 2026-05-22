@@ -1,0 +1,91 @@
+import type { ModelManifest, ModelReader } from './secure/modelIntegrity';
+import type { Challenge } from './types';
+
+/** Tunable decision thresholds. Defaults are conservative starting points and
+ *  should be calibrated against a validation set (see PLAN.md Phase 4). */
+export interface Thresholds {
+  /** Minimum detector confidence to accept a face. */
+  detectScore: number;
+  /** Minimum fraction of frame area the face box must cover. */
+  minFaceArea: number;
+  /** Max |yaw|/|pitch|/|roll| in degrees for the quality gate. */
+  maxYaw: number;
+  maxPitch: number;
+  maxRoll: number;
+  /** Mean luma bounds (0..255). */
+  minBrightness: number;
+  maxBrightness: number;
+  /** Variance-of-Laplacian sharpness floor (higher = sharper). */
+  minSharpness: number;
+  /** Passive liveness: reject if spoof probability >= this. */
+  spoofReject: number;
+  /** Cosine similarity required to declare a match. */
+  matchCosine: number;
+}
+
+export interface FaceAuthConfig {
+  /** AWS endpoint that receives attendance batches. */
+  awsSyncUrl: string;
+  /** Per-device bearer token issued during provisioning. */
+  deviceToken: string;
+  /** Override any subset of thresholds. */
+  thresholds?: Partial<Thresholds>;
+  /** Which active challenges are allowed; one is picked at random per auth. */
+  challenges?: Challenge[];
+  /** Background sync cadence in ms (also fires on network reconnect). */
+  syncIntervalMs?: number;
+  /** Delete local attendance rows once the server acks them. */
+  purgeAfterSync?: boolean;
+  /** Max active-challenge duration before timeout (ms). */
+  challengeTimeoutMs?: number;
+  /** Secret driving the cancelable template transform (rotate to revoke).
+   *  Defaults to the device hardware key if omitted. */
+  cancelableKey?: string;
+  /** Output dimensionality of the cancelable transform. Default 512. */
+  cancelableDims?: number;
+  /** Stable device identifier stamped onto attendance events. */
+  deviceId?: string;
+  /** Returns a fresh platform attestation token (Play Integrity / App Attest). */
+  getAttestationToken?: () => Promise<string | null>;
+  /** Bundled model manifest (e.g. require('../models/manifest.json')) verified
+   *  at boot when `readModelBytes` is also supplied. */
+  modelManifest?: ModelManifest;
+  /** Host-supplied reader for a bundled model's bytes (platform file access).
+   *  When provided alongside `modelManifest`, `init()` verifies every model's
+   *  SHA-256 and throws if any has been tampered with. */
+  readModelBytes?: ModelReader;
+  /** Force re-provisioning when the last successful provision is older than
+   *  this many ms. `FaceAuth.needsReprovision()` reflects it. Default: 7 days. */
+  templateTtlMs?: number;
+}
+
+export const DEFAULT_THRESHOLDS: Thresholds = {
+  detectScore: 0.7,
+  minFaceArea: 0.06,
+  maxYaw: 20,
+  maxPitch: 20,
+  maxRoll: 15,
+  minBrightness: 50,
+  maxBrightness: 230,
+  minSharpness: 80,
+  spoofReject: 0.5,
+  matchCosine: 0.65,
+};
+
+export const DEFAULT_CONFIG: {
+  challenges: Challenge[];
+  syncIntervalMs: number;
+  purgeAfterSync: boolean;
+  challengeTimeoutMs: number;
+  templateTtlMs: number;
+} = {
+  challenges: ['blink', 'smile', 'turn_head'],
+  syncIntervalMs: 5 * 60 * 1000,
+  purgeAfterSync: true,
+  challengeTimeoutMs: 6000,
+  templateTtlMs: 7 * 24 * 60 * 60 * 1000,
+};
+
+export function resolveThresholds(overrides?: Partial<Thresholds>): Thresholds {
+  return { ...DEFAULT_THRESHOLDS, ...(overrides ?? {}) };
+}
