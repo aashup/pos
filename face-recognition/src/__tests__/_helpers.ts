@@ -63,10 +63,18 @@ export function stubModel(output: Float32Array): TfliteModel {
   return { runSync: () => [output], run: async () => [output] };
 }
 
-/** Liveness branch stub producing a chosen live/spoof split via 3 logits. */
+/**
+ * Liveness branch stub.
+ *
+ * `decodeLiveProb` in liveness.ts treats **index 0** as the real/live class.
+ * The stub therefore puts the live logit at index 0; indices 1–2 are spoof
+ * classes set to 0.
+ *
+ *   liveLogit > 0  → large live-class logit → liveScore ≈ 1 → spoofScore ≈ 0 → passes
+ *   liveLogit < 0  → small live-class logit → liveScore ≈ 0 → spoofScore ≈ 1 → rejected
+ */
 export function livenessStub(liveLogit: number): TfliteModel {
-  // logits [fake2d, real, fake3d]; index 1 is "real".
-  return stubModel(new Float32Array([0, liveLogit, 0]));
+  return stubModel(new Float32Array([liveLogit, 0, 0]));
 }
 
 /** Make a normalized embedding deterministically from a seed. */

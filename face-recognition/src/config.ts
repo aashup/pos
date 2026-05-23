@@ -1,6 +1,19 @@
 import type { ModelManifest, ModelReader } from './secure/modelIntegrity';
 import type { Challenge } from './types';
 
+/**
+ * Strategy used to collapse the M×K probe-vs-template score matrix into a
+ * single confidence value during multi-frame matching.
+ *
+ * - `'mean'`  — arithmetic average of all scores (simple, sensitive to outliers).
+ * - `'max'`   — single best-matching frame pair (optimistic; good for diverse
+ *               enrollment angles but can be fooled by a lucky frame).
+ * - `'top_k'` — average of the `topK` highest scores; balances robustness
+ *               against single-frame noise with sensitivity to the best frames.
+ *               Recommended default.
+ */
+export type FusionStrategy = 'mean' | 'max' | 'top_k';
+
 /** Tunable decision thresholds. Defaults are conservative starting points and
  *  should be calibrated against a validation set (see PLAN.md Phase 4). */
 export interface Thresholds {
@@ -25,7 +38,12 @@ export interface Thresholds {
    * Never set below 0.3 in production — will reject legitimate live faces.
    */
   spoofReject: number;
-  /** Cosine similarity required to declare a match. */
+  /**
+   * @deprecated Use `fineThreshold` instead. Kept for backwards-compat with
+   * single-frame matching code paths (e.g. provisioned server templates that
+   * have not yet migrated to multi-frame storage).
+   * Cosine similarity required for a legacy single-probe match.
+   */
   matchCosine: number;
   /**
    * Number of good frames to sample liveness across before making a decision.
@@ -41,6 +59,48 @@ export interface Thresholds {
    * accept faces that are slightly off-center.
    */
   centerMargin: number;
+
+  // ── Multi-frame matching ─────────────────────────────────────────────────
+
+  /**
+   * Cosine similarity floor for the fast coarse 1:N pass.
+   * Only probe[0] vs each person's first enrolled template is tested here.
+   * Identities scoring below this are dropped before the cross-matrix step.
+   * Default 0.55.  Lower → more candidates reach step 2 (more CPU, fewer
+   * false rejects); higher → faster but risks dropping genuine matches.
+   */
+  coarseThreshold: number;
+  /**
+   * Final acceptance threshold applied after score fusion across the full
+   * M×K cross-product matrix.  Default 0.72.
+   *
+   * ⚠️  For FaceNet-512 same-person cosine scores typically fall in 0.55–0.90.
+   * Setting this above 0.85 without per-deployment calibration will produce
+   * significant false-reject rates.  Tighten via `FaceAuth.init` overrides.
+   */
+  fineThreshold: number;
+  /**
+   * Number of live probe frames fed into the cross-matrix.  Must be ≤ the
+   * number of frames collected by the pipeline (`embedFrames`).  Default 3.
+   */
+  probeFrameCount: number;
+  /**
+   * Maximum number of enrolled frames per person used in the cross-matrix.
+   * If a person was enrolled with more shots, only the first N are used.
+   * Default 3.
+   */
+  templateFrameCount: number;
+  /**
+   * How to collapse the M×K score matrix into a single confidence value.
+   * Default `'top_k'` — averages the `topK` highest-scoring frame pairs,
+   * which is robust against a single blurry or off-angle frame.
+   */
+  fusionStrategy: FusionStrategy;
+  /**
+   * K for `top_k` fusion — how many top scores to include in the average.
+   * Ignored when `fusionStrategy` is not `'top_k'`.  Default 3.
+   */
+  topK: number;
 }
 
 export interface FaceAuthConfig {
@@ -95,18 +155,25 @@ export interface FaceAuthConfig {
 }
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
-  detectScore: 0.8,
-  minFaceArea: 0.4,
-  maxYaw: 30,
-  maxPitch: 50,
-  maxRoll: 50,
-  minBrightness: 50,
-  maxBrightness: 230,
-  minSharpness: 80,
-  spoofReject: 0.5,
-  matchCosine: 0.65,
-  livenessFrames: 4,
-  centerMargin: 0.10,
+  detectScore:        0.8,
+  minFaceArea:        0.4,
+  maxYaw:             30,
+  maxPitch:           50,
+  maxRoll:            50,
+  minBrightness:      50,
+  maxBrightness:      230,
+  minSharpness:       80,
+  spoofReject:        0.5,
+  matchCosine:        0.65,  // legacy single-frame path
+  livenessFrames:     4,
+  centerMargin:       0.10,
+  // Multi-frame matching
+  coarseThreshold:    0.55,
+  fineThreshold:      0.72,
+  probeFrameCount:    3,
+  templateFrameCount: 3,
+  fusionStrategy:     'top_k',
+  topK:               3,
 };
 
 export const DEFAULT_CONFIG: {
