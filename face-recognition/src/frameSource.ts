@@ -125,9 +125,15 @@ export interface FrameSourceOptions {
 // MediaPipe face_detection_short_range.tflite: num_layers=4, strides=[8,16,16,16],
 // fixed_anchor_size=true, 2 anchors per cell.
 // Total: 16×16×2 + (8×8×2)×3 = 512 + 384 = 896 anchors.
-function _buildBFAnchors(): [Float32Array, Float32Array] {
-  const CX = new Float32Array(896);
-  const CY = new Float32Array(896);
+//
+// IMPORTANT: must be plain number[] — NOT Float32Array / TypedArray.
+// worklets-core serialises closure-captured values to the native thread at mount
+// time. TypedArrays cannot be serialised and cause an immediate fatal crash
+// ("Cannot serialize object"). A regular JS Array is copied as a JS value and
+// works correctly inside the worklet.
+function _buildBFAnchors(): [number[], number[]] {
+  const CX: number[] = new Array(896);
+  const CY: number[] = new Array(896);
   let idx = 0;
   // Layer 0 — stride 8 — feature map 16×16 — 2 anchors per cell
   for (let y = 0; y < 16; y++) {
@@ -152,8 +158,8 @@ function _buildBFAnchors(): [Float32Array, Float32Array] {
   return [CX, CY];
 }
 const BF_ANCHORS = _buildBFAnchors();
-const BF_ANCHOR_CX = BF_ANCHORS[0];
-const BF_ANCHOR_CY = BF_ANCHORS[1];
+const BF_ANCHOR_CX: number[] = BF_ANCHORS[0];
+const BF_ANCHOR_CY: number[] = BF_ANCHORS[1];
 
 // ─── worklet-safe helper functions ───────────────────────────────────────────
 // Marked with 'worklet' so worklets-core's Babel transform serialises them
@@ -323,8 +329,8 @@ function wScaleBox(
 function wDecodeBlazeFace(
   reg: Float32Array | Int32Array | Uint8Array,
   cls: Float32Array | Int32Array | Uint8Array,
-  anchorCx: Float32Array,
-  anchorCy: Float32Array,
+  anchorCx: number[],
+  anchorCy: number[],
   minScore: number,
 ): [number, number, number, number, number] | null {
   'worklet';
@@ -767,8 +773,13 @@ export function useFrameSource({
       const lv1Debug = wTypedToArray(lv1Raw[0] as Float32Array);
 
       const livenessScore = (live0 + live1) / 2;
-      // DEBUG: pack both branches separated by -1 sentinel for logging in JS thread
-      const livenessRaw = [...lv0Debug, -1, ...lv1Debug];
+      // DEBUG: pack both branches separated by -1 sentinel for logging in JS thread.
+      // No spread operator — Babel compiles spread to _toConsumableArray which is
+      // a regular function and crashes the worklet. Use explicit push loops instead.
+      const livenessRaw: number[] = [];
+      for (let i = 0; i < lv0Debug.length; i++) livenessRaw.push(lv0Debug[i]!);
+      livenessRaw.push(-1);
+      for (let i = 0; i < lv1Debug.length; i++) livenessRaw.push(lv1Debug[i]!);
 
       // ── 7. Embedding: only when the analyzing stage requests it ───────────
       let embedding: number[] | null = null;
