@@ -17,6 +17,7 @@ import type { PipelineModels } from './pipeline';
 import type { AuthMode, AuthResult, Challenge, DetectedFace, Guidance, Point } from './types';
 import { FaceMaskOverlay } from './FaceMaskOverlay';
 import { saveModelDebugFrame } from './debug';
+import { log } from './logger';
 
 /** Big, glanceable instruction for the current challenge / state. */
 const CHALLENGE_PROMPT: Record<Challenge, { icon: string; title: string }> = {
@@ -155,7 +156,7 @@ export function FaceAuthView({
       // Log sensor dimensions once — critical for diagnosing aspect-ratio issues.
       if (__DEV__ && !frameDimsLoggedRef.current) {
         frameDimsLoggedRef.current = true;
-        console.log(
+        log(
           `[FrameDims] sensor: ${result.frameW}×${result.frameH}` +
           ` aspect=${( result.frameW / result.frameH).toFixed(3)}` +
           ` detected=${result.detected}`,
@@ -175,9 +176,9 @@ export function FaceAuthView({
         const b1  = sep >= 0 ? result.livenessRaw.slice(sep + 1)      : [];
         const fmt = (arr: number[]) =>
           arr.map((v, i) => `[${i}]=${v.toFixed(4)}`).join('  ');
-        console.log('[LivenessDebug] branch0 raw values:', fmt(b0));
-        console.log('[LivenessDebug] branch1 raw values:', fmt(b1));
-        console.log(
+        log('[LivenessDebug] branch0 raw values:', fmt(b0));
+        log('[LivenessDebug] branch1 raw values:', fmt(b1));
+        log(
           '[LivenessDebug] interpretation: reading index 0 as live (real class).',
           `branch0 idx0=${b0[0]?.toFixed(4)} idx1=${b0[1]?.toFixed(4)} idx2=${b0[2]?.toFixed(4) ?? 'N/A'}`,
         );

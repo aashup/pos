@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
+import { error as logError, log } from '../logger';
 
 /** Build an axios client bound to the AWS endpoint + device bearer token. */
 export function makeClient(baseURL: string, deviceToken: string): AxiosInstance {
@@ -18,16 +19,16 @@ export function makeClient(baseURL: string, deviceToken: string): AxiosInstance 
       const body = config.data !== undefined
         ? JSON.stringify(config.data).slice(0, 500)  // cap at 500 chars
         : '(none)';
-      console.log(
+      log(
         `[HTTP] → ${(config.method ?? 'GET').toUpperCase()} ${url}\n` +
         `[HTTP]   headers: ${JSON.stringify(config.headers)}\n` +
         `[HTTP]   body:    ${body}`,
       );
       return config;
     },
-    (error) => {
-      console.error('[HTTP] Request setup error:', error?.message ?? error);
-      return Promise.reject(error);
+    (err) => {
+      logError('[HTTP] Request setup error:', err?.message ?? err);
+      return Promise.reject(err);
     },
   );
 
@@ -35,34 +36,34 @@ export function makeClient(baseURL: string, deviceToken: string): AxiosInstance 
   client.interceptors.response.use(
     (response) => {
       const body = JSON.stringify(response.data).slice(0, 500);
-      console.log(
+      log(
         `[HTTP] ← ${response.status} ${response.config?.url ?? ''}\n` +
         `[HTTP]   response: ${body}`,
       );
       return response;
     },
-    (error) => {
-      if (error?.response) {
+    (err) => {
+      if (err?.response) {
         // Server replied with a non-2xx status
-        const { status, data, config } = error.response;
-        console.error(
+        const { status, data, config } = err.response;
+        logError(
           `[HTTP] ✗ ${status} ${config?.url ?? ''}\n` +
           `[HTTP]   baseURL:  ${config?.baseURL ?? ''}\n` +
           `[HTTP]   headers:  ${JSON.stringify(config?.headers)}\n` +
           `[HTTP]   req body: ${config?.data ? String(config.data).slice(0, 500) : '(none)'}\n` +
           `[HTTP]   res body: ${JSON.stringify(data).slice(0, 500)}`,
         );
-      } else if (error?.request) {
+      } else if (err?.request) {
         // Request was made but no response received (network error / timeout)
-        console.error(
+        logError(
           `[HTTP] ✗ No response received\n` +
-          `[HTTP]   url:     ${error.config?.baseURL ?? ''}${error.config?.url ?? ''}\n` +
-          `[HTTP]   message: ${error?.message ?? 'unknown'}`,
+          `[HTTP]   url:     ${err.config?.baseURL ?? ''}${err.config?.url ?? ''}\n` +
+          `[HTTP]   message: ${err?.message ?? 'unknown'}`,
         );
       } else {
-        console.error('[HTTP] ✗ Unexpected error:', error?.message ?? error);
+        logError('[HTTP] ✗ Unexpected error:', err?.message ?? err);
       }
-      return Promise.reject(error);
+      return Promise.reject(err);
     },
   );
 

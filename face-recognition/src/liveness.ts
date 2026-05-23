@@ -1,4 +1,5 @@
 import type { RgbFrame, TfliteModel } from './detector';
+import { log } from './logger';
 import type { BoundingBox, DetectedFace } from './types';
 
 /**
@@ -157,7 +158,7 @@ export async function checkLiveness(
   }
   const liveScore  = n > 0 ? liveSum / n : 0;
   const spoofScore = 1 - liveScore;
-  console.log(`[Liveness] liveScore=${liveScore.toFixed(3)} n=${n} liveSum=${liveSum.toFixed(3)} spoofReject=${spoofReject}`);
+  log(`[Liveness] liveScore=${liveScore.toFixed(3)} n=${n} liveSum=${liveSum.toFixed(3)} spoofReject=${spoofReject}`);
   return {
     liveScore,
     spoofScore,

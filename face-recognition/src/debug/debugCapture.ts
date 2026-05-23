@@ -15,6 +15,7 @@
 import type React from 'react';
 import type { Camera } from 'react-native-vision-camera';
 import type { ModelDebugFrame } from '../frameSource';
+import { log, warn } from '../logger';
 
 // react-native-fs is an optional dep (only used in __DEV__).
 // Dynamic require keeps it out of release bundles and avoids a hard peerDep.
@@ -69,7 +70,7 @@ export function logDetailedScores(s: DebugScores): void {
   const yawStr  = (s.yaw  >= 0 ? ' ' : '') + s.yaw.toFixed(1);
   const pitStr  = (s.pitch >= 0 ? ' ' : '') + s.pitch.toFixed(1);
 
-  console.log(
+  log(
     `[DBG] ${time}` +
     ` | stage=${s.stage.padEnd(9)}` +
     ` | detect=${s.detectionScore.toFixed(3)}` +
@@ -98,11 +99,11 @@ async function _ensureDebugDir(): Promise<string | null> {
     const dir  = `${base}/faceauth_debug`;
     await RNFS.mkdir(dir);
     _debugDir = dir;
-    console.log(`[DBG] Debug folder ready: ${dir}`);
-    console.log(`[DBG] On device: Files → Internal Storage → Android → data → com.faceauthexample → files → faceauth_debug`);
+    log(`[DBG] Debug folder ready: ${dir}`);
+    log(`[DBG] On device: Files → Internal Storage → Android → data → com.faceauthexample → files → faceauth_debug`);
     return dir;
   } catch (e: any) {
-    console.log('[DBG] Could not create debug dir:', e?.message);
+    log('[DBG] Could not create debug dir:', e?.message);
     return null;
   }
 }
@@ -115,7 +116,7 @@ async function _takeAndSavePhoto(ref: React.RefObject<Camera>): Promise<void> {
   try {
     const cam = ref.current;
     if (!cam) {
-      console.warn('[DBG] capturePhoto: camera ref is null');
+      warn('[DBG] capturePhoto: camera ref is null');
       return;
     }
 
@@ -124,8 +125,8 @@ async function _takeAndSavePhoto(ref: React.RefObject<Camera>): Promise<void> {
 
     if (!RNFS) {
       // No RNFS — just log the cache path so adb pull still works.
-      console.log(`[DBG] 📸 Frame #${_captureCount} (cache) → ${photo.path}`);
-      console.log(`[DBG]    react-native-fs not found; install it to auto-save to Files app.`);
+      log(`[DBG] 📸 Frame #${_captureCount} (cache) → ${photo.path}`);
+      log(`[DBG]    react-native-fs not found; install it to auto-save to Files app.`);
       return;
     }
 
@@ -137,12 +138,8 @@ async function _takeAndSavePhoto(ref: React.RefObject<Camera>): Promise<void> {
     const dest = `${dir}/frame_${ts}_${_captureCount}.jpg`;
 
     await RNFS.copyFile(photo.path, dest);
-
-    // console.log(`[DBG] 📸 Frame #${_captureCount} saved`);
-    // console.log(`[DBG]    Path : ${dest}`);
-    // console.log(`[DBG]    Open : Files → Internal Storage → Android → data → com.faceauthexample → files → faceauth_debug`);
-  } catch (e: any) {
-    // console.warn('[DBG] takePhoto/save failed:', e?.message ?? String(e));
+  } catch {
+    // Silently swallow — non-fatal debug helper
   }
 }
 
@@ -163,8 +160,6 @@ export function startPeriodicCapture(
   // Capture one immediately — don't wait for the first interval tick.
   void _takeAndSavePhoto(ref);
   _captureTimer = setInterval(() => void _takeAndSavePhoto(ref), intervalMs);
-
-  // console.log(`[DBG] Periodic capture started — saving frame every ${intervalMs / 1000}s`);
 }
 
 /**
@@ -175,13 +170,12 @@ export function stopPeriodicCapture(): void {
     clearInterval(_captureTimer);
     _captureTimer = null;
     if (_captureCount > 0) {
-      console.log(`[DBG] Periodic capture stopped — ${_captureCount} frames in faceauth_debug/`);
+      log(`[DBG] Periodic capture stopped — ${_captureCount} frames in faceauth_debug/`);
     }
   }
 }
 
 // ─── model input frame saver ─────────────────────────────────────────────────
-
 
 let _modelFrameCount = 0;
 
@@ -211,14 +205,14 @@ export async function saveModelDebugFrame(frame: ModelDebugFrame): Promise<void>
     const by = frame.bboxNorm[1].toFixed(2);
     const bw = frame.bboxNorm[2].toFixed(2);
     const bh = frame.bboxNorm[3].toFixed(2);
-    console.log(`[DBG] 🔬 Model inputs #${n} | face bbox: x=${bx} y=${by} w=${bw} h=${bh}`);
+    log(`[DBG] 🔬 Model inputs #${n} | face bbox: x=${bx} y=${by} w=${bw} h=${bh}`);
   } else {
-    console.log(`[DBG] 🔬 Model inputs #${n} | no face detected — saving src + bf frames`);
+    log(`[DBG] 🔬 Model inputs #${n} | no face detected — saving src + bf frames`);
   }
 
   const dir = await _ensureDebugDir();
   if (!dir || !RNFS) {
-    console.log('[DBG]    (RNFS not available — install react-native-fs to save files)');
+    log('[DBG]    (RNFS not available — install react-native-fs to save files)');
     return;
   }
 
@@ -229,28 +223,28 @@ export async function saveModelDebugFrame(frame: ModelDebugFrame): Promise<void>
   // 1. Full resized frame — always present
   try {
     await RNFS.writeFile(srcFile, frame.srcFrameBmp, 'base64');
-    console.log(`[DBG]    Full frame      (160×160) → src_frame_${ts}_${n}.bmp`);
+    log(`[DBG]    Full frame      (160×160) → src_frame_${ts}_${n}.bmp`);
   } catch (e: any) {
-    console.warn('[DBG] save src_frame failed:', e?.message);
+    warn('[DBG] save src_frame failed:', e?.message);
   }
 
   // 2. BlazeFace input — always present
   try {
     await RNFS.writeFile(bfFile, frame.blazefaceBmp, 'base64');
-    console.log(`[DBG]    BlazeFace input (128×128) → bf_input_${ts}_${n}.bmp`);
+    log(`[DBG]    BlazeFace input (128×128) → bf_input_${ts}_${n}.bmp`);
   } catch (e: any) {
-    console.warn('[DBG] save bf_input failed:', e?.message);
+    warn('[DBG] save bf_input failed:', e?.message);
   }
 
   // 3. FaceMesh crop — only when a face was detected
   if (frame.faceCropBmp) {
     try {
       await RNFS.writeFile(cropFile, frame.faceCropBmp, 'base64');
-      console.log(`[DBG]    Face crop       (192×192) → face_crop_${ts}_${n}.bmp`);
+      log(`[DBG]    Face crop       (192×192) → face_crop_${ts}_${n}.bmp`);
     } catch (e: any) {
-      console.warn('[DBG] save face_crop failed:', e?.message);
+      warn('[DBG] save face_crop failed:', e?.message);
     }
   }
 
-  console.log('[DBG]    Open: Files → Android → data → com.faceauthexample → files → faceauth_debug');
+  log('[DBG]    Open: Files → Android → data → com.faceauthexample → files → faceauth_debug');
 }

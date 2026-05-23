@@ -4,6 +4,7 @@ import {
   type FaceAuthConfig,
   type Thresholds,
 } from './config';
+import { setDebug } from './logger';
 import type { Challenge } from './types';
 
 /** Fully-resolved runtime configuration, available after `init()`. */
@@ -16,11 +17,14 @@ export interface ResolvedConfig {
   purgeAfterSync: boolean;
   challengeTimeoutMs: number;
   templateTtlMs: number;
+  debug: boolean;
 }
 
 let current: ResolvedConfig | null = null;
 
 export function setConfig(config: FaceAuthConfig): ResolvedConfig {
+  const debug = config.debug ?? false;
+  setDebug(debug);
   current = {
     awsSyncUrl: config.awsSyncUrl,
     deviceToken: config.deviceToken,
@@ -30,6 +34,7 @@ export function setConfig(config: FaceAuthConfig): ResolvedConfig {
     purgeAfterSync: config.purgeAfterSync ?? DEFAULT_CONFIG.purgeAfterSync,
     challengeTimeoutMs: config.challengeTimeoutMs ?? DEFAULT_CONFIG.challengeTimeoutMs,
     templateTtlMs: config.templateTtlMs ?? DEFAULT_CONFIG.templateTtlMs,
+    debug,
   };
   return current;
 }

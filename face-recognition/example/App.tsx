@@ -44,7 +44,7 @@ export default function App() {
     let unsub = () => {};
     (async () => {
       try {
-        await FaceAuth.init({ awsSyncUrl: AWS_URL, deviceToken: DEVICE_TOKEN, deviceId: 'demo-device-01' });
+        await FaceAuth.init({ awsSyncUrl: AWS_URL, deviceToken: DEVICE_TOKEN, deviceId: 'demo-device-01', debugger: false });
         unsub = FaceAuth.onSyncStatus(setSync);
         setReady(true);
       } catch (e: any) {

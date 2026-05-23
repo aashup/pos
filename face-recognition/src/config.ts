@@ -48,6 +48,12 @@ export interface FaceAuthConfig {
   awsSyncUrl: string;
   /** Per-device bearer token issued during provisioning. */
   deviceToken: string;
+  /**
+   * Enable SDK debug logging to the native console (Metro / logcat / Xcode).
+   * Set to `true` during development; leave `false` (default) in production
+   * to keep the console clean.
+   */
+  debug?: boolean;
   /** Override any subset of thresholds. */
   thresholds?: Partial<Thresholds>;
   /** Which active challenges are allowed; one is picked at random per auth. */

@@ -3,6 +3,7 @@ import type { Thresholds } from './config';
 import { averageEmbeddings, computeEmbedding, embeddingToBase64 } from './embeddings';
 import type { RgbFrame, TfliteModel } from './detector';
 import { checkLiveness, type LivenessModels } from './liveness';
+import { log } from './logger';
 import { identify, verify, type Template } from './matcher';
 import { evaluateQuality, largestFace } from './qualityGate';
 import type {
@@ -31,7 +32,7 @@ import type {
 export type Stage = 'gating' | 'challenge' | 'analyzing' | 'done';
 
 /** Debug logger — prints to Metro/logcat with a [FaceAuth] tag. */
-const dbg = (...args: unknown[]) => console.log('[FaceAuth]', ...args);
+const dbg = (...args: unknown[]) => log('[FaceAuth]', ...args);
 const f2 = (n: number) => n.toFixed(3);
 
 export interface PipelineModels {
