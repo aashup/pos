@@ -6,6 +6,7 @@
  */
 
 export { FaceAuth } from './faceAuth';
+export type { DuplicateCheckResult } from './faceAuth';
 
 export { FaceAuthView } from './FaceAuthView';
 export type { FaceAuthViewProps, FaceAuthModels } from './FaceAuthView';

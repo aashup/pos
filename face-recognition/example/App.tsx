@@ -1,6 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
+  InteractionManager,
   Modal,
   SafeAreaView,
   StyleSheet,
@@ -65,6 +67,9 @@ export default function App() {
   const captureStep      = useRef(0);
   const collectedEmbs    = useRef<string[]>([]);
 
+  // ── Duplicate-check overlay state ──────────────────────────────────────────
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+
   // ── Model loading ───────────────────────────────────────────────────────────
   const blazeface = useTensorflowModel(require('./assets/models/blazeface.tflite'));
   const faceMesh  = useTensorflowModel(require('./assets/models/face_mesh.tflite'));
@@ -118,6 +123,52 @@ export default function App() {
     setSession('enroll');
   };
 
+  /**
+   * Run a duplicate-enrollment check off the critical path.
+   *
+   * `InteractionManager.runAfterInteractions` defers the heavy synchronous
+   * dot-product scan until any pending UI animations (modal close, state
+   * transitions) have flushed — so the camera close animation plays smoothly
+   * before the scan blocks the JS thread.
+   *
+   * Returns a Promise so the caller can `await` it and decide whether to
+   * continue to the next shot or abort.
+   */
+  const runDuplicateCheck = useCallback((embeddingB64: string): Promise<boolean> => {
+    return new Promise((resolve) => {
+      InteractionManager.runAfterInteractions(async () => {
+        setCheckingDuplicate(true);
+        try {
+          const result = await FaceAuth.checkDuplicate(embeddingB64);
+          if (result.isDuplicate) {
+            // Reset enrollment state before showing alert so the user
+            // can start fresh without stale data.
+            captureStep.current   = 0;
+            collectedEmbs.current = [];
+            Alert.alert(
+              '⚠️  Already Registered',
+              `This face is already enrolled as:\n\n` +
+              `"${result.personnelId}"\n` +
+              `Score: ${result.score.toFixed(2)}\n\n` +
+              `Please use that name to authenticate.`,
+              [{ text: 'OK', style: 'cancel' }],
+            );
+            resolve(false); // duplicate found → abort enrollment
+          } else {
+            resolve(true); // no duplicate → safe to continue
+          }
+        } catch (e: any) {
+          // On error, be permissive — let enrollment proceed; don't block
+          // the user on a check that should be best-effort.
+          console.warn('[checkDuplicate] error:', e?.message ?? String(e));
+          resolve(true);
+        } finally {
+          setCheckingDuplicate(false);
+        }
+      });
+    });
+  }, []);
+
   // ── Handle every FaceAuthView result ───────────────────────────────────────
   const handleResult = async (r: AuthResult, activeSession: AuthMode) => {
     setSession(null);
@@ -144,7 +195,15 @@ export default function App() {
         return;
       }
 
-      // Shot succeeded — accumulate embedding
+      // Shot succeeded — on the very first shot, check for duplicate enrollment
+      // before collecting further shots. This avoids wasting the user's time on
+      // 2–4 more captures only to reject them at the final step.
+      if (captureStep.current === 1) {
+        const ok = await runDuplicateCheck(r.embeddingB64);
+        if (!ok) return; // duplicate detected — alert already shown, state reset
+      }
+
+      // Accumulate embedding
       collectedEmbs.current.push(r.embeddingB64);
 
       if (captureStep.current < ENROLL_SHOTS) {
@@ -227,6 +286,21 @@ export default function App() {
           </View>
         )}
       </View>
+    );
+  }
+
+  // ── Duplicate-checking overlay (shown after first shot while scan runs) ────
+  if (checkingDuplicate) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <View style={styles.checkingCard}>
+          <ActivityIndicator size="large" color="#0ea5e9" />
+          <Text style={styles.checkingText}>Checking for duplicates…</Text>
+          <Text style={styles.checkingSub}>
+            Making sure this face isn't already enrolled
+          </Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -412,4 +486,29 @@ const styles = StyleSheet.create({
   dialogBtnCancel: { backgroundColor: '#475569' },
   dialogBtnOk:     { backgroundColor: '#0ea5e9' },
   dialogBtnText:   { color: '#fff', fontWeight: '600', fontSize: 15 },
+  // ── Duplicate-check overlay ───────────────────────────────────────────────
+  checkingCard: {
+    backgroundColor: '#1e293b',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    gap: 16,
+    marginHorizontal: 32,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  checkingText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  checkingSub: {
+    color: '#94a3b8',
+    fontSize: 13,
+    textAlign: 'center',
+  },
 });

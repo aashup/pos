@@ -1,4 +1,5 @@
 import type { FaceAuthConfig } from './config';
+import { resolveThresholds } from './config';
 import { getOrCreateKey } from './secure/keystore';
 import { transform, type CancelableParams } from './secure/cancelable';
 import {
@@ -8,8 +9,13 @@ import {
   type AttendanceEvent,
 } from './secure/auditLog';
 import { verifyModels } from './secure/modelIntegrity';
-import { count as templateCount, openTemplateStore, upsertPersonnel } from './secure/templateStore';
+import { count as templateCount, loadAll, openTemplateStore, upsertPersonnel } from './secure/templateStore';
 import { base64ToFloat32 } from './sync/http';
+import {
+  groupTemplates,
+  identifyMultiFrame,
+  type MultiFrameMatchConfig,
+} from './matcher';
 import { syncAttendance } from './sync/attendanceSync';
 import {
   getCachedManifest,
@@ -148,6 +154,71 @@ function probeTransform(embedding: Float32Array): Float32Array {
   return transform(embedding, cancelable);
 }
 
+export interface DuplicateCheckResult {
+  /** True when a stored template matches the given embedding above the fine threshold. */
+  isDuplicate: boolean;
+  /** The matching person's ID, or undefined when no duplicate was found. */
+  personnelId?: string;
+  /** Best fusion score (0 when no templates exist or no match). */
+  score: number;
+}
+
+/**
+ * Check whether a captured face embedding is already enrolled on this device.
+ *
+ * Call this after an `enroll` session returns an `embeddingB64` — before
+ * committing the enrollment — to detect accidental or fraudulent
+ * re-registration under a different name.
+ *
+ * The check runs the full 3-step multi-frame cascade against all on-device
+ * templates using the same cancelable transform that is applied at match time,
+ * so comparison is apples-to-apples with stored templates.
+ *
+ * Designed to be awaited inside a Promise that is scheduled off the critical
+ * render path (e.g. `InteractionManager.runAfterInteractions`) so the UI
+ * remains responsive while the dot-product scan runs.
+ *
+ * @param embeddingB64  Base64 embedding returned by `AuthResult.embeddingB64`.
+ * @param thresholdOverride  Optional fine-threshold override (0–1).
+ *                           Defaults to `thresholds.fineThreshold` from config.
+ */
+async function checkDuplicate(
+  embeddingB64: string,
+  thresholdOverride?: number,
+): Promise<DuplicateCheckResult> {
+  const cfg = requireReady();
+  const thresholds = resolveThresholds(cfg.thresholds);
+
+  // Decode raw embedding and apply the same cancelable transform used on stored templates.
+  const raw   = base64ToFloat32(embeddingB64);
+  const probe = transform(raw, cancelable!);
+
+  const flat = loadAll();
+  if (flat.length === 0) return { isDuplicate: false, score: 0 };
+
+  const registry = groupTemplates(flat);
+
+  const matchCfg: MultiFrameMatchConfig = {
+    coarseThreshold:    thresholds.coarseThreshold,
+    fineThreshold:      thresholdOverride ?? thresholds.fineThreshold,
+    probeFrameCount:    1,                        // single freshly-captured frame
+    templateFrameCount: thresholds.templateFrameCount,
+    fusionStrategy:     thresholds.fusionStrategy,
+    topK:               thresholds.topK,
+  };
+
+  // Yield to the microtask queue so any pending UI work (close animation, state
+  // updates) can flush before the synchronous dot-product scan starts.
+  await Promise.resolve();
+
+  const { match } = identifyMultiFrame([probe], registry, matchCfg);
+  return {
+    isDuplicate: match !== null,
+    personnelId: match?.personnelId,
+    score:       match?.score ?? 0,
+  };
+}
+
 /** Persist one auth attempt as a signed, chained attendance event. */
 function recordAttendance(result: AuthResult): void {
   requireReady();
@@ -219,6 +290,12 @@ export const FaceAuth = {
   isInitialized,
   /** Store face template(s) directly on-device — no server needed. */
   enrollLocal,
+  /**
+   * Check whether a captured face is already enrolled on this device.
+   * Returns `{ isDuplicate, personnelId?, score }`.
+   * Run inside `InteractionManager.runAfterInteractions` for a non-blocking UX.
+   */
+  checkDuplicate,
   provision,
   needsReprovision,
   recordAttendance,
