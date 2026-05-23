@@ -175,7 +175,6 @@ export class FaceAuthSession {
   }
 
   private doChallenge(faces: DetectedFace[], now: number): Tick {
-    console.log("Chalange")
     const c = this.challenge!;
     // Require exactly one tracked face; otherwise treat as lost tracking.
     const face = faces.length === 1 ? faces[0]! : null;
@@ -218,6 +217,7 @@ export class FaceAuthSession {
       { faces, frame: frame ?? undefined, brightness: pre?.brightness },
       this.opts.thresholds,
     );
+    console.log("From q => " , q)
     if (!q.ok) {
       return { stage: 'analyzing', guidance: { message: q.guidance }, done: false };
     }

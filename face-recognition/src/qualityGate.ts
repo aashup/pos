@@ -67,7 +67,7 @@ export function evaluateQuality(
   const area = face.box.width * face.box.height;
   if (area < t.minFaceArea) issues.push('face_too_small');
 
-  if (!isCentered(face)) issues.push('off_center');
+  if (!isCentered(face, t)) issues.push('off_center');
 
   const { yaw, pitch, roll } = face.headPose;
   if (Math.abs(yaw) > t.maxYaw || Math.abs(pitch) > t.maxPitch || Math.abs(roll) > t.maxRoll) {
@@ -81,7 +81,7 @@ export function evaluateQuality(
 
   // Sharpness: only checkable with raw frame data; skip in worklet mode.
   if (frame && sharpness(frame, face) < t.minSharpness) issues.push('blurry');
-console.log(issues)
+
   return issues.length === 0
     ? { ok: true, issues: [], guidance: '' }
     : fail(issues);
@@ -98,12 +98,12 @@ export function largestFace(faces: DetectedFace[]): DetectedFace {
   );
 }
 
-/** Face box center should sit within the middle 60% of the frame. */
-function isCentered(face: DetectedFace): boolean {
-  const cx = face.box.x + face.box.width / 2;
+/** Face centre must fall within the configurable margin from each edge. */
+function isCentered(face: DetectedFace, t: Thresholds): boolean {
+  const cx = face.box.x + face.box.width  / 2;
   const cy = face.box.y + face.box.height / 2;
-  console.log(JSON.stringify(face.box, null, 2), cx, cy);
-  return cx > 0.15 && cx < 0.85 && cy > 0.15 && cy < 0.85;
+  const m  = t.centerMargin;
+  return cx > m && cx < (1 - m) && cy > m && cy < (1 - m);
 }
 
 /** Mean luma (0..255) over the face box region. Samples on a grid to stay cheap. */

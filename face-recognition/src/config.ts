@@ -21,6 +21,14 @@ export interface Thresholds {
   spoofReject: number;
   /** Cosine similarity required to declare a match. */
   matchCosine: number;
+  /**
+   * Normalised margin from each frame edge within which the face centre must
+   * fall to pass the centering check. Default 0.10 → face centre accepted
+   * anywhere in the middle 80 % of the frame (0.10 → 0.90 on both axes).
+   * Increase toward 0.20 for a tighter center zone; decrease toward 0.05 to
+   * accept faces that are slightly off-center.
+   */
+  centerMargin: number;
 }
 
 export interface FaceAuthConfig {
@@ -70,6 +78,7 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   minSharpness: 80,
   spoofReject: 0.5,
   matchCosine: 0.65,
+  centerMargin: 0.10,
 };
 
 export const DEFAULT_CONFIG: {
@@ -82,7 +91,7 @@ export const DEFAULT_CONFIG: {
   challenges: ['blink', 'smile', 'turn_head'],
   syncIntervalMs: 5 * 60 * 1000,
   purgeAfterSync: true,
-  challengeTimeoutMs: 6000,
+  challengeTimeoutMs: 5 * 60 * 1000,
   templateTtlMs: 7 * 24 * 60 * 60 * 1000,
 };
 

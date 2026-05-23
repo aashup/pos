@@ -28,6 +28,14 @@ export interface FrameSourceModels {
 }
 
 /**
+ * Centering status delivered from the worklet to the JS thread.
+ * Fired only when the status or arrow direction changes — not every frame.
+ */
+export type CenteringStatus =
+  | { detected: false }
+  | { detected: true; centered: boolean; cx: number; cy: number };
+
+/**
  * Result marshalled from the native worklet thread to the JS thread.
  * Every field is a plain JS primitive or number[] — the only types that
  * worklets-core v1.x can safely transfer through useRunOnJS.
@@ -92,6 +100,17 @@ export interface FrameSourceOptions {
    * exact buffer the models see. Trigger via the returned `triggerDebugCapture`.
    */
   onModelDebug?: (frame: ModelDebugFrame) => void;
+  /**
+   * Called from the JS thread when the face-centering status or arrow direction
+   * changes. Fires at most a few times per second — never on every frame.
+   * Drives the FaceMaskOverlay colour and direction arrows.
+   */
+  onCentering?: (status: CenteringStatus) => void;
+  /**
+   * Margin from each frame edge for the centering check (0-1 normalised).
+   * Mirrors Thresholds.centerMargin. Default 0.10.
+   */
+  centerMargin?: number;
 }
 
 // ─── BlazeFace SSD anchor table (computed once at module load) ────────────────
@@ -496,6 +515,8 @@ export function useFrameSource({
   minIntervalMs = 200,
   needsEmbedding,
   onModelDebug,
+  onCentering,
+  centerMargin = 0.10,
 }: FrameSourceOptions) {
   const { resize } = useResizePlugin();
 
@@ -505,11 +526,24 @@ export function useFrameSource({
   /** Set to true by triggerDebugCapture(); worklet captures once then resets. */
   const captureNext = useSharedValue(false);
 
+  // ── Centering signal SharedValues (worklet-thread state, no JS crossing) ────
+  /** null-encoded as -1 (SharedValue doesn't support null). 0=false, 1=true. */
+  const lastCenteredSV  = useSharedValue(-1);   // -1 = no face
+  /** Last cx/cy sent to JS — used to suppress redundant calls. */
+  const lastArrowCxSV   = useSharedValue(-1);
+  const lastArrowCySV   = useSharedValue(-1);
+  /** Centering margin — updated when prop changes (rare). */
+  const marginSV        = useSharedValue(centerMargin);
+  marginSV.value = centerMargin;                // keep in sync if config changes
+
   const cbRef = useRef(onFrameResult);
   cbRef.current = onFrameResult;
 
   const dbgRef = useRef(onModelDebug);
   dbgRef.current = onModelDebug;
+
+  const centeringRef = useRef(onCentering);
+  centeringRef.current = onCentering;
 
   // JS-thread receiver: accepts a plain WorkletFrameResult (no binary blobs).
   const deliver = useRunOnJS(
@@ -527,6 +561,15 @@ export function useFrameSource({
   const deliverModelDebug = useRunOnJS(
     (frame: ModelDebugFrame) => {
       dbgRef.current?.(frame);
+    },
+    [],
+  );
+
+  // JS-thread receiver for centering status.
+  // Fires only when status or arrow direction actually changes — never per-frame.
+  const deliverCentering = useRunOnJS(
+    (status: CenteringStatus) => {
+      centeringRef.current?.(status);
     },
     [],
   );
@@ -564,10 +607,16 @@ export function useFrameSource({
         0.5,
       );
 
-      // ── 3. Debug capture — NO-FACE branch ────────────────────────────────
-      // Fires even when BlazeFace found nothing, so you can see the raw frame
-      // and diagnose why detection failed (bad lighting, crop, angle, etc.).
+      // ── 3. No-face branch ─────────────────────────────────────────────────
       if (!bbox) {
+        // Signal centering loss only on transition (was detected → now gone).
+        if (lastCenteredSV.value !== -1) {
+          lastCenteredSV.value  = -1;
+          lastArrowCxSV.value   = -1;
+          lastArrowCySV.value   = -1;
+          deliverCentering({ detected: false });
+        }
+        // Debug capture even without a face — helps diagnose detection failures.
         if (captureNext.value) {
           captureNext.value = false;
           const srcFrameBmp  = wUint8ToBmpBase64(src, FRAME_SIZE, FRAME_SIZE, 160);
@@ -583,6 +632,27 @@ export function useFrameSource({
       const bw     = bbox[2];
       const bh     = bbox[3];
       const bScore = bbox[4];
+
+      // ── 3b. Centering signal (worklet-thread only, JS called on change) ────
+      // Keeps the JS / main thread free from per-frame work.
+      const fcx = bx + bw / 2;
+      const fcy = by + bh / 2;
+      const m   = marginSV.value;
+      const centered = fcx > m && fcx < (1 - m) && fcy > m && fcy < (1 - m);
+      const centeredInt = centered ? 1 : 0;  // SharedValue stores number, not bool
+
+      // Arrow direction: only re-signal if |Δcx| or |Δcy| > 0.05
+      const arrowDirChanged =
+        !centered &&
+        (Math.abs(fcx - lastArrowCxSV.value) > 0.05 ||
+         Math.abs(fcy - lastArrowCySV.value) > 0.05);
+
+      if (centeredInt !== lastCenteredSV.value || arrowDirChanged) {
+        lastCenteredSV.value  = centeredInt;
+        lastArrowCxSV.value   = fcx;
+        lastArrowCySV.value   = fcy;
+        deliverCentering({ detected: true, centered, cx: fcx, cy: fcy });
+      }
 
       // ── 4. Brightness (cheap grid sample over face region) ─────────────────
       const brightness = wMeanLuma(src, FRAME_SIZE, FRAME_SIZE, bx, by, bw, bh);
@@ -642,7 +712,8 @@ export function useFrameSource({
       });
     },
     [resize, deliver, isBusy, lastRunTime, needsEmbedding, captureNext, deliverModelDebug,
-     blazeface, faceMesh, liveness0, liveness1, embModel, BF_ANCHOR_CX, BF_ANCHOR_CY],
+     blazeface, faceMesh, liveness0, liveness1, embModel, BF_ANCHOR_CX, BF_ANCHOR_CY,
+     deliverCentering, lastCenteredSV, lastArrowCxSV, lastArrowCySV, marginSV],
   );
 
   /**

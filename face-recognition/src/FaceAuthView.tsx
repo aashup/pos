@@ -9,18 +9,17 @@ import {
 import { useSharedValue } from 'react-native-worklets-core';
 
 import { estimateHeadPose } from './detector';
-import { useFrameSource, type FrameSourceModels, type WorkletFrameResult } from './frameSource';
+import { useFrameSource, type FrameSourceModels, type WorkletFrameResult, type CenteringStatus } from './frameSource';
 import { getConfig } from './runtime';
+import { resolveThresholds } from './config';
 import { useFaceAuth } from './useFaceAuth';
 import type { PipelineModels } from './pipeline';
 import type { AuthMode, AuthResult, Challenge, DetectedFace, Guidance, Point } from './types';
 import { FaceMaskOverlay } from './FaceMaskOverlay';
 import {
-  logDetailedScores,
   startPeriodicCapture,
   stopPeriodicCapture,
   saveModelDebugFrame,
-  type DebugScores,
 } from './debug';
 
 /** Big, glanceable instruction for the current challenge / state. */
@@ -76,12 +75,15 @@ export function FaceAuthView({
 
   // Debug: camera ref enables takePhoto() for periodic frame saves.
   const cameraRef = useRef<Camera>(null);
-  const lastDebugRef = useRef<number>(0);
   const DEBUG_INTERVAL_MS = 5_000;
 
   const [hint, setHint] = useState<string>('Position your face in the frame');
   const [challenge, setChallenge] = useState<Challenge | undefined>();
   const [verifying, setVerifying] = useState(false);
+
+  // Centering overlay state — driven by worklet thread via onCentering callback.
+  const [faceCentered, setFaceCentered] = useState<boolean | null>(null);
+  const [facePos, setFacePos] = useState<{ cx: number; cy: number } | null>(null);
 
   if (mode === 'verify' && !personnelId) {
     throw new Error('[offline-face-auth] verify mode requires a personnelId prop.');
@@ -178,12 +180,31 @@ export function FaceAuthView({
     [active, feed, stageRef],
   );
 
+  // Resolve config once per render to get the current centerMargin.
+  const cfg        = getConfig();
+  const thresholds = resolveThresholds(cfg.thresholds);
+
+  // Centering callback — fired from the worklet thread (via useRunOnJS) only
+  // when the centering status or arrow direction actually changes, so the main
+  // thread is never blocked on per-frame computations.
+  const handleCentering = useCallback((s: CenteringStatus) => {
+    if (!s.detected) {
+      setFaceCentered(null);
+      setFacePos(null);
+    } else {
+      setFaceCentered(s.centered);
+      setFacePos({ cx: s.cx, cy: s.cy });
+    }
+  }, []);
+
   const { frameProcessor, triggerDebugCapture } = useFrameSource({
     models,
     onFrameResult,
     minIntervalMs: 0,   // isBusy guard throttles to inference speed
     needsEmbedding,
     onModelDebug: __DEV__ ? saveModelDebugFrame : undefined,
+    onCentering: handleCentering,
+    centerMargin: thresholds.centerMargin,
   });
 
   useEffect(() => {
@@ -240,9 +261,6 @@ export function FaceAuthView({
     );
   }
 
-  // Fail fast if init() was not called.
-  getConfig();
-
   return (
     <View style={[styles.container, style]}>
       <Camera
@@ -257,7 +275,7 @@ export function FaceAuthView({
       />
 
       {BackButton}
-      <FaceMaskOverlay />
+      <FaceMaskOverlay centered={faceCentered} facePos={facePos} />
       {/* Prominent centered prompt: the challenge instruction or "Verifying…" */}
       {(challenge || verifying) && (
         <View style={styles.promptCard} pointerEvents="none">
