@@ -99,6 +99,12 @@ export interface FrameSourceOptions {
   minIntervalMs?: number;
   /**
    * SharedValue set to true by FaceAuthView when the pipeline enters the
+   * 'analyzing' stage and needs passive-liveness scores.
+   * Keeps gating and challenge frames free of the two ~40 ms MiniFASNet calls.
+   */
+  needsLiveness: { value: boolean };
+  /**
+   * SharedValue set to true by FaceAuthView when the pipeline enters the
    * 'analyzing' stage and actually needs an embedding vector.
    * Keeps the common case (gating / challenge) free of the 80 ms FaceNet call.
    */
@@ -591,6 +597,7 @@ export function useFrameSource({
   models,
   onFrameResult,
   minIntervalMs = 200,
+  needsLiveness,
   needsEmbedding,
   onModelDebug,
   onCentering,
@@ -742,44 +749,48 @@ export function useFrameSource({
       const fmRaw      = faceMesh.runSync([fmInput]);
       const landmarks  = wDecodeFaceMesh(fmRaw[0] as Float32Array, ex, ey, ew, eh);
 
-      // ── 6. Liveness: two MiniFASNet branches (scales 2.7 and 4.0) ─────────
-      // MiniFASNet expects a SQUARE crop centred on the face. We derive the
-      // square from max(w, h) so portrait/landscape faces both produce an
-      // undistorted crop. Then scaleBox expands it by the branch's scale factor.
-      // Each crop is preprocessed with wResampleLiveness (BGR + ImageNet norm).
-      const faceSize = Math.max(bw, bh);
-      const faceCx   = bx + bw / 2;
-      const faceCy   = by + bh / 2;
-      const sqX      = Math.max(0, faceCx - faceSize / 2);
-      const sqY      = Math.max(0, faceCy - faceSize / 2);
-      const sqW      = Math.min(1 - sqX, faceSize);
-      const sqH      = Math.min(1 - sqY, faceSize);
-      const expLv    = wExpandBox(sqX, sqY, sqW, sqH, 0.1);
-      const expLvX   = expLv[0]; const expLvY = expLv[1];
-      const expLvW   = expLv[2]; const expLvH = expLv[3];
+      // ── 6. Liveness: two MiniFASNet branches — only in 'analyzing' stage ────
+      // Gated by needsLiveness.value so the two ~40 ms MiniFASNet calls never
+      // run during gating or challenge frames.
+      // Square crop (max(w,h)) avoids aspect-ratio distortion.
+      // wResampleLiveness applies BGR channel swap + ImageNet normalisation.
+      let livenessScore = 0;
+      const livenessRaw: number[] = [];   // debug raw logits, empty when skipped
 
-      const sc0      = wScaleBox(expLvX, expLvY, expLvW, expLvH, 2.7);
-      const lv0Input = wResampleLiveness(src, FRAME_SIZE, FRAME_SIZE, sc0[0], sc0[1], sc0[2], sc0[3], LV);
-      const lv0Raw   = liveness0.runSync([lv0Input]);
-      const live0    = wDecodeLiveness(lv0Raw[0] as Float32Array);
-      // DEBUG: raw softmax output of branch 0 (all values, before index selection)
-      const lv0Debug = wTypedToArray(lv0Raw[0] as Float32Array);
+      if (needsLiveness.value) {
+        const faceSize = Math.max(bw, bh);
+        const faceCx   = bx + bw / 2;
+        const faceCy   = by + bh / 2;
+        const sqX      = Math.max(0, faceCx - faceSize / 2);
+        const sqY      = Math.max(0, faceCy - faceSize / 2);
+        const sqW      = Math.min(1 - sqX, faceSize);
+        const sqH      = Math.min(1 - sqY, faceSize);
+        const expLv    = wExpandBox(sqX, sqY, sqW, sqH, 0.1);
+        const expLvX   = expLv[0]; const expLvY = expLv[1];
+        const expLvW   = expLv[2]; const expLvH = expLv[3];
 
-      const sc1      = wScaleBox(expLvX, expLvY, expLvW, expLvH, 4.0);
-      const lv1Input = wResampleLiveness(src, FRAME_SIZE, FRAME_SIZE, sc1[0], sc1[1], sc1[2], sc1[3], LV);
-      const lv1Raw   = liveness1.runSync([lv1Input]);
-      const live1    = wDecodeLiveness(lv1Raw[0] as Float32Array);
-      // DEBUG: raw softmax output of branch 1
-      const lv1Debug = wTypedToArray(lv1Raw[0] as Float32Array);
+        const sc0      = wScaleBox(expLvX, expLvY, expLvW, expLvH, 2.7);
+        const lv0Input = wResampleLiveness(src, FRAME_SIZE, FRAME_SIZE, sc0[0], sc0[1], sc0[2], sc0[3], LV);
+        const lv0Raw   = liveness0.runSync([lv0Input]);
+        const live0    = wDecodeLiveness(lv0Raw[0] as Float32Array);
+        // DEBUG: raw softmax values of branch 0 (all indices, before selection)
+        const lv0Debug = wTypedToArray(lv0Raw[0] as Float32Array);
 
-      const livenessScore = (live0 + live1) / 2;
-      // DEBUG: pack both branches separated by -1 sentinel for logging in JS thread.
-      // No spread operator — Babel compiles spread to _toConsumableArray which is
-      // a regular function and crashes the worklet. Use explicit push loops instead.
-      const livenessRaw: number[] = [];
-      for (let i = 0; i < lv0Debug.length; i++) livenessRaw.push(lv0Debug[i]!);
-      livenessRaw.push(-1);
-      for (let i = 0; i < lv1Debug.length; i++) livenessRaw.push(lv1Debug[i]!);
+        const sc1      = wScaleBox(expLvX, expLvY, expLvW, expLvH, 4.0);
+        const lv1Input = wResampleLiveness(src, FRAME_SIZE, FRAME_SIZE, sc1[0], sc1[1], sc1[2], sc1[3], LV);
+        const lv1Raw   = liveness1.runSync([lv1Input]);
+        const live1    = wDecodeLiveness(lv1Raw[0] as Float32Array);
+        // DEBUG: raw softmax values of branch 1
+        const lv1Debug = wTypedToArray(lv1Raw[0] as Float32Array);
+
+        livenessScore = (live0 + live1) / 2;
+        // Pack both branches separated by -1 sentinel for JS-thread logging.
+        // No spread operator — Babel compiles spread to _toConsumableArray which
+        // is a regular function and crashes the worklet.
+        for (let i = 0; i < lv0Debug.length; i++) livenessRaw.push(lv0Debug[i]!);
+        livenessRaw.push(-1);
+        for (let i = 0; i < lv1Debug.length; i++) livenessRaw.push(lv1Debug[i]!);
+      }
 
       // ── 7. Embedding: only when the analyzing stage requests it ───────────
       let embedding: number[] | null = null;
@@ -812,8 +823,9 @@ export function useFrameSource({
         embedding,
       });
     },
-    [resize, deliver, isBusy, lastRunTime, needsEmbedding, captureNext, deliverModelDebug,
-     blazeface, faceMesh, liveness0, liveness1, embModel, BF_ANCHOR_CX, BF_ANCHOR_CY,
+    [resize, deliver, isBusy, lastRunTime, needsLiveness, needsEmbedding, captureNext,
+     deliverModelDebug, blazeface, faceMesh, liveness0, liveness1, embModel,
+     BF_ANCHOR_CX, BF_ANCHOR_CY,
      deliverCentering, lastCenteredSV, lastArrowCxSV, lastArrowCySV, marginSV],
   );
 

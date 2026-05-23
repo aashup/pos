@@ -117,20 +117,24 @@ export function FaceAuthView({
     [onGuidance],
   );
 
-  // SharedValue flipped to true when pipeline enters 'analyzing' stage so the
-  // worklet runs FaceNet only on the frames where an embedding is needed.
+  // SharedValues flipped to true when the pipeline enters the 'analyzing' stage.
+  // Keeps gating + challenge frames free of the heavy model calls:
+  //   needsLiveness — gates the two ~40 ms MiniFASNet branches
+  //   needsEmbedding — gates the ~80 ms FaceNet embedding
+  const needsLiveness  = useSharedValue(false);
   const needsEmbedding = useSharedValue(false);
 
-  // Wrap handleGuidance: flip needsEmbedding when the 'Verifying…' message
-  // appears (that message is only shown in the 'analyzing' stage). This must
-  // be defined BEFORE useFaceAuth so it can be passed as onGuidance.
+  // Wrap handleGuidance: flip both flags when 'Verifying…' appears.
+  // 'Verifying…' is the sole message emitted by the analyzing stage.
+  // Must be defined BEFORE useFaceAuth so it can be passed as onGuidance.
   const handleGuidanceWithEmbedFlag = useCallback(
     (g: Guidance) => {
-      // 'Verifying…' is the sole message emitted by the analyzing stage.
-      needsEmbedding.value = g.message === 'Verifying…';
+      const analyzing = g.message === 'Verifying…';
+      needsLiveness.value  = analyzing;
+      needsEmbedding.value = analyzing;
       handleGuidance(g);
     },
-    [needsEmbedding, handleGuidance],
+    [needsLiveness, needsEmbedding, handleGuidance],
   );
 
   const { start, cancel, feed, active, stageRef } = useFaceAuth({
@@ -222,6 +226,7 @@ export function FaceAuthView({
     models,
     onFrameResult,
     minIntervalMs: 0,   // isBusy guard throttles to inference speed
+    needsLiveness,
     needsEmbedding,
     onModelDebug: __DEV__ ? saveModelDebugFrame : undefined,
     onCentering: handleCentering,
