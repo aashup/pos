@@ -17,7 +17,13 @@ export interface Thresholds {
   maxBrightness: number;
   /** Variance-of-Laplacian sharpness floor (higher = sharper). */
   minSharpness: number;
-  /** Passive liveness: reject if spoof probability >= this. */
+  /**
+   * Passive liveness: reject if spoof probability >= this.
+   * Real faces typically score spoof ≈ 0.05–0.15 (i.e. live ≈ 0.85–0.95).
+   * Printed photos / screen replays typically score spoof ≈ 0.85–0.99.
+   * Default 0.5 = reject when model is ≥50% confident it is a spoof.
+   * Never set below 0.3 in production — will reject legitimate live faces.
+   */
   spoofReject: number;
   /** Cosine similarity required to declare a match. */
   matchCosine: number;
@@ -75,14 +81,14 @@ export interface FaceAuthConfig {
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
   detectScore: 0.7,
-  minFaceArea: 0.04,
+  minFaceArea: 0.4,
   maxYaw: 30,
   maxPitch: 50,
   maxRoll: 50,
   minBrightness: 50,
   maxBrightness: 230,
   minSharpness: 80,
-  spoofReject: 0.35,
+  spoofReject: 0.1,
   matchCosine: 0.65,
   livenessFrames: 4,
   centerMargin: 0.10,
@@ -98,7 +104,7 @@ export const DEFAULT_CONFIG: {
   challenges: ['blink', 'smile', 'turn_head'],
   syncIntervalMs: 5 * 60 * 1000,
   purgeAfterSync: true,
-  challengeTimeoutMs: 5 * 60 * 1000,
+  challengeTimeoutMs: 10 * 60 * 1000,
   templateTtlMs: 7 * 24 * 60 * 60 * 1000,
 };
 

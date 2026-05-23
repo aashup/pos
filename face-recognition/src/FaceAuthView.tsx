@@ -16,11 +16,7 @@ import { useFaceAuth } from './useFaceAuth';
 import type { PipelineModels } from './pipeline';
 import type { AuthMode, AuthResult, Challenge, DetectedFace, Guidance, Point } from './types';
 import { FaceMaskOverlay } from './FaceMaskOverlay';
-import {
-  startPeriodicCapture,
-  stopPeriodicCapture,
-  saveModelDebugFrame,
-} from './debug';
+import { saveModelDebugFrame } from './debug';
 
 /** Big, glanceable instruction for the current challenge / state. */
 const CHALLENGE_PROMPT: Record<Challenge, { icon: string; title: string }> = {
@@ -146,15 +142,25 @@ export function FaceAuthView({
   });
 
   // DEBUG — log raw liveness tensor once per session (first analyzing frame).
-  // Shows: tensor length per branch, all raw values, which index is largest.
-  // Remove once liveness class-index and normalisation are confirmed correct.
   const livenessRawLoggedRef = useRef(false);
+  // DEBUG — log camera sensor dimensions once so we can diagnose orientation.
+  const frameDimsLoggedRef = useRef(false);
 
   // Convert WorkletFrameResult → DetectedFace + PrecomputedFrameData, then
   // advance the pipeline. All TFLite inference already happened in the worklet.
   const onFrameResult = useCallback(
     async (result: WorkletFrameResult) => {
       if (!active) return;
+
+      // Log sensor dimensions once — critical for diagnosing aspect-ratio issues.
+      if (__DEV__ && !frameDimsLoggedRef.current) {
+        frameDimsLoggedRef.current = true;
+        console.log(
+          `[FrameDims] sensor: ${result.frameW}×${result.frameH}` +
+          ` aspect=${( result.frameW / result.frameH).toFixed(3)}` +
+          ` detected=${result.detected}`,
+        );
+      }
 
       if (!result.detected) {
         await feed(null, []);
@@ -172,7 +178,7 @@ export function FaceAuthView({
         console.log('[LivenessDebug] branch0 raw values:', fmt(b0));
         console.log('[LivenessDebug] branch1 raw values:', fmt(b1));
         console.log(
-          '[LivenessDebug] interpretation: currently reading index 1 as live.',
+          '[LivenessDebug] interpretation: reading index 0 as live (real class).',
           `branch0 idx0=${b0[0]?.toFixed(4)} idx1=${b0[1]?.toFixed(4)} idx2=${b0[2]?.toFixed(4) ?? 'N/A'}`,
         );
       }
@@ -202,7 +208,7 @@ export function FaceAuthView({
         embedding: result.embedding ? new Float32Array(result.embedding) : null,
       });
     },
-    [active, feed, stageRef, livenessRawLoggedRef],
+    [active, feed, stageRef, livenessRawLoggedRef, frameDimsLoggedRef],
   );
 
   // Resolve config once per render to get the current centerMargin.
@@ -246,18 +252,26 @@ export function FaceAuthView({
     }
   }, [autoStart, hasPermission, device, start]);
 
-  // ── Debug: every DEBUG_INTERVAL_MS — save a camera JPEG + model-input BMP ──
-  // useEffect(() => {
-  //   if (!__DEV__) return;
-  //   if (active) {
-  //     startPeriodicCapture(cameraRef, DEBUG_INTERVAL_MS);
-  //     const t = setInterval(() => triggerDebugCapture(), DEBUG_INTERVAL_MS);
-  //     return () => { clearInterval(t); stopPeriodicCapture(); };
-  //   } else {
-  //     stopPeriodicCapture();
-  //   }
-  //   return () => stopPeriodicCapture();
-  // }, [active, triggerDebugCapture]);
+  // ── Debug: every DEBUG_INTERVAL_MS — save model-input BMPs from the worklet ──
+  // Saves three BMP files to faceauth_debug/ via react-native-fs on each tick:
+  //   src_frame_*.bmp   — 160×160 full resize-plugin output (what the worklet sees)
+  //   bf_input_*.bmp    — 128×128 BlazeFace input (after wResample01)
+  //   face_crop_*.bmp   — 192×192 FaceMesh crop (only when face detected)
+  //
+  // NOTE: the full-resolution camera JPEGs (3 MB each) are NOT saved here — those
+  // come from startPeriodicCapture which calls takePhoto().  We only want the
+  // small model-input images so we skip that call entirely.
+  //
+  // To view: Files → Internal Storage → Android → data → com.faceauthexample → files → faceauth_debug
+  // Or via adb:  adb pull /sdcard/Android/data/com.faceauthexample/files/faceauth_debug/ .
+  useEffect(() => {
+    if (!__DEV__) return;
+    if (!active) return;
+    // Fire once immediately, then every DEBUG_INTERVAL_MS.
+    triggerDebugCapture();
+    const t = setInterval(triggerDebugCapture, DEBUG_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, [active, triggerDebugCapture]);
 
   const handleBack = useCallback(() => {
     cancel();
@@ -297,7 +311,8 @@ export function FaceAuthView({
         fps={30}
         isActive={true}
         photo={true}
-        pixelFormat="rgb"
+        // pixelFormat="rgb"
+        resizeMode="cover"
         frameProcessor={frameProcessor}
       />
 

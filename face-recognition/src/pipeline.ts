@@ -251,7 +251,6 @@ export class FaceAuthSession {
         // Embedding not available this frame yet — wait for next frame.
         return { stage: 'analyzing', guidance: { message: 'Verifying…' }, done: false };
       }
-
       this.livenessScores.push(sampleScore);
       const n       = this.livenessScores.length;
       const runAvg  = this.livenessScore;
@@ -269,7 +268,7 @@ export class FaceAuthSession {
 
       // All N samples collected — make the final averaged decision.
       const finalAvg   = runAvg;
-      const finalSpoof = 1 - finalAvg;
+      const finalSpoof = finalAvg;
       dbg(
         `liveness FINAL: samples=[${this.livenessScores.map(f2).join(', ')}] ` +
         `avg=${f2(finalAvg)} spoofAvg=${f2(finalSpoof)} ` +

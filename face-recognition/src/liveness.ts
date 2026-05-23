@@ -46,20 +46,25 @@ export function scaleBox(box: BoundingBox, scale: number): BoundingBox {
 }
 
 /**
- * MiniFASNet output: [fake_2d, real, fake_3d].  Index 1 is the live class.
+ * MiniFASNet output: [real, fake_2d, fake_3d].  Index 0 is the live class.
+ *
+ * NOTE on class ordering: the bundled spoof_2_7.tflite / spoof_4_0.tflite models
+ * output [real, fake] or [real, fake_2d, fake_3d] — NOT the [fake_2d, real, fake_3d]
+ * ordering described in some versions of the Silent-Face paper. Device testing
+ * confirmed index 0 ≈ 0.94 for a live face, index 1 ≈ 0.05.
  *
  * Detects whether softmax is already baked into the TFLite graph by checking
- * if the values sum to ~1.0.  If so, returns index 1 directly — applying
+ * if the values sum to ~1.0.  If so, returns index 0 directly — applying
  * softmax again would heavily squash the probabilities and destroy accuracy.
  * Falls back to manual softmax only when raw logits are present.
  */
 export function decodeLiveProb(logits: Float32Array): number {
-  if (logits.length < 2) return 0;
+  if (logits.length < 1) return 0;
 
   // If the model already applied softmax, values sum to ~1.0.
   const sumCheck = (logits[0] ?? 0) + (logits[1] ?? 0) + (logits[2] ?? 0);
   if (Math.abs(sumCheck - 1.0) < 0.05) {
-    return logits[1] ?? 0;  // already a probability — return directly
+    return logits[0] ?? 0;  // index 0 = real/live — return directly
   }
 
   // Raw logits: apply softmax manually (numerically stable).
@@ -71,7 +76,7 @@ export function decodeLiveProb(logits: Float32Array): number {
     exps[i] = Math.exp(logits[i]! - max);
     sum += exps[i]!;
   }
-  return sum > 0 ? exps[1]! / sum : 0;
+  return sum > 0 ? exps[0]! / sum : 0;  // index 0 = real/live
 }
 
 /**
@@ -83,17 +88,15 @@ export function decodeLiveProb(logits: Float32Array): number {
  * where means/stds are in BGR order (OpenCV default).
  *
  * Our RgbFrame is in RGB order so we swap channels while normalising.
+ * Output layout: NHWC interleaved — out[(y*size+x)*3 + c] where c∈{0=B,1=G,2=R}.
  */
 function resampleLiveness(frame: RgbFrame, box: BoundingBox, size: number): Float32Array {
-  // MiniFASNet expects NCHW (channels-first / planar) layout:
-  //   out[0 .. size²-1]           = B plane (normalised)
-  //   out[size² .. 2·size²-1]     = G plane
-  //   out[2·size² .. 3·size²-1]   = R plane
+  // MiniFASNet TFLite expects NHWC (standard TFLite layout): interleaved BGR pixels.
+  // Each pixel at (y,x): out[(y*size+x)*3] = B, [+1] = G, [+2] = R, all normalised.
   //
-  // Also applies RGB→BGR channel swap and ImageNet normalisation:
+  // Applies RGB→BGR channel swap and ImageNet normalisation:
   //   mean=[0.406, 0.456, 0.485]  std=[0.225, 0.224, 0.229]  (BGR order)
-  const out         = new Float32Array(size * size * 3);
-  const channelArea = size * size;
+  const out  = new Float32Array(size * size * 3);
   const sx0  = box.x      * frame.width;
   const sy0  = box.y      * frame.height;
   const sw   = box.width  * frame.width;
@@ -101,16 +104,16 @@ function resampleLiveness(frame: RgbFrame, box: BoundingBox, size: number): Floa
   for (let y = 0; y < size; y++) {
     const fy = Math.min(frame.height - 1, Math.floor(sy0 + (y / size) * sh));
     for (let x = 0; x < size; x++) {
-      const fx      = Math.min(frame.width - 1, Math.floor(sx0 + (x / size) * sw));
-      const si      = (fy * frame.width + fx) * 3;
-      const flatIdx = y * size + x;
-      // RGB source → BGR planar + ImageNet normalisation
+      const fx = Math.min(frame.width - 1, Math.floor(sx0 + (x / size) * sw));
+      const si = (fy * frame.width + fx) * 3;
+      const di = (y * size + x) * 3;  // NHWC: interleaved per pixel
+      // RGB source → BGR interleaved + ImageNet normalisation
       const r = frame.data[si]!     / 255;
       const g = frame.data[si + 1]! / 255;
       const b = frame.data[si + 2]! / 255;
-      out[flatIdx]                    = (b - 0.406) / 0.225;  // B plane
-      out[channelArea     + flatIdx]  = (g - 0.456) / 0.224;  // G plane
-      out[channelArea * 2 + flatIdx]  = (r - 0.485) / 0.229;  // R plane
+      out[di]     = (b - 0.406) / 0.225;  // B
+      out[di + 1] = (g - 0.456) / 0.224;  // G
+      out[di + 2] = (r - 0.485) / 0.229;  // R
     }
   }
   return out;
@@ -154,7 +157,7 @@ export async function checkLiveness(
   }
   const liveScore  = n > 0 ? liveSum / n : 0;
   const spoofScore = 1 - liveScore;
-  console.log("Livescore " , liveScore, n, liveSum)
+  console.log(`[Liveness] liveScore=${liveScore.toFixed(3)} n=${n} liveSum=${liveSum.toFixed(3)} spoofReject=${spoofReject}`);
   return {
     liveScore,
     spoofScore,

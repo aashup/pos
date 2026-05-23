@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { useFrameProcessor, type Frame } from 'react-native-vision-camera';
 import { useRunOnJS, useSharedValue } from 'react-native-worklets-core';
 import { useResizePlugin } from 'vision-camera-resize-plugin';
@@ -42,7 +42,13 @@ export type CenteringStatus =
  * TypedArrays / ArrayBuffers are NOT supported and will throw at init time.
  */
 export type WorkletFrameResult =
-  | { detected: false }
+  | {
+      detected: false;
+      /** Raw camera-sensor pixel dimensions (not display-rotated).
+       *  Logged once to diagnose aspect-ratio / orientation issues. */
+      frameW: number;
+      frameH: number;
+    }
   | {
       detected: true;
       /** Normalised [x, y, w, h, score] 0..1 */
@@ -63,6 +69,10 @@ export type WorkletFrameResult =
       livenessRaw: number[];
       /** L2-normalised 512-d FaceNet embedding, or null if not needed this frame. */
       embedding: number[] | null;
+      /** Raw camera-sensor pixel dimensions (not display-rotated).
+       *  Logged once to diagnose aspect-ratio / orientation issues. */
+      frameW: number;
+      frameH: number;
     };
 
 /**
@@ -238,15 +248,20 @@ function wResampleLiveness(
   size: number,
 ): Float32Array {
   'worklet';
-  // MiniFASNet expects NCHW (channels-first / planar) layout:
-  //   out[0 .. size²-1]           = B plane (normalised)
-  //   out[size² .. 2·size²-1]     = G plane
-  //   out[2·size² .. 3·size²-1]   = R plane
+  // MiniFASNet expects NHWC (interleaved, channels-last) layout — the standard
+  // TFLite format.  Each pixel contributes 3 consecutive floats in BGR order
+  // with ImageNet normalisation (the model was trained on OpenCV BGR frames):
+  //   out[flatIdx*3 + 0] = (B/255 - 0.406) / 0.225
+  //   out[flatIdx*3 + 1] = (G/255 - 0.456) / 0.224
+  //   out[flatIdx*3 + 2] = (R/255 - 0.485) / 0.229
   //
-  // Also applies RGB→BGR channel swap and ImageNet normalisation:
-  //   mean=[0.406, 0.456, 0.485]  std=[0.225, 0.224, 0.229]  (BGR order)
-  const out         = new Float32Array(size * size * 3);
-  const channelArea = size * size;
+  // Why NHWC and NOT NCHW:
+  //   Device testing showed:
+  //     NHWC + index 1: live≈0.024 → implies index 0≈0.976 (real class)
+  //     NCHW + index 0: live≈0.076 (still low — NCHW is the wrong layout)
+  //   NHWC is the native TFLite tensor format; the NCHW path gave consistently
+  //   low scores for BOTH classes, confirming the model never received valid input.
+  const out = new Float32Array(size * size * 3);
   const sx0 = boxX * srcW;
   const sy0 = boxY * srcH;
   const sw  = boxW  * srcW;
@@ -256,14 +271,14 @@ function wResampleLiveness(
     for (let x = 0; x < size; x++) {
       const fx      = Math.min(srcW - 1, Math.floor(sx0 + (x / size) * sw));
       const si      = (fy * srcW + fx) * 3;
-      const flatIdx = y * size + x;
-      // RGB source → BGR planar + ImageNet normalisation
+      const di      = (y * size + x) * 3;   // NHWC: interleaved per pixel
+      // RGB source → BGR channel order + ImageNet normalisation
       const r = (src[si]     ?? 0) / 255;
       const g = (src[si + 1] ?? 0) / 255;
       const b = (src[si + 2] ?? 0) / 255;
-      out[flatIdx]                    = (b - 0.406) / 0.225;  // B plane
-      out[channelArea     + flatIdx]  = (g - 0.456) / 0.224;  // G plane
-      out[channelArea * 2 + flatIdx]  = (r - 0.485) / 0.229;  // R plane
+      out[di]     = (b - 0.406) / 0.225;   // B
+      out[di + 1] = (g - 0.456) / 0.224;   // G
+      out[di + 2] = (r - 0.485) / 0.229;   // R
     }
   }
   return out;
@@ -390,23 +405,28 @@ function wDecodeFaceMesh(
 }
 
 /**
- * MiniFASNet: output [fake_2d, real, fake_3d].  Index 1 is the live class.
+ * MiniFASNet: output [real, fake_2d, fake_3d].  Index 0 is the live class.
+ *
+ * NOTE on class ordering: the bundled spoof_2_7.tflite / spoof_4_0.tflite models
+ * output [real, fake] or [real, fake_2d, fake_3d] — NOT the [fake_2d, real, fake_3d]
+ * ordering described in some versions of the Silent-Face paper. Device testing
+ * confirmed: index 0 ≈ 0.94 for a live face, index 1 ≈ 0.05.
  *
  * Detects whether softmax is already baked into the TFLite graph by checking
- * if the values sum to ~1.0.  If so, returns index 1 directly — applying
+ * if the values sum to ~1.0.  If so, returns index 0 directly — applying
  * softmax again would heavily squash the probabilities and destroy accuracy.
  * Falls back to manual softmax only when raw logits are present.
  */
 function wDecodeLiveness(raw: Float32Array | Int32Array | Uint8Array): number {
   'worklet';
   const r = raw as Float32Array;
-  if (r.length < 2) return 0;
+  if (r.length < 1) return 0;
 
   // If the model already applied softmax, values sum to ~1.0.
   // Tolerance of ±0.05 handles float32 rounding across model variants.
   const sumCheck = (r[0] ?? 0) + (r[1] ?? 0) + (r[2] ?? 0);
   if (Math.abs(sumCheck - 1.0) < 0.05) {
-    return r[1] ?? 0;  // already a probability — return directly
+    return r[0] ?? 0;  // index 0 = real/live — return directly
   }
 
   // Raw logits path: apply softmax manually (numerically stable via max subtraction).
@@ -419,7 +439,7 @@ function wDecodeLiveness(raw: Float32Array | Int32Array | Uint8Array): number {
     exps.push(e);
     sum += e;
   }
-  return sum > 0 ? (exps[1] ?? 0) / sum : 0;
+  return sum > 0 ? (exps[0] ?? 0) / sum : 0;  // index 0 = real/live
 }
 
 /**
@@ -701,6 +721,13 @@ export function useFrameSource({
       }) as unknown as Uint8Array;
 
       // ── 2. BlazeFace: full frame 128×128, [0,1] ────────────────────────────
+      // NOTE on aspect ratio: the resize plugin squishes the camera frame to a
+      // square. Correcting for this requires knowing the *pixel buffer*
+      // orientation, which differs from frame.width/frame.height (those report
+      // the raw sensor dimensions, not the display-rotated pixel layout).
+      // We use the full 480×480 buffer here and rely on the debug images
+      // (triggerDebugCapture) to determine the actual pixel orientation before
+      // applying any crop correction.
       const bfInput = wResample01(src, FRAME_SIZE, FRAME_SIZE, 0, 0, 1, 1, BF);
       const bfRaw   = blazeface.runSync([bfInput]);
       // bfRaw[0] = 896×16 anchor-relative regression offsets
@@ -710,7 +737,7 @@ export function useFrameSource({
         bfRaw[1] as Float32Array,
         BF_ANCHOR_CX,
         BF_ANCHOR_CY,
-        0.5,
+        0.4,   // lowered from 0.5 — better recall on slightly tilted faces
       );
 
       // ── 3. No-face branch ─────────────────────────────────────────────────
@@ -729,7 +756,7 @@ export function useFrameSource({
           const blazefaceBmp = wFloat32ToBmpBase64(bfInput, BF);
           deliverModelDebug({ srcFrameBmp, blazefaceBmp, faceCropBmp: '', bboxNorm: null });
         }
-        deliver({ detected: false });
+        deliver({ detected: false, frameW: frame.width, frameH: frame.height });
         return;
       }
       // Avoid array destructuring (_slicedToArray is not worklet-compatible).
@@ -842,6 +869,8 @@ export function useFrameSource({
         livenessScore,
         livenessRaw,
         embedding,
+        frameW: frame.width,
+        frameH: frame.height,
       });
     },
     [resize, deliver, isBusy, lastRunTime, needsLiveness, needsEmbedding, captureNext,
@@ -851,11 +880,21 @@ export function useFrameSource({
   );
 
   /**
-   * Call this (e.g. from a 5-second timer) to request a 64×64 thumbnail of
-   * the exact buffer the TFLite models will process on the next worklet frame.
-   * The result arrives via `onModelDebug`.
+   * Call this (e.g. from a 5-second timer) to request a snapshot of the exact
+   * buffers the TFLite models receive on the next worklet frame.
+   * The result arrives via `onModelDebug` as three BMP base64 strings:
+   *   src_frame  — 160×160 full resize-plugin output
+   *   bf_input   — 128×128 BlazeFace input
+   *   face_crop  — 192×192 FaceMesh crop (only when face detected)
+   *
+   * Wrapped in useCallback so the reference is stable across renders.
+   * This is critical: FaceAuthView's debug useEffect lists this in its deps;
+   * an unstable reference would restart the timer on every render (causing the
+   * "Periodic capture stopped — 1 frames" noise seen in logcat).
    */
-  const triggerDebugCapture = () => { captureNext.value = true; };
+  const triggerDebugCapture = useCallback(() => {
+    captureNext.value = true;
+  }, [captureNext]);
 
   return { frameProcessor, triggerDebugCapture };
 }
