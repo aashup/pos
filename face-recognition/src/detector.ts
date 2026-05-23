@@ -42,6 +42,37 @@ export interface DetectorModels {
 const BLAZEFACE_INPUT = 128;
 const FACEMESH_INPUT = 192;
 
+// ─── BlazeFace SSD anchor table (mirrored from frameSource.ts) ───────────────
+// MediaPipe face_detection_short_range.tflite: 4 layers, strides [8,16,16,16],
+// fixed_anchor_size=true, 2 anchors per cell → 896 total.
+function _buildBFAnchors(): [Float32Array, Float32Array] {
+  const CX = new Float32Array(896);
+  const CY = new Float32Array(896);
+  let idx = 0;
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const cx = (x + 0.5) / 16;
+      const cy = (y + 0.5) / 16;
+      CX[idx] = cx; CY[idx] = cy; idx++;
+      CX[idx] = cx; CY[idx] = cy; idx++;
+    }
+  }
+  for (let layer = 0; layer < 3; layer++) {
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const cx = (x + 0.5) / 8;
+        const cy = (y + 0.5) / 8;
+        CX[idx] = cx; CY[idx] = cy; idx++;
+        CX[idx] = cx; CY[idx] = cy; idx++;
+      }
+    }
+  }
+  return [CX, CY];
+}
+const BF_ANCHORS = _buildBFAnchors();
+const BF_ANCHOR_CX = BF_ANCHORS[0];
+const BF_ANCHOR_CY = BF_ANCHORS[1];
+
 /** Face Mesh landmark indices we rely on downstream (gate + challenges). */
 export const LANDMARK = {
   leftEye: [33, 160, 158, 133, 153, 144], // EAR ring (outer→inner)
@@ -83,27 +114,31 @@ export function resampleToSquare(
   return out;
 }
 
-/** Decode BlazeFace raw output into the single best box (normalized coords).
- *  BlazeFace emits anchors + box regressors + scores; we keep the top score.
- *  Returns null if nothing clears `minScore`. */
+/**
+ * Decode MediaPipe BlazeFace short-range model output (two-tensor SSD format).
+ *
+ * regressions = bfRaw[0]: Float32Array 896×16 — anchor-relative offsets.
+ *   Layout per anchor i: [cx_off, cy_off, w_off, h_off, kp0x, kp0y, …].
+ *   Scale factor = 128. Offsets can be negative.
+ * scores = bfRaw[1]: Float32Array 896 — raw classification logits (pre-sigmoid).
+ *
+ * Returns the single best detection in normalised 0-1 coords, or null.
+ */
 export function decodeBlazeFace(
-  boxesAndScores: Float32Array,
+  regressions: Float32Array,
+  scores: Float32Array,
   minScore: number,
 ): { box: BoundingBox; score: number } | null {
-  // Layout assumed: [..., cx, cy, w, h, score] groups of 5 in normalized space.
   let best: { box: BoundingBox; score: number } | null = null;
-  for (let i = 0; i + 5 <= boxesAndScores.length; i += 5) {
-    const score = sigmoid(boxesAndScores[i + 4]!);
-    console.log("Detector score =>" + score + " minscore =>" + minScore)
+  for (let i = 0; i < scores.length; i++) {
+    const score = sigmoid(scores[i]!);
     if (score < minScore || (best && score <= best.score)) continue;
-    const cx = boxesAndScores[i]!;
-    const cy = boxesAndScores[i + 1]!;
-    const w = boxesAndScores[i + 2]!;
-    const h = boxesAndScores[i + 3]!;
-    best = {
-      score,
-      box: { x: cx - w / 2, y: cy - h / 2, width: w, height: h },
-    };
+    const base = i * 16;
+    const cx = BF_ANCHOR_CX[i]! + regressions[base]! / 128;
+    const cy = BF_ANCHOR_CY[i]! + regressions[base + 1]! / 128;
+    const w  = Math.exp(regressions[base + 2]! / 128);
+    const h  = Math.exp(regressions[base + 3]! / 128);
+    best = { score, box: { x: cx - w / 2, y: cy - h / 2, width: w, height: h } };
   }
   return best;
 }
@@ -182,8 +217,14 @@ export async function detectFace(
     { x: 0, y: 0, width: 1, height: 1 },
     BLAZEFACE_INPUT,
   );
-  const bfOut = (await models.blazeface.run([bfInput]))[0] as Float32Array;
-  const det = decodeBlazeFace(bfOut, minScore);
+  const bfTensors = await models.blazeface.run([bfInput]);
+  // bfTensors[0] = 896×16 anchor-relative regressions
+  // bfTensors[1] = 896×1  classification logits
+  const det = decodeBlazeFace(
+    bfTensors[0] as Float32Array,
+    bfTensors[1] as Float32Array,
+    minScore,
+  );
   if (!det) return null;
 
   if (!withLandmarks) {

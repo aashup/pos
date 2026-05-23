@@ -117,7 +117,7 @@ export class FaceAuthSession {
       const top = faces[0];
       dbg(
         `stage=${this.stage} faces=${faces.length}` +
-          (top ? ` score=${f2(top.score)} yaw2=${top.headPose.yaw.toFixed(0)}` : ''),
+          (top ? ` score=${f2(top.score)} yaw=${top.headPose.yaw.toFixed(0)}` : ''),
       );
     }
     switch (this.stage) {
@@ -175,6 +175,7 @@ export class FaceAuthSession {
   }
 
   private doChallenge(faces: DetectedFace[], now: number): Tick {
+    console.log("Chalange")
     const c = this.challenge!;
     // Require exactly one tracked face; otherwise treat as lost tracking.
     const face = faces.length === 1 ? faces[0]! : null;

@@ -8,7 +8,7 @@ import type { TfliteModel } from './detector';
 // ─── constants ────────────────────────────────────────────────────────────────
 
 /** Single resize size — all model crops are drawn from this buffer in the worklet. */
-export const FRAME_SIZE = 256;
+export const FRAME_SIZE = 480;
 
 // Model input edges (must match bundled .tflite files)
 const BF = 128;  // BlazeFace
@@ -49,6 +49,34 @@ export type WorkletFrameResult =
       embedding: number[] | null;
     };
 
+/**
+ * Snapshot of the raw 256×256 uint8 RGB buffer (downsampled to 64×64 for
+ * transfer efficiency) captured on demand from the worklet thread.
+ * Useful for verifying exactly what image the TFLite models receive.
+ */
+/**
+ * Three BMP images encoded as base64 strings — produced entirely in the worklet
+ * thread so only strings (not TypedArrays) cross to JS.
+ *
+ * Files saved to faceauth_debug/:
+ *   src_frame_<ts>_N.bmp  — 160×160 full frame (raw resize-plugin output, uint8 RGB)
+ *   bf_input_<ts>_N.bmp   — 128×128 full-frame BlazeFace input (float32 → uint8)
+ *   face_crop_<ts>_N.bmp  — 192×192 expanded face crop as FaceMesh sees it (empty if no face)
+ *
+ * Saved on every triggerDebugCapture() call, even when no face is detected,
+ * so you can diagnose detection failures visually.
+ */
+export interface ModelDebugFrame {
+  /** base64 24-bit BMP — full 480×480 frame downsampled to 160×160 (uint8 RGB as resize plugin delivers it) */
+  srcFrameBmp: string;
+  /** base64 24-bit BMP — 128×128 full frame as BlazeFace sees it (float32 [0,1]) */
+  blazefaceBmp: string;
+  /** base64 24-bit BMP — 192×192 face crop as FaceMesh sees it; empty string when no face detected */
+  faceCropBmp: string;
+  /** Detected face bbox [x, y, w, h] in 0-1 normalised coords, or null when no face detected */
+  bboxNorm: [number, number, number, number] | null;
+}
+
 export interface FrameSourceOptions {
   models: FrameSourceModels;
   onFrameResult: (result: WorkletFrameResult) => void | Promise<void>;
@@ -59,7 +87,46 @@ export interface FrameSourceOptions {
    * Keeps the common case (gating / challenge) free of the 80 ms FaceNet call.
    */
   needsEmbedding: { value: boolean };
+  /**
+   * Called once per debug capture request with a 64×64 thumbnail of the
+   * exact buffer the models see. Trigger via the returned `triggerDebugCapture`.
+   */
+  onModelDebug?: (frame: ModelDebugFrame) => void;
 }
+
+// ─── BlazeFace SSD anchor table (computed once at module load) ────────────────
+// MediaPipe face_detection_short_range.tflite: num_layers=4, strides=[8,16,16,16],
+// fixed_anchor_size=true, 2 anchors per cell.
+// Total: 16×16×2 + (8×8×2)×3 = 512 + 384 = 896 anchors.
+function _buildBFAnchors(): [Float32Array, Float32Array] {
+  const CX = new Float32Array(896);
+  const CY = new Float32Array(896);
+  let idx = 0;
+  // Layer 0 — stride 8 — feature map 16×16 — 2 anchors per cell
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const cx = (x + 0.5) / 16;
+      const cy = (y + 0.5) / 16;
+      CX[idx] = cx; CY[idx] = cy; idx++;
+      CX[idx] = cx; CY[idx] = cy; idx++;
+    }
+  }
+  // Layers 1-3 — stride 16 — feature map 8×8 — 2 anchors per cell (×3 layers)
+  for (let layer = 0; layer < 3; layer++) {
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) {
+        const cx = (x + 0.5) / 8;
+        const cy = (y + 0.5) / 8;
+        CX[idx] = cx; CY[idx] = cy; idx++;
+        CX[idx] = cx; CY[idx] = cy; idx++;
+      }
+    }
+  }
+  return [CX, CY];
+}
+const BF_ANCHORS = _buildBFAnchors();
+const BF_ANCHOR_CX = BF_ANCHORS[0];
+const BF_ANCHOR_CY = BF_ANCHORS[1];
 
 // ─── worklet-safe helper functions ───────────────────────────────────────────
 // Marked with 'worklet' so worklets-core's Babel transform serialises them
@@ -166,28 +233,45 @@ function wScaleBox(
 }
 
 /**
- * Decode BlazeFace output: groups of [cx, cy, w, h, score_logit] × 5.
- * Returns null if nothing clears minScore.
+ * Decode MediaPipe BlazeFace short-range model output (two-tensor SSD format).
+ *
+ * reg  = bfRaw[0]: Float32Array length 896×16 — anchor-relative regression
+ *        offsets per anchor i: [cx_off, cy_off, w_off, h_off, kp0x, kp0y, …].
+ *        Scale factor = 128 (= model input size). Offsets CAN be negative.
+ * cls  = bfRaw[1]: Float32Array length 896 — raw classification logits.
+ * anchorCx / anchorCy: pre-built module-level anchor centre tables (0-1 range).
+ *
+ * Returns [x, y, w, h, score] in normalised 0-1 coords (top-left origin), or null.
  */
 function wDecodeBlazeFace(
-  raw: Float32Array | Int32Array | Uint8Array,
+  reg: Float32Array | Int32Array | Uint8Array,
+  cls: Float32Array | Int32Array | Uint8Array,
+  anchorCx: Float32Array,
+  anchorCy: Float32Array,
   minScore: number,
 ): [number, number, number, number, number] | null {
   'worklet';
-  const o = raw as Float32Array;
-  let best = -1;
+  const r = reg as Float32Array;
+  const s = cls as Float32Array;
+  let bestScore = -1;
   let bx = 0, by = 0, bw = 0, bh = 0;
-  for (let i = 0; i + 5 <= o.length; i += 5) {
-    const score = wSigmoid(o[i + 4] ?? 0);
-    if (score < minScore || score <= best) continue;
-    best = score;
-    bx = o[i]     ?? 0;
-    by = o[i + 1] ?? 0;
-    bw = o[i + 2] ?? 0;
-    bh = o[i + 3] ?? 0;
+  for (let i = 0; i < s.length; i++) {
+    const score = wSigmoid(s[i] ?? 0);
+    if (score < minScore || score <= bestScore) continue;
+    const base = i * 16;
+    // Decode anchor-relative offsets → absolute normalised coords.
+    const cx = (anchorCx[i] ?? 0) + (r[base]     ?? 0) / 128;
+    const cy = (anchorCy[i] ?? 0) + (r[base + 1] ?? 0) / 128;
+    const w  = Math.exp((r[base + 2] ?? 0) / 128);
+    const h  = Math.exp((r[base + 3] ?? 0) / 128);
+    bestScore = score;
+    bx = cx - w / 2;
+    by = cy - h / 2;
+    bw = w;
+    bh = h;
   }
-  if (best < 0) return null;
-  return [bx - bw / 2, by - bh / 2, bw, bh, best];
+  if (bestScore < 0) return null;
+  return [bx, by, bw, bh, bestScore];
 }
 
 /**
@@ -269,6 +353,141 @@ function wMeanLuma(
   return count === 0 ? 128 : sum / count;
 }
 
+// ─── worklet BMP encoder ──────────────────────────────────────────────────────
+
+/** Base64 alphabet — module-level constant, captured by the worklet closure. */
+const B64C = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/**
+ * Encode a Uint8Array as a base64 string.
+ * Written without array destructuring or other Babel-transformed syntax so it
+ * can safely run inside a react-native-worklets-core worklet.
+ */
+function wBytesToBase64(bytes: Uint8Array): string {
+  'worklet';
+  let out = '';
+  const len = bytes.length;
+  for (let i = 0; i < len; i += 3) {
+    const b0 = bytes[i]     ?? 0;
+    const b1 = i + 1 < len ? (bytes[i + 1] ?? 0) : 0;
+    const b2 = i + 2 < len ? (bytes[i + 2] ?? 0) : 0;
+    out += B64C[b0 >> 2]                        ?? '';
+    out += B64C[((b0 & 3) << 4) | (b1 >> 4)]   ?? '';
+    out += i + 1 < len ? (B64C[((b1 & 15) << 2) | (b2 >> 6)] ?? '') : '=';
+    out += i + 2 < len ? (B64C[b2 & 63]         ?? '') : '=';
+  }
+  return out;
+}
+
+/**
+ * Encode a Float32Array (values 0-1, HWC RGB layout) as a 24-bit BMP base64.
+ * The resulting string can be passed through useRunOnJS and saved by RNFS.
+ *
+ * Row stride for `size × size` RGB: size×3 bytes.
+ * 128×128 → ~65 KB base64.  192×192 → ~147 KB base64.
+ */
+function wFloat32ToBmpBase64(f32: Float32Array, size: number): string {
+  'worklet';
+  const rowBytes   = size * 3;
+  const pad        = (4 - (rowBytes % 4)) % 4;   // align rows to 4 bytes
+  const pixData    = (rowBytes + pad) * size;
+  const fileSize   = 54 + pixData;
+  const buf        = new Uint8Array(fileSize);
+  let o = 0;
+
+  // little-endian writers
+  const w16 = (v: number) => { buf[o++] = v & 0xff; buf[o++] = (v >> 8) & 0xff; };
+  const w32 = (v: number) => {
+    buf[o++] = v & 0xff;
+    buf[o++] = (v >> 8)  & 0xff;
+    buf[o++] = (v >> 16) & 0xff;
+    buf[o++] = (v >> 24) & 0xff;
+  };
+
+  // ── BITMAPFILEHEADER (14 bytes) ──
+  buf[o++] = 0x42; buf[o++] = 0x4d; // 'BM'
+  w32(fileSize);   // total file size
+  w32(0);          // reserved
+  w32(54);         // pixel data offset (14 + 40)
+
+  // ── BITMAPINFOHEADER (40 bytes) ──
+  w32(40);            // header size
+  w32(size);          // width
+  w32(-size >>> 0);   // negative height → top-to-bottom rows
+  w16(1);             // color planes
+  w16(24);            // bits per pixel
+  w32(0);             // compression = BI_RGB
+  w32(pixData);       // pixel data size
+  w32(2835); w32(2835); // ~72 DPI
+  w32(0); w32(0);     // clr table / important
+
+  // ── Pixel data (BMP = BGR byte order) ──
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const i = (y * size + x) * 3;
+      const r = Math.min(255, Math.max(0, Math.round((f32[i]     ?? 0) * 255)));
+      const g = Math.min(255, Math.max(0, Math.round((f32[i + 1] ?? 0) * 255)));
+      const b = Math.min(255, Math.max(0, Math.round((f32[i + 2] ?? 0) * 255)));
+      buf[o++] = b; buf[o++] = g; buf[o++] = r;
+    }
+    for (let p = 0; p < pad; p++) buf[o++] = 0;
+  }
+
+  return wBytesToBase64(buf);
+}
+
+/**
+ * Nearest-neighbour downsample a uint8 RGB buffer (srcW×srcH×3) to `size×size`
+ * and encode as a 24-bit BMP base64 string.
+ *
+ * This gives you the exact pixels the resize plugin produced — no float
+ * conversion — so the saved image is byte-identical to what the worklet sees
+ * before model preprocessing.
+ *
+ * 160×160 output → ~100 KB base64 string (manageable for useRunOnJS).
+ */
+function wUint8ToBmpBase64(src: Uint8Array, srcW: number, srcH: number, size: number): string {
+  'worklet';
+  const rowBytes = size * 3;
+  const pad      = (4 - (rowBytes % 4)) % 4;
+  const pixData  = (rowBytes + pad) * size;
+  const fileSize = 54 + pixData;
+  const buf      = new Uint8Array(fileSize);
+  let o = 0;
+
+  const w16 = (v: number) => { buf[o++] = v & 0xff; buf[o++] = (v >> 8) & 0xff; };
+  const w32 = (v: number) => {
+    buf[o++] = v & 0xff;
+    buf[o++] = (v >> 8)  & 0xff;
+    buf[o++] = (v >> 16) & 0xff;
+    buf[o++] = (v >> 24) & 0xff;
+  };
+
+  // BITMAPFILEHEADER (14 bytes)
+  buf[o++] = 0x42; buf[o++] = 0x4d;
+  w32(fileSize); w32(0); w32(54);
+
+  // BITMAPINFOHEADER (40 bytes)
+  w32(40); w32(size); w32(-size >>> 0);
+  w16(1); w16(24); w32(0); w32(pixData);
+  w32(2835); w32(2835); w32(0); w32(0);
+
+  // Pixel rows — nearest-neighbour resample, BMP = BGR byte order
+  for (let y = 0; y < size; y++) {
+    const fy = Math.min(srcH - 1, Math.floor((y / size) * srcH));
+    for (let x = 0; x < size; x++) {
+      const fx = Math.min(srcW - 1, Math.floor((x / size) * srcW));
+      const si = (fy * srcW + fx) * 3;
+      buf[o++] = src[si + 2] ?? 0;  // B
+      buf[o++] = src[si + 1] ?? 0;  // G
+      buf[o++] = src[si]     ?? 0;  // R
+    }
+    for (let p = 0; p < pad; p++) buf[o++] = 0;
+  }
+
+  return wBytesToBase64(buf);
+}
+
 // ─── hook ─────────────────────────────────────────────────────────────────────
 
 export function useFrameSource({
@@ -276,14 +495,21 @@ export function useFrameSource({
   onFrameResult,
   minIntervalMs = 200,
   needsEmbedding,
+  onModelDebug,
 }: FrameSourceOptions) {
   const { resize } = useResizePlugin();
 
   const isBusy      = useSharedValue(false);
   const lastRunTime = useSharedValue(0);
 
+  /** Set to true by triggerDebugCapture(); worklet captures once then resets. */
+  const captureNext = useSharedValue(false);
+
   const cbRef = useRef(onFrameResult);
   cbRef.current = onFrameResult;
+
+  const dbgRef = useRef(onModelDebug);
+  dbgRef.current = onModelDebug;
 
   // JS-thread receiver: accepts a plain WorkletFrameResult (no binary blobs).
   const deliver = useRunOnJS(
@@ -295,6 +521,14 @@ export function useFrameSource({
       }
     },
     [isBusy],
+  );
+
+  // JS-thread receiver for debug model frame (one-shot, fired by captureNext).
+  const deliverModelDebug = useRunOnJS(
+    (frame: ModelDebugFrame) => {
+      dbgRef.current?.(frame);
+    },
+    [],
   );
 
   // Destructure so each JSI HostObject is individually captured by the worklet.
@@ -320,9 +554,26 @@ export function useFrameSource({
       // ── 2. BlazeFace: full frame 128×128, [0,1] ────────────────────────────
       const bfInput = wResample01(src, FRAME_SIZE, FRAME_SIZE, 0, 0, 1, 1, BF);
       const bfRaw   = blazeface.runSync([bfInput]);
-      const bbox    = wDecodeBlazeFace(bfRaw[0] as Float32Array, 0.5);
+      // bfRaw[0] = 896×16 anchor-relative regression offsets
+      // bfRaw[1] = 896×1  classification logits
+      const bbox    = wDecodeBlazeFace(
+        bfRaw[0] as Float32Array,
+        bfRaw[1] as Float32Array,
+        BF_ANCHOR_CX,
+        BF_ANCHOR_CY,
+        0.5,
+      );
 
+      // ── 3. Debug capture — NO-FACE branch ────────────────────────────────
+      // Fires even when BlazeFace found nothing, so you can see the raw frame
+      // and diagnose why detection failed (bad lighting, crop, angle, etc.).
       if (!bbox) {
+        if (captureNext.value) {
+          captureNext.value = false;
+          const srcFrameBmp  = wUint8ToBmpBase64(src, FRAME_SIZE, FRAME_SIZE, 160);
+          const blazefaceBmp = wFloat32ToBmpBase64(bfInput, BF);
+          deliverModelDebug({ srcFrameBmp, blazefaceBmp, faceCropBmp: '', bboxNorm: null });
+        }
         deliver({ detected: false });
         return;
       }
@@ -333,17 +584,17 @@ export function useFrameSource({
       const bh     = bbox[3];
       const bScore = bbox[4];
 
-      // ── 3. Brightness (cheap grid sample over face region) ─────────────────
+      // ── 4. Brightness (cheap grid sample over face region) ─────────────────
       const brightness = wMeanLuma(src, FRAME_SIZE, FRAME_SIZE, bx, by, bw, bh);
 
-      // ── 4. FaceMesh: expanded bbox, 192×192, [0,1] ────────────────────────
+      // ── 5. FaceMesh: expanded bbox, 192×192, [0,1] ────────────────────────
       const exp     = wExpandBox(bx, by, bw, bh, 0.25);
       const ex = exp[0]; const ey = exp[1]; const ew = exp[2]; const eh = exp[3];
       const fmInput    = wResample01(src, FRAME_SIZE, FRAME_SIZE, ex, ey, ew, eh, FM);
       const fmRaw      = faceMesh.runSync([fmInput]);
       const landmarks  = wDecodeFaceMesh(fmRaw[0] as Float32Array, ex, ey, ew, eh);
 
-      // ── 5. Liveness: two MiniFASNet branches (scales 2.7 and 4.0) ─────────
+      // ── 6. Liveness: two MiniFASNet branches (scales 2.7 and 4.0) ─────────
       const expLv   = wExpandBox(bx, by, bw, bh, 0.1);
       const expLvX  = expLv[0]; const expLvY = expLv[1];
       const expLvW  = expLv[2]; const expLvH = expLv[3];
@@ -360,12 +611,25 @@ export function useFrameSource({
 
       const livenessScore = (live0 + live1) / 2;
 
-      // ── 6. Embedding: only when the analyzing stage requests it ───────────
+      // ── 7. Embedding: only when the analyzing stage requests it ───────────
       let embedding: number[] | null = null;
       if (needsEmbedding.value) {
         const emInput = wResampleM1P1(src, FRAME_SIZE, FRAME_SIZE, ex, ey, ew, eh, EM);
         const emRaw   = embModel.runSync([emInput]);
         embedding     = wL2NormalizeToArray(emRaw[0] as Float32Array);
+      }
+
+      // ── 8. Debug capture — FACE-DETECTED branch ───────────────────────────
+      // Three images saved per trigger:
+      //   src_frame_*.bmp  — 160×160 full frame (resize-plugin uint8 output)
+      //   bf_input_*.bmp   — 128×128 BlazeFace float input
+      //   face_crop_*.bmp  — 192×192 FaceMesh crop float input
+      if (captureNext.value) {
+        captureNext.value = false;
+        const srcFrameBmp  = wUint8ToBmpBase64(src, FRAME_SIZE, FRAME_SIZE, 160);
+        const blazefaceBmp = wFloat32ToBmpBase64(bfInput, BF);
+        const faceCropBmp  = wFloat32ToBmpBase64(fmInput, FM);
+        deliverModelDebug({ srcFrameBmp, blazefaceBmp, faceCropBmp, bboxNorm: [bx, by, bw, bh] });
       }
 
       deliver({
@@ -377,9 +641,16 @@ export function useFrameSource({
         embedding,
       });
     },
-    [resize, deliver, isBusy, lastRunTime, needsEmbedding,
-     blazeface, faceMesh, liveness0, liveness1, embModel],
+    [resize, deliver, isBusy, lastRunTime, needsEmbedding, captureNext, deliverModelDebug,
+     blazeface, faceMesh, liveness0, liveness1, embModel, BF_ANCHOR_CX, BF_ANCHOR_CY],
   );
 
-  return { frameProcessor };
+  /**
+   * Call this (e.g. from a 5-second timer) to request a 64×64 thumbnail of
+   * the exact buffer the TFLite models will process on the next worklet frame.
+   * The result arrives via `onModelDebug`.
+   */
+  const triggerDebugCapture = () => { captureNext.value = true; };
+
+  return { frameProcessor, triggerDebugCapture };
 }

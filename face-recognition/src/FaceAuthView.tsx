@@ -8,13 +8,20 @@ import {
 } from 'react-native-vision-camera';
 import { useSharedValue } from 'react-native-worklets-core';
 
-import { estimateHeadPose, type DetectorModels } from './detector';
+import { estimateHeadPose } from './detector';
 import { useFrameSource, type FrameSourceModels, type WorkletFrameResult } from './frameSource';
 import { getConfig } from './runtime';
 import { useFaceAuth } from './useFaceAuth';
 import type { PipelineModels } from './pipeline';
 import type { AuthMode, AuthResult, Challenge, DetectedFace, Guidance, Point } from './types';
 import { FaceMaskOverlay } from './FaceMaskOverlay';
+import {
+  logDetailedScores,
+  startPeriodicCapture,
+  stopPeriodicCapture,
+  saveModelDebugFrame,
+  type DebugScores,
+} from './debug';
 
 /** Big, glanceable instruction for the current challenge / state. */
 const CHALLENGE_PROMPT: Record<Challenge, { icon: string; title: string }> = {
@@ -63,9 +70,15 @@ export function FaceAuthView({
   const { hasPermission, requestPermission } = useCameraPermission();
   const device = useCameraDevice('front');
   const format = useCameraFormat(device, [
-    { videoResolution: { width: 1920, height: 1080 } },
+    { videoResolution: { width: 720, height: 1280 } },
     { fps: 30 },
   ]);
+
+  // Debug: camera ref enables takePhoto() for periodic frame saves.
+  const cameraRef = useRef<Camera>(null);
+  const lastDebugRef = useRef<number>(0);
+  const DEBUG_INTERVAL_MS = 5_000;
+
   const [hint, setHint] = useState<string>('Position your face in the frame');
   const [challenge, setChallenge] = useState<Challenge | undefined>();
   const [verifying, setVerifying] = useState(false);
@@ -143,6 +156,8 @@ export function FaceAuthView({
         lms.push({ x: result.landmarks[i]!, y: result.landmarks[i + 1]! });
       }
 
+      const headPose = estimateHeadPose(lms);
+
       const face: DetectedFace = {
         box: {
           x: result.bbox[0],
@@ -152,23 +167,23 @@ export function FaceAuthView({
         },
         score: result.bbox[4],
         landmarks: lms,
-        headPose: estimateHeadPose(lms),
+        headPose,
       };
-
       await feed(null, [face], {
         brightness: result.brightness,
         livenessScore: result.livenessScore,
         embedding: result.embedding ? new Float32Array(result.embedding) : null,
       });
     },
-    [active, feed],
+    [active, feed, stageRef],
   );
 
-  const { frameProcessor } = useFrameSource({
+  const { frameProcessor, triggerDebugCapture } = useFrameSource({
     models,
     onFrameResult,
     minIntervalMs: 0,   // isBusy guard throttles to inference speed
     needsEmbedding,
+    onModelDebug: __DEV__ ? saveModelDebugFrame : undefined,
   });
 
   useEffect(() => {
@@ -183,6 +198,19 @@ export function FaceAuthView({
       start();
     }
   }, [autoStart, hasPermission, device, start]);
+
+  // ── Debug: every DEBUG_INTERVAL_MS — save a camera JPEG + model-input BMP ──
+  useEffect(() => {
+    if (!__DEV__) return;
+    if (active) {
+      startPeriodicCapture(cameraRef, DEBUG_INTERVAL_MS);
+      const t = setInterval(() => triggerDebugCapture(), DEBUG_INTERVAL_MS);
+      return () => { clearInterval(t); stopPeriodicCapture(); };
+    } else {
+      stopPeriodicCapture();
+    }
+    return () => stopPeriodicCapture();
+  }, [active, triggerDebugCapture]);
 
   const handleBack = useCallback(() => {
     cancel();
@@ -218,18 +246,18 @@ export function FaceAuthView({
   return (
     <View style={[styles.container, style]}>
       <Camera
+        ref={cameraRef}
         style={StyleSheet.absoluteFill}
         device={device}
         format={format}
         fps={30}
         isActive={true}
+        photo={true}
         frameProcessor={frameProcessor}
-        // photoHdr={true}
-        // videoHdr={true}
       />
-      
+
       {BackButton}
-      <FaceMaskOverlay/>
+      <FaceMaskOverlay />
       {/* Prominent centered prompt: the challenge instruction or "Verifying…" */}
       {(challenge || verifying) && (
         <View style={styles.promptCard} pointerEvents="none">

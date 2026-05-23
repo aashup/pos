@@ -57,7 +57,6 @@ export function evaluateQuality(
 ): QualityResult {
   const issues: QualityIssue[] = [];
   const { faces, frame } = input;
-
   if (faces.length === 0) {
     return fail(['no_face']);
   }
@@ -82,7 +81,7 @@ export function evaluateQuality(
 
   // Sharpness: only checkable with raw frame data; skip in worklet mode.
   if (frame && sharpness(frame, face) < t.minSharpness) issues.push('blurry');
-
+console.log(issues)
   return issues.length === 0
     ? { ok: true, issues: [], guidance: '' }
     : fail(issues);
@@ -103,7 +102,8 @@ export function largestFace(faces: DetectedFace[]): DetectedFace {
 function isCentered(face: DetectedFace): boolean {
   const cx = face.box.x + face.box.width / 2;
   const cy = face.box.y + face.box.height / 2;
-  return cx > 0.2 && cx < 0.8 && cy > 0.2 && cy < 0.8;
+  console.log(JSON.stringify(face.box, null, 2), cx, cy);
+  return cx > 0.15 && cx < 0.85 && cy > 0.15 && cy < 0.85;
 }
 
 /** Mean luma (0..255) over the face box region. Samples on a grid to stay cheap. */

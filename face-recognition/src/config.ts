@@ -61,10 +61,10 @@ export interface FaceAuthConfig {
 
 export const DEFAULT_THRESHOLDS: Thresholds = {
   detectScore: 0.7,
-  minFaceArea: 0.06,
-  maxYaw: 20,
-  maxPitch: 20,
-  maxRoll: 15,
+  minFaceArea: 0.04,
+  maxYaw: 30,
+  maxPitch: 50,
+  maxRoll: 50,
   minBrightness: 50,
   maxBrightness: 230,
   minSharpness: 80,
