@@ -198,34 +198,35 @@ export default function App() {
 
   // ── Camera session ──────────────────────────────────────────────────────────
   if (session) {
-    const isEnroll   = session === 'enroll';
-    const shotLabel  = isEnroll
-      ? `Shot ${captureStep.current} of ${ENROLL_SHOTS} — look straight at the camera`
-      : undefined;
+    const isEnroll = session === 'enroll';
 
     return (
-      <FaceAuthView
-        mode={session}
-        models={models}
-        onClose={() => {
-          // User tapped back — abort enrollment
-          if (isEnroll) {
-            captureStep.current  = 0;
-            collectedEmbs.current = [];
-          }
-          setSession(null);
-        }}
-        onGuidance={(g) => {
-          // Inject shot counter into the first guidance message during enroll
-          if (isEnroll && shotLabel && g.message === 'Position your face in the frame') {
-            // guidance is display-only; hint shown via FaceAuthView's own hintBar
-          }
-          void g; // suppress unused warning
-        }}
-        onResult={(r) => void handleResult(r, session)}
-        // Pass shot label as a style override so it appears above the camera
-        style={isEnroll && shotLabel ? { paddingTop: 0 } : undefined}
-      />
+      <View style={{ flex: 1 }}>
+        <FaceAuthView
+          mode={session}
+          models={models}
+          onClose={() => {
+            if (isEnroll) {
+              captureStep.current   = 0;
+              collectedEmbs.current = [];
+            }
+            setSession(null);
+          }}
+          onResult={(r) => void handleResult(r, session)}
+        />
+
+        {/* Shot counter badge — shown on top of the camera during enrollment */}
+        {isEnroll && (
+          <View style={styles.shotBadge} pointerEvents="none">
+            <Text style={styles.shotBadgeStep}>
+              Shot {captureStep.current} of {ENROLL_SHOTS}
+            </Text>
+            <Text style={styles.shotBadgeName}>
+              {pendingEnrollId.current}
+            </Text>
+          </View>
+        )}
+      </View>
     );
   }
 
@@ -363,6 +364,35 @@ const styles = StyleSheet.create({
   label:           { color: '#e2e8f0', fontSize: 14 },
   hint:            { color: '#64748b', fontSize: 12, marginTop: 8, textAlign: 'center' },
   hintCode:        { color: '#38bdf8', fontFamily: 'monospace' },
+  // ── Shot counter badge (enroll mode, sits above the camera) ─────────────────
+  shotBadge: {
+    position: 'absolute',
+    top: 52,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  shotBadgeStep: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    backgroundColor: 'rgba(14,165,233,0.92)',
+    paddingHorizontal: 22,
+    paddingVertical: 8,
+    borderRadius: 24,
+    overflow: 'hidden',
+    textAlign: 'center',
+  },
+  shotBadgeName: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    marginTop: 6,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
   // ── Dialog ───────────────────────────────────────────────────────────────────
   overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', padding: 32 },
   dialog:          { backgroundColor: '#1e293b', borderRadius: 16, padding: 24, gap: 14 },

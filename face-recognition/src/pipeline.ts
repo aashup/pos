@@ -168,8 +168,16 @@ export class FaceAuthSession {
     }
     this.goodGateFrames += 1;
     if (this.goodGateFrames >= this.gateFrames) {
-      // Go straight to the active challenge — heavy liveness/embedding are
-      // deferred to the analyzing stage so the challenge loop stays fast.
+      // Enroll mode: skip the active challenge — the user is registering their
+      // own face, so there is no fraud risk and no point asking them to blink.
+      // Go straight to analyzing so only the embedding is captured.
+      if (this.opts.mode === 'enroll') {
+        this.stage = 'analyzing';
+        dbg('gate passed → analyzing (enroll — challenge skipped)');
+        return { stage: 'analyzing', guidance: { message: 'Hold still…' }, done: false };
+      }
+
+      // Identify / verify: go through the active challenge for liveness proof.
       this.challenge = new ActiveChallenge(
         { pool: this.opts.challengePool, timeoutMs: this.opts.challengeTimeoutMs },
         Date.now(),
@@ -332,15 +340,28 @@ export class FaceAuthSession {
       });
     }
     if (this.opts.mode === 'verify') {
-      const v = verify(probe, this.opts.personnelId!, this.opts.templates, this.opts.thresholds.matchCosine);
-      dbg(`verify ${this.opts.personnelId}: score=${f2(v.score)} thresh=${f2(this.opts.thresholds.matchCosine)} ok=${v.ok}`);
+      // Pre-filter to this person's templates only → O(K) verify, not O(N).
+      const personnelTemplates = this.opts.templates.filter(
+        (t) => t.personnelId === this.opts.personnelId!,
+      );
+      const v = verify(probe, personnelTemplates, this.opts.thresholds.matchCosine);
+      // score === null means no template was enrolled for this personnelId at all
+      // (distinct from a genuine low-scoring mismatch where score is a real number).
+      const noTemplate = v.score === null;
+      // Clamp null → 0 for the public AuthResult: null would break .toFixed() in
+      // the UI and JSON.stringify(null) loses the value in the audit log.
+      const safeScore = v.score ?? 0;
+      dbg(
+        `verify ${this.opts.personnelId}: score=${noTemplate ? 'N/A (no template)' : f2(v.score!)}` +
+        ` thresh=${f2(this.opts.thresholds.matchCosine)} ok=${v.ok}`,
+      );
       return this.finish({
         ok: v.ok,
         personnelId: v.ok ? this.opts.personnelId : undefined,
-        matchScore: v.score,
+        matchScore: safeScore,
         livenessScore: this.livenessScore,
         challengePassed: true,
-        failureReason: v.ok ? undefined : 'no_match',
+        failureReason: v.ok ? undefined : (noTemplate ? 'no_template' : 'no_match'),
       });
     }
     const { match, best } = identify(probe, this.opts.templates, this.opts.thresholds.matchCosine);

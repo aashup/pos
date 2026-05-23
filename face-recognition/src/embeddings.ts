@@ -107,13 +107,22 @@ export function averageEmbeddings(embeddings: Float32Array[]): Float32Array {
   return l2Normalize(acc);
 }
 
-/** Cosine similarity of two L2-normalized vectors == dot product. */
-export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
+/**
+ * Dot product of two L2-normalized vectors.
+ *
+ * For unit-length embeddings this is mathematically identical to cosine
+ * similarity but skips the magnitude divisions — the cheapest possible
+ * similarity metric for an O(N) matching loop.
+ */
+export function dotProduct(a: Float32Array, b: Float32Array): number {
   if (a.length !== b.length) throw new Error('embedding dimension mismatch');
   let dot = 0;
   for (let i = 0; i < a.length; i++) dot += a[i]! * b[i]!;
   return dot;
 }
+
+/** @deprecated Vectors are L2-normalised — use {@link dotProduct} directly. */
+export const cosineSimilarity = dotProduct;
 
 /** Encode an embedding as base64 little-endian float32 (server wire format). */
 export function embeddingToBase64(v: Float32Array): string {
