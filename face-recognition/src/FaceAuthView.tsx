@@ -141,6 +141,11 @@ export function FaceAuthView({
     onGuidance: handleGuidanceWithEmbedFlag,
   });
 
+  // DEBUG — log raw liveness tensor once per session (first analyzing frame).
+  // Shows: tensor length per branch, all raw values, which index is largest.
+  // Remove once liveness class-index and normalisation are confirmed correct.
+  const livenessRawLoggedRef = useRef(false);
+
   // Convert WorkletFrameResult → DetectedFace + PrecomputedFrameData, then
   // advance the pipeline. All TFLite inference already happened in the worklet.
   const onFrameResult = useCallback(
@@ -150,6 +155,22 @@ export function FaceAuthView({
       if (!result.detected) {
         await feed(null, []);
         return;
+      }
+
+      // DEBUG: log raw liveness tensor once when we first enter analyzing stage.
+      if (__DEV__ && !livenessRawLoggedRef.current && stageRef.current === 'analyzing') {
+        livenessRawLoggedRef.current = true;
+        const sep = result.livenessRaw.indexOf(-1);
+        const b0  = sep >= 0 ? result.livenessRaw.slice(0, sep)       : result.livenessRaw;
+        const b1  = sep >= 0 ? result.livenessRaw.slice(sep + 1)      : [];
+        const fmt = (arr: number[]) =>
+          arr.map((v, i) => `[${i}]=${v.toFixed(4)}`).join('  ');
+        console.log('[LivenessDebug] branch0 raw values:', fmt(b0));
+        console.log('[LivenessDebug] branch1 raw values:', fmt(b1));
+        console.log(
+          '[LivenessDebug] interpretation: currently reading index 1 as live.',
+          `branch0 idx0=${b0[0]?.toFixed(4)} idx1=${b0[1]?.toFixed(4)} idx2=${b0[2]?.toFixed(4) ?? 'N/A'}`,
+        );
       }
 
       // Reconstruct Point[] landmarks from flat [x0,y0,x1,y1,...] array.
@@ -177,7 +198,7 @@ export function FaceAuthView({
         embedding: result.embedding ? new Float32Array(result.embedding) : null,
       });
     },
-    [active, feed, stageRef],
+    [active, feed, stageRef, livenessRawLoggedRef],
   );
 
   // Resolve config once per render to get the current centerMargin.
@@ -221,17 +242,17 @@ export function FaceAuthView({
   }, [autoStart, hasPermission, device, start]);
 
   // ── Debug: every DEBUG_INTERVAL_MS — save a camera JPEG + model-input BMP ──
-  useEffect(() => {
-    if (!__DEV__) return;
-    if (active) {
-      startPeriodicCapture(cameraRef, DEBUG_INTERVAL_MS);
-      const t = setInterval(() => triggerDebugCapture(), DEBUG_INTERVAL_MS);
-      return () => { clearInterval(t); stopPeriodicCapture(); };
-    } else {
-      stopPeriodicCapture();
-    }
-    return () => stopPeriodicCapture();
-  }, [active, triggerDebugCapture]);
+  // useEffect(() => {
+  //   if (!__DEV__) return;
+  //   if (active) {
+  //     startPeriodicCapture(cameraRef, DEBUG_INTERVAL_MS);
+  //     const t = setInterval(() => triggerDebugCapture(), DEBUG_INTERVAL_MS);
+  //     return () => { clearInterval(t); stopPeriodicCapture(); };
+  //   } else {
+  //     stopPeriodicCapture();
+  //   }
+  //   return () => stopPeriodicCapture();
+  // }, [active, triggerDebugCapture]);
 
   const handleBack = useCallback(() => {
     cancel();

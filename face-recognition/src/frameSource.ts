@@ -53,6 +53,14 @@ export type WorkletFrameResult =
       brightness: number;
       /** Averaged passive-liveness score (0 = spoof, 1 = live). */
       livenessScore: number;
+      /**
+       * DEBUG — raw softmax output of each liveness branch BEFORE any index
+       * selection. Array layout: [branch0_val0, branch0_val1, ..., SEPARATOR(-1),
+       * branch1_val0, branch1_val1, ...].
+       * Log this to diagnose wrong class-index or double-normalisation.
+       * Remove once liveness is confirmed working.
+       */
+      livenessRaw: number[];
       /** L2-normalised 512-d FaceNet embedding, or null if not needed this frame. */
       embedding: number[] | null;
     };
@@ -186,6 +194,56 @@ function wResample01(
       out[di]     = (src[si]     ?? 0) / 255;
       out[di + 1] = (src[si + 1] ?? 0) / 255;
       out[di + 2] = (src[si + 2] ?? 0) / 255;
+    }
+  }
+  return out;
+}
+
+/**
+ * Resample and preprocess a crop for MiniFASNet (Silent-Face-Anti-Spoofing).
+ *
+ * MiniFASNet was trained in PyTorch with:
+ *   transforms.ToTensor()           → /255  → [0,1]
+ *   transforms.Normalize(
+ *     mean=[0.406, 0.456, 0.485],   (BGR order — OpenCV default)
+ *     std =[0.225, 0.224, 0.229])
+ *
+ * Our resize plugin delivers RGB, so we must:
+ *   1. Swap channels: RGB → BGR
+ *   2. Apply per-channel ImageNet normalisation: (x/255 - mean) / std
+ *
+ * Without this the model receives a completely out-of-distribution input
+ * and collapses to predicting "spoof" for everything.
+ */
+function wResampleLiveness(
+  src: Uint8Array,
+  srcW: number,
+  srcH: number,
+  boxX: number,
+  boxY: number,
+  boxW: number,
+  boxH: number,
+  size: number,
+): Float32Array {
+  'worklet';
+  const out = new Float32Array(size * size * 3);
+  const sx0 = boxX * srcW;
+  const sy0 = boxY * srcH;
+  const sw  = boxW  * srcW;
+  const sh  = boxH  * srcH;
+  for (let y = 0; y < size; y++) {
+    const fy = Math.min(srcH - 1, Math.floor(sy0 + (y / size) * sh));
+    for (let x = 0; x < size; x++) {
+      const fx = Math.min(srcW - 1, Math.floor(sx0 + (x / size) * sw));
+      const si = (fy * srcW + fx) * 3;
+      const di = (y * size + x) * 3;
+      // RGB → BGR, then ImageNet normalise each channel
+      const r = (src[si]     ?? 0) / 255;
+      const g = (src[si + 1] ?? 0) / 255;
+      const b = (src[si + 2] ?? 0) / 255;
+      out[di]     = (b - 0.406) / 0.225;   // B  mean=0.406  std=0.225
+      out[di + 1] = (g - 0.456) / 0.224;   // G  mean=0.456  std=0.224
+      out[di + 2] = (r - 0.485) / 0.229;   // R  mean=0.485  std=0.229
     }
   }
   return out;
@@ -329,6 +387,20 @@ function wDecodeLiveness(raw: Float32Array | Int32Array | Uint8Array): number {
     sum += e;
   }
   return sum > 0 ? (exps[1] ?? 0) / sum : 0;
+}
+
+/**
+ * DEBUG — convert a typed array to a plain number[] so it can be passed
+ * safely through useRunOnJS. Also rounds to 4 decimal places for readability.
+ */
+function wTypedToArray(raw: Float32Array | Int32Array | Uint8Array): number[] {
+  'worklet';
+  const r = raw as Float32Array;
+  const out: number[] = new Array(r.length);
+  for (let i = 0; i < r.length; i++) {
+    out[i] = Math.round((r[i] ?? 0) * 10000) / 10000;
+  }
+  return out;
 }
 
 /**
@@ -665,21 +737,38 @@ export function useFrameSource({
       const landmarks  = wDecodeFaceMesh(fmRaw[0] as Float32Array, ex, ey, ew, eh);
 
       // ── 6. Liveness: two MiniFASNet branches (scales 2.7 and 4.0) ─────────
-      const expLv   = wExpandBox(bx, by, bw, bh, 0.1);
-      const expLvX  = expLv[0]; const expLvY = expLv[1];
-      const expLvW  = expLv[2]; const expLvH = expLv[3];
+      // MiniFASNet expects a SQUARE crop centred on the face. We derive the
+      // square from max(w, h) so portrait/landscape faces both produce an
+      // undistorted crop. Then scaleBox expands it by the branch's scale factor.
+      // Each crop is preprocessed with wResampleLiveness (BGR + ImageNet norm).
+      const faceSize = Math.max(bw, bh);
+      const faceCx   = bx + bw / 2;
+      const faceCy   = by + bh / 2;
+      const sqX      = Math.max(0, faceCx - faceSize / 2);
+      const sqY      = Math.max(0, faceCy - faceSize / 2);
+      const sqW      = Math.min(1 - sqX, faceSize);
+      const sqH      = Math.min(1 - sqY, faceSize);
+      const expLv    = wExpandBox(sqX, sqY, sqW, sqH, 0.1);
+      const expLvX   = expLv[0]; const expLvY = expLv[1];
+      const expLvW   = expLv[2]; const expLvH = expLv[3];
 
-      const sc0     = wScaleBox(expLvX, expLvY, expLvW, expLvH, 2.7);
-      const lv0Input = wResample01(src, FRAME_SIZE, FRAME_SIZE, sc0[0], sc0[1], sc0[2], sc0[3], LV);
+      const sc0      = wScaleBox(expLvX, expLvY, expLvW, expLvH, 2.7);
+      const lv0Input = wResampleLiveness(src, FRAME_SIZE, FRAME_SIZE, sc0[0], sc0[1], sc0[2], sc0[3], LV);
       const lv0Raw   = liveness0.runSync([lv0Input]);
       const live0    = wDecodeLiveness(lv0Raw[0] as Float32Array);
+      // DEBUG: raw softmax output of branch 0 (all values, before index selection)
+      const lv0Debug = wTypedToArray(lv0Raw[0] as Float32Array);
 
-      const sc1     = wScaleBox(expLvX, expLvY, expLvW, expLvH, 4.0);
-      const lv1Input = wResample01(src, FRAME_SIZE, FRAME_SIZE, sc1[0], sc1[1], sc1[2], sc1[3], LV);
+      const sc1      = wScaleBox(expLvX, expLvY, expLvW, expLvH, 4.0);
+      const lv1Input = wResampleLiveness(src, FRAME_SIZE, FRAME_SIZE, sc1[0], sc1[1], sc1[2], sc1[3], LV);
       const lv1Raw   = liveness1.runSync([lv1Input]);
       const live1    = wDecodeLiveness(lv1Raw[0] as Float32Array);
+      // DEBUG: raw softmax output of branch 1
+      const lv1Debug = wTypedToArray(lv1Raw[0] as Float32Array);
 
       const livenessScore = (live0 + live1) / 2;
+      // DEBUG: pack both branches separated by -1 sentinel for logging in JS thread
+      const livenessRaw = [...lv0Debug, -1, ...lv1Debug];
 
       // ── 7. Embedding: only when the analyzing stage requests it ───────────
       let embedding: number[] | null = null;
@@ -708,6 +797,7 @@ export function useFrameSource({
         landmarks,
         brightness,
         livenessScore,
+        livenessRaw,
         embedding,
       });
     },

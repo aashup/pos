@@ -138,11 +138,11 @@ async function _takeAndSavePhoto(ref: React.RefObject<Camera>): Promise<void> {
 
     await RNFS.copyFile(photo.path, dest);
 
-    console.log(`[DBG] 📸 Frame #${_captureCount} saved`);
-    console.log(`[DBG]    Path : ${dest}`);
-    console.log(`[DBG]    Open : Files → Internal Storage → Android → data → com.faceauthexample → files → faceauth_debug`);
+    // console.log(`[DBG] 📸 Frame #${_captureCount} saved`);
+    // console.log(`[DBG]    Path : ${dest}`);
+    // console.log(`[DBG]    Open : Files → Internal Storage → Android → data → com.faceauthexample → files → faceauth_debug`);
   } catch (e: any) {
-    console.warn('[DBG] takePhoto/save failed:', e?.message ?? String(e));
+    // console.warn('[DBG] takePhoto/save failed:', e?.message ?? String(e));
   }
 }
 
@@ -164,7 +164,7 @@ export function startPeriodicCapture(
   void _takeAndSavePhoto(ref);
   _captureTimer = setInterval(() => void _takeAndSavePhoto(ref), intervalMs);
 
-  console.log(`[DBG] Periodic capture started — saving frame every ${intervalMs / 1000}s`);
+  // console.log(`[DBG] Periodic capture started — saving frame every ${intervalMs / 1000}s`);
 }
 
 /**

@@ -77,12 +77,23 @@ export class FaceAuthSession {
   private stage: Stage = 'gating';
   private goodGateFrames = 0;
   private challenge: ActiveChallenge | null = null;
-  private livenessScore = 0;
-  private livenessChecked = false;
+  /** Per-frame liveness scores collected during the analyzing stage. */
+  private livenessScores: number[] = [];
   private embeddings: Float32Array[] = [];
   private lastLog = 0;
   private readonly gateFrames: number;
   private readonly embedFrames: number;
+
+  /** Number of frames to sample before making a liveness decision. */
+  private get livenessFrames(): number {
+    return this.opts.thresholds.livenessFrames ?? 4;
+  }
+
+  /** Running average of all collected liveness scores (0 = spoof, 1 = live). */
+  private get livenessScore(): number {
+    const s = this.livenessScores;
+    return s.length ? s.reduce((a, b) => a + b, 0) / s.length : 0;
+  }
 
   constructor(
     private readonly models: PipelineModels,
@@ -217,40 +228,65 @@ export class FaceAuthSession {
       { faces, frame: frame ?? undefined, brightness: pre?.brightness },
       this.opts.thresholds,
     );
-    console.log("From q => " , q)
     if (!q.ok) {
       return { stage: 'analyzing', guidance: { message: q.guidance }, done: false };
     }
     const face = largestFace(faces);
 
-    // Passive liveness: run exactly once, after the challenge passed.
-    if (!this.livenessChecked) {
-      let liveScore: number;
+    // ── Passive liveness: collect livenessFrames samples, then decide ────────
+    // Each good frame contributes one score. We log every sample so the Metro
+    // console shows the full picture. Decision is made only once all N samples
+    // are in — a single noisy frame cannot cause a false spoof rejection.
+    if (this.livenessScores.length < this.livenessFrames) {
+      let sampleScore: number;
+
       if (pre?.livenessScore !== undefined) {
-        // Precomputed by worklet — use directly.
-        liveScore = pre.livenessScore;
-        dbg(`liveness (worklet): live=${f2(liveScore)} spoof=${f2(1 - liveScore)}`);
+        // Precomputed by worklet (normal camera path).
+        sampleScore = pre.livenessScore;
       } else if (frame) {
-        // Fallback: JS-side inference (tests / headless mode).
+        // Fallback: JS-side inference (unit tests / headless mode).
         const lv = await checkLiveness(frame, face, this.models.liveness, this.opts.thresholds.spoofReject);
-        liveScore = lv.liveScore;
-        dbg(`liveness (JS): live=${f2(lv.liveScore)} spoof=${f2(lv.spoofScore)} isLive=${lv.isLive}`);
+        sampleScore = lv.liveScore;
       } else {
-        liveScore = 1; // no data available — assume live
+        // Embedding not available this frame yet — wait for next frame.
+        return { stage: 'analyzing', guidance: { message: 'Verifying…' }, done: false };
       }
-      this.livenessChecked = true;
-      this.livenessScore   = liveScore;
-      const spoofScore = 1 - liveScore;
-      if (spoofScore >= this.opts.thresholds.spoofReject) {
+
+      this.livenessScores.push(sampleScore);
+      const n       = this.livenessScores.length;
+      const runAvg  = this.livenessScore;
+
+      dbg(
+        `liveness sample ${n}/${this.livenessFrames}: ` +
+        `live=${f2(sampleScore)} spoof=${f2(1 - sampleScore)} ` +
+        `runningAvg=${f2(runAvg)} threshold=${f2(this.opts.thresholds.spoofReject)}`,
+      );
+
+      // Still collecting — wait for more frames.
+      if (n < this.livenessFrames) {
+        return { stage: 'analyzing', guidance: { message: 'Verifying…' }, done: false };
+      }
+
+      // All N samples collected — make the final averaged decision.
+      const finalAvg   = runAvg;
+      const finalSpoof = 1 - finalAvg;
+      dbg(
+        `liveness FINAL: samples=[${this.livenessScores.map(f2).join(', ')}] ` +
+        `avg=${f2(finalAvg)} spoofAvg=${f2(finalSpoof)} ` +
+        `${finalSpoof >= this.opts.thresholds.spoofReject ? 'REJECTED' : 'PASSED'}`,
+      );
+
+      if (finalSpoof >= this.opts.thresholds.spoofReject) {
         this.stage = 'done';
         return this.finish({
           ok: false,
           matchScore: 0,
-          livenessScore: liveScore,
+          livenessScore: finalAvg,
           challengePassed: true,
           failureReason: 'liveness_failed',
         });
       }
+      // Passed — fall through to embedding collection below.
     }
 
     // Embedding: use precomputed value or fall back to JS-side inference.

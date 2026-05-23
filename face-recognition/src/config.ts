@@ -22,6 +22,12 @@ export interface Thresholds {
   /** Cosine similarity required to declare a match. */
   matchCosine: number;
   /**
+   * Number of good frames to sample liveness across before making a decision.
+   * Scores are averaged — all N frames must be collected before pass/fail.
+   * Default 4. Set to 1 to restore single-frame behaviour.
+   */
+  livenessFrames: number;
+  /**
    * Normalised margin from each frame edge within which the face centre must
    * fall to pass the centering check. Default 0.10 → face centre accepted
    * anywhere in the middle 80 % of the frame (0.10 → 0.90 on both axes).
@@ -76,8 +82,9 @@ export const DEFAULT_THRESHOLDS: Thresholds = {
   minBrightness: 50,
   maxBrightness: 230,
   minSharpness: 80,
-  spoofReject: 0.5,
+  spoofReject: 0.35,
   matchCosine: 0.65,
+  livenessFrames: 4,
   centerMargin: 0.10,
 };
 

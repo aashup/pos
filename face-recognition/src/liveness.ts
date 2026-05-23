@@ -1,4 +1,4 @@
-import { expandBox, resampleToSquare, type RgbFrame, type TfliteModel } from './detector';
+import { expandBox, type RgbFrame, type TfliteModel } from './detector';
 import type { BoundingBox, DetectedFace } from './types';
 
 /**
@@ -63,7 +63,46 @@ export function decodeLiveProb(logits: Float32Array): number {
 }
 
 /**
+ * Resample a face crop from an RgbFrame and apply MiniFASNet preprocessing.
+ *
+ * MiniFASNet was trained with:
+ *   transforms.ToTensor()                       → /255
+ *   transforms.Normalize(mean=[0.406,0.456,0.485], std=[0.225,0.224,0.229])
+ * where means/stds are in BGR order (OpenCV default).
+ *
+ * Our RgbFrame is in RGB order so we swap channels while normalising.
+ */
+function resampleLiveness(frame: RgbFrame, box: BoundingBox, size: number): Float32Array {
+  const out  = new Float32Array(size * size * 3);
+  const sx0  = box.x      * frame.width;
+  const sy0  = box.y      * frame.height;
+  const sw   = box.width  * frame.width;
+  const sh   = box.height * frame.height;
+  for (let y = 0; y < size; y++) {
+    const fy = Math.min(frame.height - 1, Math.floor(sy0 + (y / size) * sh));
+    for (let x = 0; x < size; x++) {
+      const fx  = Math.min(frame.width - 1, Math.floor(sx0 + (x / size) * sw));
+      const si  = (fy * frame.width + fx) * 3;
+      const di  = (y * size + x) * 3;
+      // RGB → BGR + ImageNet normalisation
+      const r = frame.data[si]!     / 255;
+      const g = frame.data[si + 1]! / 255;
+      const b = frame.data[si + 2]! / 255;
+      out[di]     = (b - 0.406) / 0.225;   // B  mean=0.406  std=0.225
+      out[di + 1] = (g - 0.456) / 0.224;   // G  mean=0.456  std=0.224
+      out[di + 2] = (r - 0.485) / 0.229;   // R  mean=0.485  std=0.229
+    }
+  }
+  return out;
+}
+
+/**
  * Run the passive-liveness ensemble for one frame.
+ *
+ * Uses a SQUARE crop centred on the face (max(w,h)) so portrait and landscape
+ * faces produce undistorted inputs. Each branch scales that square by its factor
+ * to control how much background context the model sees.
+ *
  * @param spoofReject reject threshold from config.thresholds.spoofReject
  */
 export async function checkLiveness(
@@ -72,16 +111,29 @@ export async function checkLiveness(
   models: LivenessModels,
   spoofReject: number,
 ): Promise<LivenessResult> {
+  // Build a square base box centred on the face (avoids aspect-ratio distortion).
+  const faceSize = Math.max(face.box.width, face.box.height);
+  const faceCx   = face.box.x + face.box.width  / 2;
+  const faceCy   = face.box.y + face.box.height / 2;
+  const squareBox: BoundingBox = {
+    x:      Math.max(0, faceCx - faceSize / 2),
+    y:      Math.max(0, faceCy - faceSize / 2),
+    width:  Math.min(1, faceSize),
+    height: Math.min(1, faceSize),
+  };
+  const expanded = expandBox(squareBox, 0.1);
+
   const n = Math.min(models.branches.length, SCALES.length);
   let liveSum = 0;
   for (let i = 0; i < n; i++) {
-    const crop = scaleBox(expandBox(face.box, 0.1), SCALES[i]!);
-    const input = resampleToSquare(frame, crop, INPUT); // 0..1 RGB
+    const crop  = scaleBox(expanded, SCALES[i]!);
+    const input = resampleLiveness(frame, crop, INPUT);
     const logits = (await models.branches[i]!.run([input]))[0] as Float32Array;
     liveSum += decodeLiveProb(logits);
   }
-  const liveScore = n > 0 ? liveSum / n : 0;
+  const liveScore  = n > 0 ? liveSum / n : 0;
   const spoofScore = 1 - liveScore;
+  console.log("Livescore " , liveScore, n, liveSum)
   return {
     liveScore,
     spoofScore,
