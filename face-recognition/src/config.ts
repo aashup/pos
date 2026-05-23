@@ -44,10 +44,19 @@ export interface Thresholds {
 }
 
 export interface FaceAuthConfig {
-  /** AWS endpoint that receives attendance batches. */
-  awsSyncUrl: string;
-  /** Per-device bearer token issued during provisioning. */
-  deviceToken: string;
+  /**
+   * AWS endpoint that receives attendance batches and serves provisioned
+   * templates. **Optional** — omit (or leave undefined) for a fully offline
+   * deployment where `FaceAuth.enrollLocal()` is used for enrollment.
+   * When absent, `provision()` and `syncNow()` are no-ops and the background
+   * net-watcher is not started.
+   */
+  awsSyncUrl?: string;
+  /**
+   * Per-device bearer token issued during provisioning.
+   * Required only when `awsSyncUrl` is provided.
+   */
+  deviceToken?: string;
   /**
    * Enable SDK debug logging to the native console (Metro / logcat / Xcode).
    * Set to `true` during development; leave `false` (default) in production

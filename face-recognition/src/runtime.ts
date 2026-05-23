@@ -9,8 +9,10 @@ import type { Challenge } from './types';
 
 /** Fully-resolved runtime configuration, available after `init()`. */
 export interface ResolvedConfig {
-  awsSyncUrl: string;
-  deviceToken: string;
+  /** Undefined when running in fully-offline / local-enrollment mode. */
+  awsSyncUrl: string | undefined;
+  /** Undefined when running in fully-offline / local-enrollment mode. */
+  deviceToken: string | undefined;
   thresholds: Thresholds;
   challenges: Challenge[];
   syncIntervalMs: number;
@@ -27,7 +29,7 @@ export function setConfig(config: FaceAuthConfig): ResolvedConfig {
   setDebug(debug);
   current = {
     awsSyncUrl: config.awsSyncUrl,
-    deviceToken: config.deviceToken,
+    deviceToken: config.deviceToken ?? undefined,
     thresholds: resolveThresholds(config.thresholds),
     challenges: config.challenges ?? DEFAULT_CONFIG.challenges,
     syncIntervalMs: config.syncIntervalMs ?? DEFAULT_CONFIG.syncIntervalMs,

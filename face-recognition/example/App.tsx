@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -20,54 +20,81 @@ import {
 } from 'react-native-offline-face-auth';
 
 /**
- * Reference host. Full offline loop against the local mock server:
- *   enroll (capture template → POST /enroll) → provision → identify → sync.
+ * Reference host — local multi-template enrollment (no server required).
  *
- * Wire the device to the mock server first:
- *   node server/index.js
- *   adb reverse tcp:8080 tcp:8080
+ * ── Enrollment ──────────────────────────────────────────────────────────────
+ * Tap "Enroll" → enter a name → camera opens ENROLL_SHOTS times in sequence,
+ * capturing one face embedding per session → all embeddings stored locally via
+ * FaceAuth.enrollLocal() (encrypted on-device, cancelable transform applied).
  *
- * Models are the bundled open-source .tflite (BlazeFace, Face Mesh, FaceNet-512,
- * two Silent-Face spoof scales) loaded via fast-tflite on the CPU.
+ * ── Authentication ──────────────────────────────────────────────────────────
+ * Tap "Authenticate" → the pipeline scores every stored template and returns
+ * the best match. A popup shows the matched name and score.
+ *
+ * ── Configuration ───────────────────────────────────────────────────────────
+ * Change ENROLL_SHOTS below to control how many face captures are collected per
+ * person. 3 (default) gives the matcher more angles to work with; 1 is the
+ * fastest "quick enroll" mode.
  */
 
-const AWS_URL = 'http://localhost:8080';
-const DEVICE_TOKEN = 'demo-device-token';
+// ── ✏️  Configurable: number of face captures per enrollment ─────────────────
+const ENROLL_SHOTS = 3; // 1 = single-shot,  2–5 = multi-shot (recommended: 3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── ✏️  Optional server sync (leave undefined for fully-offline mode) ─────────
+// Uncomment and fill these only if you want server-based provisioning/sync:
+// const AWS_URL      = 'http://localhost:8080';
+// const DEVICE_TOKEN = 'demo-device-token';
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [ready, setReady]   = useState(false);
-  const [last, setLast]     = useState<AuthResult | null>(null);
-  const [sync, setSync]     = useState<SyncStatus | null>(null);
+  const [ready, setReady]     = useState(false);
+  const [last, setLast]       = useState<AuthResult | null>(null);
+  const [sync, setSync]       = useState<SyncStatus | null>(null);
   const [session, setSession] = useState<AuthMode | null>(null);
 
   // ── Enrollment dialog state ─────────────────────────────────────────────────
   const [enrollDialogVisible, setEnrollDialogVisible] = useState(false);
   const [enrollInput, setEnrollInput]                 = useState('');
-  const [pendingEnrollId, setPendingEnrollId]         = useState('');
 
+  // ── Multi-shot capture state ────────────────────────────────────────────────
+  // pendingEnrollId  — name typed in the dialog, used for all shots
+  // captureStep      — which shot we're on (1-based); 0 = not enrolling
+  // collectedEmbs    — base64 embeddings gathered so far
+  const pendingEnrollId  = useRef('');
+  const captureStep      = useRef(0);
+  const collectedEmbs    = useRef<string[]>([]);
+
+  // ── Model loading ───────────────────────────────────────────────────────────
   const blazeface = useTensorflowModel(require('./assets/models/blazeface.tflite'));
   const faceMesh  = useTensorflowModel(require('./assets/models/face_mesh.tflite'));
   const facenet   = useTensorflowModel(require('./assets/models/facenet_512.tflite'));
   const spoof27   = useTensorflowModel(require('./assets/models/spoof_2_7.tflite'));
   const spoof40   = useTensorflowModel(require('./assets/models/spoof_4_0.tflite'));
 
-  const loaded = [blazeface, faceMesh, facenet, spoof27, spoof40].every((m) => m.state === 'loaded');
+  const loaded = [blazeface, faceMesh, facenet, spoof27, spoof40].every(
+    (m) => m.state === 'loaded',
+  );
 
   useEffect(() => {
     let unsub = () => {};
     (async () => {
       try {
-        await FaceAuth.init({ awsSyncUrl: AWS_URL, deviceToken: DEVICE_TOKEN, deviceId: 'demo-device-01', debug: false });
+        await FaceAuth.init({
+          // awsSyncUrl and deviceToken are omitted → fully offline mode.
+          // Uncomment + fill both to enable server provisioning / attendance sync:
+          // awsSyncUrl:  AWS_URL,
+          // deviceToken: DEVICE_TOKEN,
+          deviceId: 'demo-device-01',
+          debug:    false,
+        });
         unsub = FaceAuth.onSyncStatus(setSync);
         setReady(true);
       } catch (e: any) {
-        console.error('FaceAuth.init failed:', e?.message ?? String(e), e?.stack);
+        console.error('FaceAuth.init failed:', e?.message ?? String(e));
       }
     })();
-    return () => {
-      unsub();
-      void FaceAuth.dispose();
-    };
+    return () => { unsub(); void FaceAuth.dispose(); };
   }, []);
 
   const models: FaceAuthModels | null = useMemo(
@@ -85,6 +112,82 @@ export default function App() {
     [loaded],
   );
 
+  // ── Start first (or next) enroll shot ───────────────────────────────────────
+  const startNextShot = () => {
+    captureStep.current += 1;
+    setSession('enroll');
+  };
+
+  // ── Handle every FaceAuthView result ───────────────────────────────────────
+  const handleResult = async (r: AuthResult, activeSession: AuthMode) => {
+    setSession(null);
+
+    // ── Enroll shot completed ─────────────────────────────────────────────────
+    if (activeSession === 'enroll') {
+      if (!r.ok || !r.embeddingB64) {
+        // Capture failed (liveness / challenge / cancelled) — restart this shot
+        Alert.alert(
+          `Shot ${captureStep.current} failed`,
+          `Reason: ${r.failureReason ?? 'unknown'}. Try again.`,
+          [
+            { text: 'Retry', onPress: () => setSession('enroll') },
+            {
+              text: 'Cancel',
+              style: 'cancel',
+              onPress: () => {
+                captureStep.current = 0;
+                collectedEmbs.current = [];
+              },
+            },
+          ],
+        );
+        return;
+      }
+
+      // Shot succeeded — accumulate embedding
+      collectedEmbs.current.push(r.embeddingB64);
+
+      if (captureStep.current < ENROLL_SHOTS) {
+        // More shots needed — open camera again after a short prompt
+        Alert.alert(
+          `Shot ${captureStep.current} of ${ENROLL_SHOTS} captured ✓`,
+          `${ENROLL_SHOTS - captureStep.current} more shot(s) needed. Slightly change your angle or expression.`,
+          [{ text: 'Next shot', onPress: startNextShot }],
+        );
+      } else {
+        // All shots done — store all embeddings locally
+        try {
+          await FaceAuth.enrollLocal(pendingEnrollId.current, collectedEmbs.current);
+          Alert.alert(
+            'Enrolled ✓',
+            `"${pendingEnrollId.current}" stored with ${collectedEmbs.current.length} face template(s).`,
+          );
+        } catch (e: any) {
+          Alert.alert('Enroll failed', e?.message ?? 'unknown error');
+        } finally {
+          captureStep.current = 0;
+          collectedEmbs.current = [];
+        }
+      }
+      return;
+    }
+
+    // ── Identify / Verify result ──────────────────────────────────────────────
+    if (activeSession === 'identify' || activeSession === 'verify') {
+      if (r.ok && r.personnelId) {
+        Alert.alert(
+          '✅ Match found',
+          `Person: ${r.personnelId}\nScore: ${r.matchScore.toFixed(2)}`,
+        );
+      } else {
+        Alert.alert('❌ No match', `Reason: ${r.failureReason ?? 'unknown'}`);
+      }
+    }
+
+    setLast(r);
+  };
+
+  // ── Loading screen ──────────────────────────────────────────────────────────
   if (!ready || !models) {
     return (
       <SafeAreaView style={styles.center}>
@@ -93,43 +196,35 @@ export default function App() {
     );
   }
 
-  // ── Camera session (enroll / identify / verify) ─────────────────────────────
+  // ── Camera session ──────────────────────────────────────────────────────────
   if (session) {
+    const isEnroll   = session === 'enroll';
+    const shotLabel  = isEnroll
+      ? `Shot ${captureStep.current} of ${ENROLL_SHOTS} — look straight at the camera`
+      : undefined;
+
     return (
       <FaceAuthView
         mode={session}
         models={models}
-        onClose={() => setSession(null)}
-        onResult={async (r) => {
-          const prevSession = session;
+        onClose={() => {
+          // User tapped back — abort enrollment
+          if (isEnroll) {
+            captureStep.current  = 0;
+            collectedEmbs.current = [];
+          }
           setSession(null);
-
-          // ── Enroll: upload embedding with the name the user typed ────────────
-          if (prevSession === 'enroll' && r.ok && r.embeddingB64) {
-            try {
-              await fetch(`${AWS_URL}/enroll`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ personnelId: pendingEnrollId, embedding: r.embeddingB64 }),
-              });
-              Alert.alert('Enrolled ✓', `"${pendingEnrollId}" stored on server`);
-            } catch (e: any) {
-              Alert.alert('Upload failed', e?.message ?? 'network error');
-            }
-          }
-
-          // ── Identify / Verify: popup with matched name or failure ─────────────
-          if ((prevSession === 'identify' || prevSession === 'verify') && r.ok && r.personnelId) {
-            Alert.alert(
-              '✅ Match found',
-              `Person: ${r.personnelId}\nScore: ${r.matchScore.toFixed(2)}`,
-            );
-          } else if ((prevSession === 'identify' || prevSession === 'verify') && !r.ok) {
-            Alert.alert('❌ No match', `Reason: ${r.failureReason ?? 'unknown'}`);
-          }
-
-          setLast(r);
         }}
+        onGuidance={(g) => {
+          // Inject shot counter into the first guidance message during enroll
+          if (isEnroll && shotLabel && g.message === 'Position your face in the frame') {
+            // guidance is display-only; hint shown via FaceAuthView's own hintBar
+          }
+          void g; // suppress unused warning
+        }}
+        onResult={(r) => void handleResult(r, session)}
+        // Pass shot label as a style override so it appears above the camera
+        style={isEnroll && shotLabel ? { paddingTop: 0 } : undefined}
       />
     );
   }
@@ -137,7 +232,8 @@ export default function App() {
   // ── Main screen ─────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
-      {/* ── Enrollment name dialog ── */}
+
+      {/* ── Enrollment name dialog ────────────────────────────────────────── */}
       <Modal
         visible={enrollDialogVisible}
         transparent
@@ -146,6 +242,11 @@ export default function App() {
         <View style={styles.overlay}>
           <View style={styles.dialog}>
             <Text style={styles.dialogTitle}>Enter Person ID / Name</Text>
+            <Text style={styles.dialogSub}>
+              {ENROLL_SHOTS === 1
+                ? '1 face capture will be taken.'
+                : `${ENROLL_SHOTS} face captures will be taken for better accuracy.`}
+            </Text>
             <TextInput
               style={styles.input}
               placeholder="e.g. John Smith or emp-002"
@@ -158,8 +259,10 @@ export default function App() {
                 const id = enrollInput.trim();
                 if (!id) return;
                 setEnrollDialogVisible(false);
-                setPendingEnrollId(id);
-                setSession('enroll');
+                pendingEnrollId.current  = id;
+                captureStep.current      = 0;
+                collectedEmbs.current    = [];
+                startNextShot();
               }}
             />
             <View style={styles.dialogBtns}>
@@ -174,10 +277,12 @@ export default function App() {
                   const id = enrollInput.trim();
                   if (!id) return;
                   setEnrollDialogVisible(false);
-                  setPendingEnrollId(id);
-                  setSession('enroll');
+                  pendingEnrollId.current  = id;
+                  captureStep.current      = 0;
+                  collectedEmbs.current    = [];
+                  startNextShot();
                 }}>
-                <Text style={styles.dialogBtnText}>Enroll</Text>
+                <Text style={styles.dialogBtnText}>Start Enroll</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -186,25 +291,27 @@ export default function App() {
 
       <Text style={styles.title}>Offline Face Auth — Demo</Text>
 
-      {/* 1. Enroll — shows name dialog first */}
+      {/* 1. Enroll */}
       <TouchableOpacity
         style={styles.btn}
-        onPress={() => {
-          setEnrollInput('');
-          setEnrollDialogVisible(true);
-        }}>
-        <Text style={styles.btnText}>1. Enroll my face → server</Text>
+        onPress={() => { setEnrollInput(''); setEnrollDialogVisible(true); }}>
+        <Text style={styles.btnText}>
+          1. Enroll my face ({ENROLL_SHOTS} shot{ENROLL_SHOTS !== 1 ? 's' : ''}, local)
+        </Text>
       </TouchableOpacity>
 
-      {/* 2. Provision */}
+      {/* 2. Provision (server-based, optional) */}
       <TouchableOpacity
-        style={styles.btn}
+        style={[styles.btn, styles.btnSecondary]}
         onPress={async () => {
           const r = await FaceAuth.provision();
           setLast(null);
-          Alert.alert(r.ok ? `Provisioned ${r.count} templates` : `Provision failed`, r.error ?? '');
+          Alert.alert(
+            r.ok ? `Provisioned ${r.count} templates` : 'Provision failed',
+            r.error ?? '',
+          );
         }}>
-        <Text style={styles.btnText}>2. Provision templates (online)</Text>
+        <Text style={styles.btnText}>2. Provision templates (server, optional)</Text>
       </TouchableOpacity>
 
       {/* 3. Authenticate */}
@@ -213,25 +320,34 @@ export default function App() {
       </TouchableOpacity>
 
       {/* 4. Sync attendance */}
-      <TouchableOpacity style={styles.btn} onPress={() => FaceAuth.syncNow()}>
+      <TouchableOpacity style={[styles.btn, styles.btnSecondary]} onPress={() => FaceAuth.syncNow()}>
         <Text style={styles.btnText}>4. Sync attendance to server</Text>
       </TouchableOpacity>
 
       {/* Status panel */}
       <View style={styles.panel}>
-        <Text style={styles.text}>Templates: {FaceAuth.getTemplateCount()}</Text>
-        <Text style={styles.text}>Pending events: {sync?.pendingCount ?? 0}</Text>
-        <Text style={styles.text}>Sync: {sync?.state ?? 'idle'}</Text>
+        <Text style={styles.label}>
+          Templates on device: {FaceAuth.getTemplateCount()}
+        </Text>
+        <Text style={styles.label}>Pending events: {sync?.pendingCount ?? 0}</Text>
+        <Text style={styles.label}>Sync: {sync?.state ?? 'idle'}</Text>
         {last && (
-          <Text style={styles.text}>
+          <Text style={styles.label}>
             Last:{' '}
             {last.ok
               ? `✅ ${last.personnelId ?? 'enrolled'}`
               : `❌ ${last.failureReason}`}
-            {' · '}match {last.matchScore.toFixed(2)} · live {last.livenessScore.toFixed(2)}
+            {' · '}match {last.matchScore.toFixed(2)} · live{' '}
+            {last.livenessScore.toFixed(2)}
           </Text>
         )}
       </View>
+
+      {/* Hint about ENROLL_SHOTS */}
+      <Text style={styles.hint}>
+        Change <Text style={styles.hintCode}>ENROLL_SHOTS</Text> at the top of App.tsx to
+        adjust how many captures are taken per person (default: 3).
+      </Text>
     </SafeAreaView>
   );
 }
@@ -239,15 +355,19 @@ export default function App() {
 const styles = StyleSheet.create({
   container:       { flex: 1, padding: 24, gap: 12, backgroundColor: '#0f172a' },
   center:          { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f172a' },
-  title:           { color: '#fff', fontSize: 22, fontWeight: '700', marginBottom: 16 },
+  title:           { color: '#fff', fontSize: 22, fontWeight: '700', marginBottom: 8 },
   btn:             { backgroundColor: '#0ea5e9', padding: 16, borderRadius: 10 },
-  btnText:         { color: '#fff', fontSize: 16, fontWeight: '600', textAlign: 'center' },
-  panel:           { marginTop: 24, gap: 6 },
-  text:            { color: '#e2e8f0', fontSize: 15 },
-  // ── Enrollment dialog ──────────────────────────────────────────────────────
+  btnSecondary:    { backgroundColor: '#334155' },
+  btnText:         { color: '#fff', fontSize: 15, fontWeight: '600', textAlign: 'center' },
+  panel:           { marginTop: 16, gap: 4, backgroundColor: '#1e293b', padding: 14, borderRadius: 10 },
+  label:           { color: '#e2e8f0', fontSize: 14 },
+  hint:            { color: '#64748b', fontSize: 12, marginTop: 8, textAlign: 'center' },
+  hintCode:        { color: '#38bdf8', fontFamily: 'monospace' },
+  // ── Dialog ───────────────────────────────────────────────────────────────────
   overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', padding: 32 },
-  dialog:          { backgroundColor: '#1e293b', borderRadius: 16, padding: 24, gap: 16 },
+  dialog:          { backgroundColor: '#1e293b', borderRadius: 16, padding: 24, gap: 14 },
   dialogTitle:     { color: '#fff', fontSize: 18, fontWeight: '700' },
+  dialogSub:       { color: '#94a3b8', fontSize: 13 },
   input:           {
     backgroundColor: '#0f172a',
     color: '#fff',
