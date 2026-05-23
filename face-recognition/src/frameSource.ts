@@ -238,7 +238,15 @@ function wResampleLiveness(
   size: number,
 ): Float32Array {
   'worklet';
-  const out = new Float32Array(size * size * 3);
+  // MiniFASNet expects NCHW (channels-first / planar) layout:
+  //   out[0 .. size²-1]           = B plane (normalised)
+  //   out[size² .. 2·size²-1]     = G plane
+  //   out[2·size² .. 3·size²-1]   = R plane
+  //
+  // Also applies RGB→BGR channel swap and ImageNet normalisation:
+  //   mean=[0.406, 0.456, 0.485]  std=[0.225, 0.224, 0.229]  (BGR order)
+  const out         = new Float32Array(size * size * 3);
+  const channelArea = size * size;
   const sx0 = boxX * srcW;
   const sy0 = boxY * srcH;
   const sw  = boxW  * srcW;
@@ -246,16 +254,16 @@ function wResampleLiveness(
   for (let y = 0; y < size; y++) {
     const fy = Math.min(srcH - 1, Math.floor(sy0 + (y / size) * sh));
     for (let x = 0; x < size; x++) {
-      const fx = Math.min(srcW - 1, Math.floor(sx0 + (x / size) * sw));
-      const si = (fy * srcW + fx) * 3;
-      const di = (y * size + x) * 3;
-      // RGB → BGR, then ImageNet normalise each channel
+      const fx      = Math.min(srcW - 1, Math.floor(sx0 + (x / size) * sw));
+      const si      = (fy * srcW + fx) * 3;
+      const flatIdx = y * size + x;
+      // RGB source → BGR planar + ImageNet normalisation
       const r = (src[si]     ?? 0) / 255;
       const g = (src[si + 1] ?? 0) / 255;
       const b = (src[si + 2] ?? 0) / 255;
-      out[di]     = (b - 0.406) / 0.225;   // B  mean=0.406  std=0.225
-      out[di + 1] = (g - 0.456) / 0.224;   // G  mean=0.456  std=0.224
-      out[di + 2] = (r - 0.485) / 0.229;   // R  mean=0.485  std=0.229
+      out[flatIdx]                    = (b - 0.406) / 0.225;  // B plane
+      out[channelArea     + flatIdx]  = (g - 0.456) / 0.224;  // G plane
+      out[channelArea * 2 + flatIdx]  = (r - 0.485) / 0.229;  // R plane
     }
   }
   return out;
@@ -382,13 +390,26 @@ function wDecodeFaceMesh(
 }
 
 /**
- * MiniFASNet: 3-logit output [fake_2d, real, fake_3d].
- * Returns softmax probability of the real/live class (index 1).
+ * MiniFASNet: output [fake_2d, real, fake_3d].  Index 1 is the live class.
+ *
+ * Detects whether softmax is already baked into the TFLite graph by checking
+ * if the values sum to ~1.0.  If so, returns index 1 directly — applying
+ * softmax again would heavily squash the probabilities and destroy accuracy.
+ * Falls back to manual softmax only when raw logits are present.
  */
 function wDecodeLiveness(raw: Float32Array | Int32Array | Uint8Array): number {
   'worklet';
   const r = raw as Float32Array;
   if (r.length < 2) return 0;
+
+  // If the model already applied softmax, values sum to ~1.0.
+  // Tolerance of ±0.05 handles float32 rounding across model variants.
+  const sumCheck = (r[0] ?? 0) + (r[1] ?? 0) + (r[2] ?? 0);
+  if (Math.abs(sumCheck - 1.0) < 0.05) {
+    return r[1] ?? 0;  // already a probability — return directly
+  }
+
+  // Raw logits path: apply softmax manually (numerically stable via max subtraction).
   let max = -1e9;
   for (let i = 0; i < r.length; i++) max = Math.max(max, r[i] ?? -1e9);
   let sum = 0;
@@ -765,18 +786,18 @@ export function useFrameSource({
         const sqY      = Math.max(0, faceCy - faceSize / 2);
         const sqW      = Math.min(1 - sqX, faceSize);
         const sqH      = Math.min(1 - sqY, faceSize);
-        const expLv    = wExpandBox(sqX, sqY, sqW, sqH, 0.1);
-        const expLvX   = expLv[0]; const expLvY = expLv[1];
-        const expLvW   = expLv[2]; const expLvH = expLv[3];
-
-        const sc0      = wScaleBox(expLvX, expLvY, expLvW, expLvH, 2.7);
+        // Scale directly from the raw square — no pre-expansion.
+        // The scale factor (2.7× / 4.0×) already controls context inclusion;
+        // expanding the box first would double-count padding and push the crop
+        // far beyond the face, destroying model accuracy.
+        const sc0      = wScaleBox(sqX, sqY, sqW, sqH, 2.7);
         const lv0Input = wResampleLiveness(src, FRAME_SIZE, FRAME_SIZE, sc0[0], sc0[1], sc0[2], sc0[3], LV);
         const lv0Raw   = liveness0.runSync([lv0Input]);
         const live0    = wDecodeLiveness(lv0Raw[0] as Float32Array);
         // DEBUG: raw softmax values of branch 0 (all indices, before selection)
         const lv0Debug = wTypedToArray(lv0Raw[0] as Float32Array);
 
-        const sc1      = wScaleBox(expLvX, expLvY, expLvW, expLvH, 4.0);
+        const sc1      = wScaleBox(sqX, sqY, sqW, sqH, 4.0);
         const lv1Input = wResampleLiveness(src, FRAME_SIZE, FRAME_SIZE, sc1[0], sc1[1], sc1[2], sc1[3], LV);
         const lv1Raw   = liveness1.runSync([lv1Input]);
         const live1    = wDecodeLiveness(lv1Raw[0] as Float32Array);

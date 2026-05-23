@@ -1,4 +1,4 @@
-import { expandBox, type RgbFrame, type TfliteModel } from './detector';
+import type { RgbFrame, TfliteModel } from './detector';
 import type { BoundingBox, DetectedFace } from './types';
 
 /**
@@ -46,11 +46,23 @@ export function scaleBox(box: BoundingBox, scale: number): BoundingBox {
 }
 
 /**
- * MiniFASNet output is a 3-logit softmax: [fake_2d, real, fake_3d-ish].
- * Index 1 is the live class. We softmax then take the live probability.
+ * MiniFASNet output: [fake_2d, real, fake_3d].  Index 1 is the live class.
+ *
+ * Detects whether softmax is already baked into the TFLite graph by checking
+ * if the values sum to ~1.0.  If so, returns index 1 directly — applying
+ * softmax again would heavily squash the probabilities and destroy accuracy.
+ * Falls back to manual softmax only when raw logits are present.
  */
 export function decodeLiveProb(logits: Float32Array): number {
   if (logits.length < 2) return 0;
+
+  // If the model already applied softmax, values sum to ~1.0.
+  const sumCheck = (logits[0] ?? 0) + (logits[1] ?? 0) + (logits[2] ?? 0);
+  if (Math.abs(sumCheck - 1.0) < 0.05) {
+    return logits[1] ?? 0;  // already a probability — return directly
+  }
+
+  // Raw logits: apply softmax manually (numerically stable).
   let max = -Infinity;
   for (let i = 0; i < logits.length; i++) max = Math.max(max, logits[i]!);
   let sum = 0;
@@ -73,7 +85,15 @@ export function decodeLiveProb(logits: Float32Array): number {
  * Our RgbFrame is in RGB order so we swap channels while normalising.
  */
 function resampleLiveness(frame: RgbFrame, box: BoundingBox, size: number): Float32Array {
-  const out  = new Float32Array(size * size * 3);
+  // MiniFASNet expects NCHW (channels-first / planar) layout:
+  //   out[0 .. size²-1]           = B plane (normalised)
+  //   out[size² .. 2·size²-1]     = G plane
+  //   out[2·size² .. 3·size²-1]   = R plane
+  //
+  // Also applies RGB→BGR channel swap and ImageNet normalisation:
+  //   mean=[0.406, 0.456, 0.485]  std=[0.225, 0.224, 0.229]  (BGR order)
+  const out         = new Float32Array(size * size * 3);
+  const channelArea = size * size;
   const sx0  = box.x      * frame.width;
   const sy0  = box.y      * frame.height;
   const sw   = box.width  * frame.width;
@@ -81,16 +101,16 @@ function resampleLiveness(frame: RgbFrame, box: BoundingBox, size: number): Floa
   for (let y = 0; y < size; y++) {
     const fy = Math.min(frame.height - 1, Math.floor(sy0 + (y / size) * sh));
     for (let x = 0; x < size; x++) {
-      const fx  = Math.min(frame.width - 1, Math.floor(sx0 + (x / size) * sw));
-      const si  = (fy * frame.width + fx) * 3;
-      const di  = (y * size + x) * 3;
-      // RGB → BGR + ImageNet normalisation
+      const fx      = Math.min(frame.width - 1, Math.floor(sx0 + (x / size) * sw));
+      const si      = (fy * frame.width + fx) * 3;
+      const flatIdx = y * size + x;
+      // RGB source → BGR planar + ImageNet normalisation
       const r = frame.data[si]!     / 255;
       const g = frame.data[si + 1]! / 255;
       const b = frame.data[si + 2]! / 255;
-      out[di]     = (b - 0.406) / 0.225;   // B  mean=0.406  std=0.225
-      out[di + 1] = (g - 0.456) / 0.224;   // G  mean=0.456  std=0.224
-      out[di + 2] = (r - 0.485) / 0.229;   // R  mean=0.485  std=0.229
+      out[flatIdx]                    = (b - 0.406) / 0.225;  // B plane
+      out[channelArea     + flatIdx]  = (g - 0.456) / 0.224;  // G plane
+      out[channelArea * 2 + flatIdx]  = (r - 0.485) / 0.229;  // R plane
     }
   }
   return out;
@@ -121,12 +141,13 @@ export async function checkLiveness(
     width:  Math.min(1, faceSize),
     height: Math.min(1, faceSize),
   };
-  const expanded = expandBox(squareBox, 0.1);
-
+  // Scale directly from the raw square — no pre-expansion.
+  // The scale factor already controls context inclusion; expanding first
+  // would double-count padding and push the crop far beyond the face.
   const n = Math.min(models.branches.length, SCALES.length);
   let liveSum = 0;
   for (let i = 0; i < n; i++) {
-    const crop  = scaleBox(expanded, SCALES[i]!);
+    const crop  = scaleBox(squareBox, SCALES[i]!);
     const input = resampleLiveness(frame, crop, INPUT);
     const logits = (await models.branches[i]!.run([input]))[0] as Float32Array;
     liveSum += decodeLiveProb(logits);

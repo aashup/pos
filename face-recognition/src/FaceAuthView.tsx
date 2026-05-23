@@ -297,6 +297,7 @@ export function FaceAuthView({
         fps={30}
         isActive={true}
         photo={true}
+        pixelFormat="rgb"
         frameProcessor={frameProcessor}
       />
 
